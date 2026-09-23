@@ -8,7 +8,7 @@ kotlin {
 }
 
 dependencies {
-    testImplementation(kotlin("test-junit"))
+    testImplementation(libs.kotlin.test.junit)
 }
 
 jacoco {
