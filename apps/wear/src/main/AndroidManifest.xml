@@ -5,10 +5,18 @@
     <application
         android:allowBackup="false"
         android:label="AI Daily Memory"
-        android:usesCleartextTraffic="false">
+        android:icon="@drawable/ic_launcher_foreground"
+        android:usesCleartextTraffic="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules">
+        <!-- Controller only: the watch app depends on the phone app for capture state. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
         <activity
             android:name=".WearMainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:taskAffinity="">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

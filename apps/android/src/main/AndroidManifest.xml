@@ -7,8 +7,11 @@
     <application
         android:allowBackup="false"
         android:label="AI Daily Memory"
+        android:icon="@drawable/ic_launcher_foreground"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:theme="@style/Theme.AIDailyMemory">
         <activity
             android:name=".MainActivity"
