@@ -6,6 +6,42 @@ The phone is the reliable capture engine. The watch is the lightweight control s
 
 > **Core promise:** Start your day, live normally, and later remember what mattered.
 
+## Getting Started
+
+The repository is now scaffolded for Android-first development.
+
+See [TODO.md](TODO.md) for the executable delivery plan and [docs/quality/QUALITY_GATES.md](docs/quality/QUALITY_GATES.md) for release-quality standards.
+
+### Prerequisites
+
+- JDK 17
+- Android SDK 37
+- Gradle 9.6.0 until the Gradle wrapper is generated and committed
+- Python 3.13
+- uv for Python dependency/environment management
+
+### Android
+
+```bash
+gradle :core:recording:check
+gradle :apps:android:assembleDebug
+gradle :apps:android:lintDebug
+```
+
+### Backend
+
+```bash
+cd backend
+uv sync --extra dev
+uv run pytest
+uv run ruff check .
+uv run mypy app
+uv run uvicorn app.main:app --reload
+```
+
+The current Android UI is intentionally a Phase 0 shell. Its controls exercise the deterministic recording state machine; real microphone capture and foreground-service behavior are the next implementation milestone.
+
+
 ---
 
 ## Product Thesis
