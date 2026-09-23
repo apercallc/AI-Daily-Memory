@@ -7,7 +7,6 @@ activityCompose = "1.13.0"
 lifecycle = "2.11.0"
 wearCompose = "1.6.2"
 junit = "4.13.2"
-detekt = "1.23.8"
 kover = "0.9.9"
 
 [libraries]
@@ -29,5 +28,4 @@ junit4 = { module = "junit:junit", version.ref = "junit" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
