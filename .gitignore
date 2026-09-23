@@ -1,0 +1,57 @@
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+secrets/
+
+# Sensitive product data — never commit
+recordings/
+audio/
+transcripts/
+exports/
+*.wav
+*.m4a
+*.aac
+*.opus
+*.pcm
+*.flac
+
+# Runtime
+*.db
+*.sqlite
+*.sqlite3
+logs/
+tmp/
