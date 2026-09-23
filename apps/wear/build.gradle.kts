@@ -36,5 +36,5 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.wear.compose.material3)
 
-    testImplementation(kotlin("test-junit"))
+    testImplementation(libs.kotlin.test.junit)
 }
