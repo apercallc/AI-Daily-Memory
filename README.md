@@ -69,6 +69,12 @@ The differentiator is not recording audio. It is building a trustworthy personal
 
 ---
 
+## Project Execution
+
+The architecture is implemented incrementally through [TODO.md](./TODO.md).
+
+The repository is scaffolded as a monorepo with Android, Wear OS, backend, MCP/CLI interface boundaries, CI quality gates, security guidance, and Architecture Decision Records. Work should follow the phase gates in TODO.md rather than implementing later-stage infrastructure early.
+
 # Architecture Priorities
 
 1. **Reliable capture before AI**
