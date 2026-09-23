@@ -379,6 +379,12 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] No direct database access
 - [ ] No bulk transcript export by default
 - [ ] Audit sensitive tool access
+- [ ] API-key authentication for user-owned third-party clients
+- [ ] Key scopes (read-only initially) and least-privilege defaults
+- [ ] Key creation / rotation / revocation UI and API
+- [ ] Per-key and per-user rate limits
+- [ ] Key stored only as a secure hash
+- [ ] MCP transport auth (authenticate the calling user, never a shared service key)
 
 ## CLI
 
@@ -442,6 +448,11 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Data inventory and classification
 - [ ] Retention/deletion matrix
 - [ ] Account export
+  - [ ] User-initiated export includes transcripts, events, highlights, memory items, entities, and daily summaries (JSON + JSONL)
+  - [ ] Raw audio included only while retention still holds (ADR-0003); document the expiry honestly
+  - [ ] Export delivered via scoped, short-TTL signed URL, never inline in the API response
+  - [ ] Export requests rate-limited and idempotent; re-request within TTL does not regenerate
+  - [ ] Export is excluded from third-party/API-key scopes by default (self-service only)
 - [ ] Account deletion
 - [ ] Child/minor policy before broad release
 - [ ] Abuse review for covert recording scenarios
@@ -511,6 +522,52 @@ Do not begin until Android capture and recall are proven.
 - [ ] Native watchOS architecture
 - [ ] Platform-specific capture constraints
 - [ ] Shared backend contracts only; do not force UI code sharing
+
+# Phase 10 — Public launch: subscription, user API, data portability
+
+Do not begin until Phase 5 (MCP + CLI) and Phase 8 (production hardening) have
+exited. Charging money and opening third-party API access raise the bar on
+authorization, billing correctness, and data rights — everything below builds on
+hardened phases, it does not replace them.
+
+## Billing / subscription
+
+- [ ] ADR: billing provider decision (Google Play Billing for Android + server-side entitlement verification; decide web/stripe path if web sign-up exists)
+- [ ] Server-authoritative entitlement checks (client state is never trusted for gating)
+- [ ] Entitlement service behind the same API surface as other features
+- [ ] Plan definition: free tier limits, paid tiers, what is metered (recording hours, processing, recall calls, MCP/API calls)
+- [ ] Metering recorded per user with auditable counters
+- [ ] Grace period / dunning / cancellation behavior defined and tested
+- [ ] Sandbox + production billing test suite (purchase, renew, cancel, refund, restore on reinstall)
+- [ ] Subscription state surfaced honestly in the app (no dark patterns; cancellation as easy as sign-up)
+- [ ] Tax/merchant-of-record review for target jurisdictions
+
+## Public API access (user-owned clients)
+
+- [ ] API keys shipped per Phase 5 checklist (scopes, hashing, rotation, rate limits)
+- [ ] Public API docs with auth, rate limits, and error semantics
+- [ ] Versioned API contract; deprecation policy for breaking changes
+- [ ] API access gated by subscription entitlement
+- [ ] Abuse monitoring per key (volume anomalies, scraping patterns)
+- [ ] Terms of service explicitly cover third-party client access
+
+## Data portability
+
+- [ ] Self-service account export (per Phase 8 checklist)
+- [ ] Export covered by terms/privacy policy as a user right (GDPR/CCPA portability)
+- [ ] Export completeness tested against the data inventory
+- [ ] Account deletion covers derived data, embeddings, jobs, and retained objects (SECURITY.md)
+
+## Launch readiness
+
+- [ ] Pricing page and payment flows reviewed for correctness
+- [ ] Support channel and SLA expectations defined
+- [ ] Cost per active user measured against price (recording, transcription, AI calls)
+- [ ] Billing failure playbooks (provider outage, refund abuse)
+
+### Phase 10 exit gate
+
+- [ ] A paying user can subscribe, connect an MCP/API client, export all their data, and cancel — entirely self-service, with correct entitlement enforcement at every step.
 
 # Definition of Done for every production feature
 
