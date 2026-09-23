@@ -41,6 +41,14 @@ by severity; do not fix unless explicitly asked.
 - Tools go through the Memory Query Service with the same authorization — never
   raw DB access, never transcript dumps; structured results with evidence references.
 - Credentials in secure storage, never plaintext config.
+- API keys (user-owned third-party clients): stored hashed only, scoped read-only
+  by default, rate-limited, revocable via UI and API. A plaintext key at rest or a
+  shared service key is a BLOCKER.
+- **Entitlements are server-authoritative** — any paid feature gated client-side
+  (app, CLI, or API client) is a BLOCKER; entitlement checks must run behind the API.
+- Export/deletion flows: user-initiated only, delivered via scoped short-TTL
+  signed URLs, complete per SECURITY.md (derived memories, embeddings, queued jobs,
+  retained objects). Third-party API scopes must not widen export access.
 
 **Dependencies:** flag any dependency with known vulns (`uv run pip-audit`; check
 Dependabot findings) as MAJOR or worse.

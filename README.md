@@ -1258,6 +1258,8 @@ Do not claim end-to-end encryption when a cloud processor needs plaintext data.
 - read-only MCP tools initially
 - bounded result sizes
 - no raw bulk transcript export unless explicitly requested and authorized
+- third-party access uses per-user API keys: hashed at rest, scoped read-only by default, rate-limited, revocable
+- user-initiated full self-export (transcripts, memories, and raw audio while retention holds) is a supported right; see TODO.md Phase 8 / Phase 10
 
 ## Recording Consent
 

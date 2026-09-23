@@ -39,6 +39,13 @@ severity.
 - Tools call the Memory Query Service with the same authorization — never the DB
   directly; structured results with evidence references, no transcript dumps.
 - Credentials in secure storage (Android Keystore / OS keychain), never plaintext.
+- User API keys: hashed at rest, scoped read-only by default, rate-limited,
+  revocable; never a shared service key.
+- Entitlement enforcement is server-side — flag any paid feature gated by client
+  state (BLOCKER).
+- Export/deletion: user-initiated, signed short-TTL URL delivery, complete
+  (derived data, embeddings, jobs, retained objects per SECURITY.md); third-party
+  scopes never widen export access.
 
 **Dependencies:** `uv run pip-audit` clean; Dependabot findings triaged.
 

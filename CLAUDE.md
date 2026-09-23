@@ -30,6 +30,9 @@ Located in `.claude/skills/`:
 
 - **Never report work done without stating which quality gates ran.** Minimum:
   `gradle qualityCheck`; backend changes also need the `uv run` checks from AGENTS.md.
+- **Commercial goals are rules (AGENTS.md items 3–5):** server-authoritative
+  entitlements for every paid surface; API keys hashed/scoped/rate-limited/revocable;
+  self-service export and deletion as user rights. TODO.md Phase 10 is the roadmap.
 - **Take work from `TODO.md`** in phase order. Don't jump phases or add later-phase
   infrastructure early.
 - **Keep the state machine pure** (`core/recording`): no Android imports, no side

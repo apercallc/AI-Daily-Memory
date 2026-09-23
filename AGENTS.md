@@ -21,6 +21,20 @@ Because we record real conversations, two product-level rules outrank everything
 2. **Evidence is immutable; derived AI output is always correctable.** Transcripts
    are never rewritten; corrections are stored separately.
 
+The commercial direction (TODO.md Phase 10): release publicly, charge a monthly
+subscription, let users connect their own clients via API/MCP, and support
+self-service data export. Three more rules follow from that:
+
+3. **Entitlements are server-authoritative.** No client — app, CLI, or third-party
+   API client — gates itself into paid features. Every paid surface checks
+   entitlements server-side.
+4. **API keys are user-owned secrets.** Stored only as hashes, scoped read-only by
+   default, rate-limited, revocable. Third-party clients never get bulk transcript
+   export by default.
+5. **Users own their data.** Self-service export (including raw audio while
+   retention still holds, per ADR-0003) and complete account deletion are rights,
+   not upsells — and third-party API scopes cannot weaken them.
+
 ## Repository map
 
 | Path | What it is |
