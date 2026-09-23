@@ -36,14 +36,8 @@ jobs:
         with:
           gradle-version: "9.6.0"
 
-      - name: Test recording domain and enforce coverage
-        run: gradle :core:recording:check
-
-      - name: Android unit tests
-        run: gradle :apps:android:testDebugUnitTest
-
-      - name: Android lint
-        run: gradle :apps:android:lintDebug
+      - name: Full Android quality gate (tests, coverage, lint; incl. Wear OS)
+        run: gradle qualityCheck
 
   backend:
     name: Backend quality
