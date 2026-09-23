@@ -68,7 +68,7 @@ self-service data export. Three more rules follow from that:
 
 ## Build and verify
 
-Gradle wrapper is not bootstrapped yet — use system Gradle 9.6 (`gradle`, not `./gradlew`).
+Gradle wrapper is bootstrapped (Gradle 9.7.1) — use `./gradlew` for all builds.
 
 ```bash
 # Full pre-merge gate (unit tests, coverage, Android lint for all modules)

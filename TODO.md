@@ -46,7 +46,7 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [x] Create ADR directory and first architecture decision
 - [x] Add security-conscious .gitignore
 - [x] Add PR template and contributing guide
-- [ ] Generate and commit Gradle wrapper using Gradle 9.6.0
+- [ ] Generate and commit Gradle wrapper using Gradle 9.7.1
 - [ ] Generate and commit backend uv.lock
 - [ ] Verify fresh clone builds on macOS, Linux, and CI
 - [ ] Enable main-branch protection
