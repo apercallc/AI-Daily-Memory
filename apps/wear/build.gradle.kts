@@ -28,6 +28,7 @@ android {
 dependencies {
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
+    implementation(libs.androidx.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.wear.compose.material3)
     testImplementation(libs.junit4)
