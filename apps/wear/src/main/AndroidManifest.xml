@@ -5,5 +5,14 @@
     <application
         android:allowBackup="false"
         android:label="AI Daily Memory"
-        android:usesCleartextTraffic="false" />
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name=".WearMainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
