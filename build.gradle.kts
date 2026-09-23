@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.compose.compiler) apply false
-    alias(libs.plugins.detekt) apply false
     alias(libs.plugins.kover) apply false
 }
 
@@ -14,5 +13,8 @@ tasks.register("qualityCheck") {
         ":core:recording:koverVerify",
         ":apps:android:testDebugUnitTest",
         ":apps:wear:testDebugUnitTest",
+        ":apps:android:lintDebug",
+        ":apps:wear:lintDebug",
+        ":core:recording:lintDebug",
     )
 }
