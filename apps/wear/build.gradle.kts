@@ -1,14 +1,14 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
-    namespace = "com.aperca.aidailymemory.wear"
+    namespace = "com.apercallc.aidailymemory.wear"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.aperca.aidailymemory.wear"
+        applicationId = "com.apercallc.aidailymemory.wear"
         minSdk = 30
         targetSdk = 37
         versionCode = 1
@@ -23,13 +23,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+    }
 }
 
 dependencies {
-    val composeBom = platform(libs.compose.bom)
-    implementation(composeBom)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.compose.ui)
-    implementation(libs.wear.compose.material3)
-    testImplementation(libs.junit4)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.wear.compose.material3)
+
+    testImplementation(kotlin("test-junit"))
 }
