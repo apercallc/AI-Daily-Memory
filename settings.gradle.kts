@@ -17,4 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "AI-Daily-Memory"
 
 include(":apps:android")
+include(":apps:wear")
 include(":core:recording")
