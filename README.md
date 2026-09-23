@@ -2,7 +2,7 @@
 
 AI Daily Memory turns the Android phone and Wear OS watch you already carry into a private, searchable memory of your day.
 
-The product is inspired by dedicated AI recorders such as PLAUD NotePin, but removes the need for another physical device. The phone is the reliable recording engine. The watch is the lightweight control surface. AI turns captured speech into useful, evidence-backed information such as decisions, action items, ideas, commitments, and highlights.
+The phone is the reliable capture engine. The watch is the lightweight control surface. The backend turns captured speech into evidence-backed events, decisions, action items, ideas, commitments, and searchable memory.
 
 > **Core promise:** Start your day, live normally, and later remember what mattered.
 
@@ -10,9 +10,7 @@ The product is inspired by dedicated AI recorders such as PLAUD NotePin, but rem
 
 ## Product Thesis
 
-This is **not** primarily a transcription app.
-
-The product should evolve through four layers:
+This is not primarily a transcription app.
 
 ```text
 Capture
@@ -24,7 +22,7 @@ Remember
 Retrieve
 ```
 
-A successful product should answer questions such as:
+The differentiator is not recording audio. It is building a trustworthy personal memory system that can efficiently answer questions such as:
 
 - What did I decide today?
 - What did someone promise to follow up on?
@@ -33,22 +31,22 @@ A successful product should answer questions such as:
 - What did we discuss about a project last week?
 - What important moments did I explicitly highlight?
 
-The differentiator is not recording audio. The differentiator is building a trustworthy personal memory system over time.
-
 ---
 
 # Architecture Priorities
 
-The project follows these rules in order:
-
 1. **Reliable capture before AI**
 2. **Offline-first before cloud-first**
 3. **Evidence before inference**
-4. **Privacy before convenience**
-5. **Simple architecture before scale architecture**
-6. **Measured bottlenecks before optimization**
+4. **Recall quality is a system, not a single vector search**
+5. **Privacy before convenience**
+6. **One query engine for every client**
+7. **Simple infrastructure before scale infrastructure**
+8. **Measured bottlenecks before optimization**
 
 If the phone cannot reliably capture a normal day, the rest of the platform has no value.
+
+If the system cannot reliably retrieve the right memory later, storing the day has limited value.
 
 ---
 
@@ -66,15 +64,13 @@ iOS and Apple Watch are intentionally postponed until the Android experience is 
 
 # MVP User Experience
 
-The primary workflow should remain extremely simple.
-
 ```text
 START MY DAY
       ↓
 Phone records reliably
       ↓
 Watch / Phone controls
-Pause | Resume | Highlight | Stop
+Pause | Resume | Highlight | Quick Note | Stop
       ↓
 Audio is processed
       ↓
@@ -89,57 +85,43 @@ Commitments
 Ask My Memory
 ```
 
-The product should be useful even if the user never opens a chat interface.
+The main product experience should be a **timeline**, not a chatbot.
 
-The main experience should be a **timeline**, not a chatbot.
+Chat is one way to retrieve memory, not the memory store itself.
 
 ---
 
 # Primary Product Surfaces
 
-## 1. Start My Day
+## Start My Day
 
 Begins a user-visible recording session.
 
-The user should always know whether capture is active.
+## Highlight
 
-## 2. Highlight
+A first-class importance signal.
 
-A first-class feature.
+The user knows what matters better than the model does. Highlights should receive a ranking boost during summary generation and retrieval.
 
-The user knows what is important better than the AI does.
+## Quick Note
 
-A highlight should capture the timestamp and enough nearby transcript context to make the moment useful later.
-
-Highlights should receive stronger ranking when generating summaries or answering questions.
-
-## 3. Quick Note
-
-A short voice-memory flow for users who do not want continuous recording.
+A short voice-memory flow.
 
 Example:
 
 > Remember that I need to replace the air filter Saturday.
 
-The app records a short note, transcribes it, extracts the useful information, then stops automatically.
+The app records, transcribes, extracts the useful information, and stops automatically.
 
-## 4. Pause Now
+## Pause Now
 
-Privacy must be immediate.
+One tap pauses capture immediately.
 
-One tap should pause recording without a confirmation dialog.
+No confirmation dialog.
 
-Later versions may support:
+## Daily Timeline
 
-- Pause for 5 minutes
-- Pause for 15 minutes
-- Pause for 1 hour
-
-## 5. Daily Timeline
-
-The home screen should prioritize events over chat.
-
-Example:
+The primary review surface.
 
 ```text
 TUESDAY
@@ -171,60 +153,130 @@ Paused
 Resumed
 ```
 
-## 6. Ask My Memory
+## Ask My Memory
 
-Conversational retrieval comes after reliable capture and useful timeline generation.
-
-Example questions:
+Examples:
 
 - What did we decide about Kafka yesterday?
 - What tasks did I mention this week?
 - What did John say he would follow up on?
 - What ideas did I have while driving?
 
-Answers should point back to supporting transcript timestamps whenever possible.
+Answers should return supporting timestamps and source references.
 
 ---
 
-# MVP Responsibilities
+# Client Access Strategy
 
-## Android Phone
+AI Daily Memory should eventually be accessible through multiple clients without duplicating retrieval logic.
+
+```text
+Android App
+Web Frontend
+CLI
+MCP
+External API
+     │
+     └──────────────┐
+                    v
+             Memory Query API
+                    │
+                    v
+             Retrieval Engine
+                    │
+                    v
+               PostgreSQL
+```
+
+All clients use the same authorization, retrieval, ranking, and evidence rules.
+
+Never build separate memory logic for Android, web, CLI, or MCP.
+
+## Initial order
+
+1. REST API
+2. Android Ask / Search
+3. MCP
+4. CLI
+5. Web frontend
+
+The web frontend should not block the core product.
+
+---
+
+# MCP Architecture
+
+MCP should be a first-class access layer once memory retrieval works.
+
+MCP must call the same Memory Query Service used by the other clients.
+
+```text
+MCP Client
+   |
+   v
+MCP Server
+   |
+   v
+Memory Query Service
+   |
+   v
+PostgreSQL
+```
+
+Do not allow MCP to query the database directly.
+
+Initial read-only MCP tools may include:
+
+```text
+ask_memory
+search_memory
+get_day
+get_timeline
+get_decisions
+get_action_items
+get_commitments
+get_highlights
+```
+
+Prefer structured tool results and evidence references instead of returning large transcript dumps.
+
+---
+
+# Android Responsibilities
 
 The phone is the authoritative recording device.
 
-Responsibilities:
+- start, pause, resume, and stop a recording session
+- run a user-visible microphone foreground service
+- persist recording state
+- store audio locally first
+- recover from process death
+- recover usable audio after interruption
+- detect storage pressure
+- track capture health
+- queue uploads when offline
+- upload when connectivity returns
+- display transcripts and extracted memories
+- display daily timeline
+- display highlights
+- display processing state
 
-- Start, pause, resume, and stop a recording session
-- Run a user-visible microphone foreground service
-- Persist recording state
-- Store audio locally first
-- Recover from process death
-- Recover usable audio after interruption
-- Detect storage pressure
-- Track recording health
-- Queue uploads when offline
-- Upload resumably when connectivity returns
-- Display transcripts and extracted memories
-- Display daily timeline
-- Display highlights
-- Display processing state
+---
 
-## Wear OS
+# Wear OS Responsibilities
 
-The watch is a controller, not the primary recorder.
+The watch is initially a controller, not the primary recorder.
 
-Responsibilities:
+- start recording
+- pause / resume
+- stop
+- highlight
+- Quick Note
+- recording status
+- session duration
+- phone connectivity
 
-- Start recording
-- Pause / resume
-- Stop
-- Highlight
-- Trigger Quick Note
-- Show recording state
-- Show session duration
-- Show phone connectivity
-
-The watch must display **acknowledged phone state**, not assume a command succeeded.
+The watch displays **acknowledged phone state**. It must never assume a command succeeded.
 
 Standalone watch recording is a later experiment.
 
@@ -232,11 +284,7 @@ Standalone watch recording is a later experiment.
 
 # Capture Health
 
-This is a core feature, not debug information.
-
-The user needs confidence that their memory system is actually working.
-
-Example:
+Capture health is a product feature.
 
 ```text
 ● Recording
@@ -250,7 +298,7 @@ Local storage: Good
 Battery: 62%
 ```
 
-If capture fails:
+Failure example:
 
 ```text
 ⚠ Recording interrupted at 2:14 PM
@@ -258,13 +306,11 @@ If capture fails:
 Tap to resume
 ```
 
-The product must never silently pretend it recorded something that it did not.
+Never silently pretend audio was captured when it was not.
 
 ---
 
 # Recording State Machine
-
-Recording must be explicitly modeled and persisted.
 
 ```text
 IDLE
@@ -274,7 +320,8 @@ STARTING
   |
   v
 RECORDING
-  |   |   interruption
+  | \
+  |  \ interruption
   |   v
   | INTERRUPTED
   |   |
@@ -295,17 +342,19 @@ STOPPING
 COMPLETED
 ```
 
-After app restart, the client should know whether the previous session:
+Important transitions must be persisted locally.
+
+After restart, the client should know whether a previous session:
 
 - completed normally
 - was interrupted
 - contains recoverable audio
 - has pending uploads
-- contains partially processed segments
+- has partially processed segments
 
 ---
 
-# Phase 0: Prove Capture Before Building the Backend
+# Phase 0: Prove Capture First
 
 The first milestone intentionally excludes AI.
 
@@ -323,9 +372,7 @@ Build:
 - highlight markers
 - capture-health UI
 - crash recovery
-- basic battery / thermal telemetry
-
-Then carry the app during real days.
+- battery / thermal telemetry
 
 Required endurance tests:
 
@@ -337,26 +384,24 @@ Required endurance tests:
 Measure:
 
 - battery drain
-- CPU usage
-- memory use
-- device temperature
+- CPU
+- memory
+- temperature
 - storage growth
-- dropped audio
+- audio gaps
 - microphone interruptions
 - Android process behavior
 - recovery success
 
-Do not commit to continuous all-day capture until real device testing proves that battery, thermal behavior, and reliability are acceptable.
-
-If continuous recording is too expensive, the product should pivot toward selective capture, Quick Notes, meetings, or smarter listening modes rather than forcing the architecture.
+Do not commit to all-day continuous capture until real hardware proves it is acceptable.
 
 ---
 
 # Audio Architecture
 
-Avoid one multi-hour audio file.
+Avoid a single multi-hour file.
 
-Use short crash-resistant local segments.
+Use short crash-resistant segments.
 
 ```text
 Microphone
@@ -385,99 +430,311 @@ Delete temporary audio
 
 ## Audio Retention
 
-Raw audio is a temporary processing artifact by default.
-
-Default behavior:
+Raw audio is temporary by default.
 
 1. Record locally.
-2. Upload only what needs processing.
+2. Upload what needs processing.
 3. Transcribe successfully.
-4. Persist the transcript.
-5. Extract structured information.
-6. Confirm persistence.
+4. Persist transcript evidence.
+5. Extract structured memory.
+6. Verify persistence.
 7. Delete temporary cloud audio.
-8. Delete local audio after the configured recovery window.
+8. Delete local audio after the recovery window.
 
-Long-term audio retention is **not** part of the MVP.
-
-It can later become an opt-in or paid capability.
+Long-term audio retention is not an MVP requirement.
 
 ---
 
 # Speech Detection
 
-Local voice activity detection may reduce transcription cost.
+Local VAD may reduce transcription cost.
 
-However, it must not be trusted blindly.
+It is an optimization, not the source of truth.
 
-A false negative could remove the exact sentence the user wanted to remember.
+Requirements:
 
-Therefore:
+- measure false negatives
+- preserve buffers around speech
+- support a high-fidelity mode
+- introduce aggressive filtering only after testing
 
-- VAD is an optimization, not the source of truth
-- false-negative rate must be measured
-- surrounding audio buffers should be retained around detected speech
-- high-fidelity mode should remain possible
-- speech filtering should be introduced only after capture reliability is proven
+Missing one important sentence is more damaging than transcribing a small amount of extra audio.
 
 ---
 
-# Evidence-Backed Memory
+# Memory Architecture
 
-The AI must not silently convert uncertain speech into facts.
+Great recall requires more than saving transcripts and embedding everything.
 
-Use three conceptual layers.
+Use four levels.
 
-## Layer 1 — Evidence
+## Level 1 — Evidence
 
-Timestamped transcript segments.
+Immutable timestamped transcript segments.
 
-This is the immutable evidence layer.
+These are the source of truth.
 
-AI corrections must never rewrite the original transcript as though the model had heard something different.
+## Level 2 — Event Windows
 
-## Layer 2 — Structured Understanding
+Group neighboring transcript segments into meaningful conversation/event windows.
 
 Examples:
 
-- event
+- standup
+- drive conversation
+- quick note
+- phone discussion
+- project conversation
+
+Event windows reduce fragmentation and provide better context for retrieval than isolated 30-second transcript chunks.
+
+## Level 3 — Structured Memory Items
+
+Extract high-value objects:
+
 - decision
-- action item
-- idea
+- action
 - commitment
-- highlight
+- idea
 - question
-- person reference
+- fact
+- highlight
+- topic change
 
-Each generated object should include:
+Each memory item references its supporting event and transcript evidence.
 
-- source transcript reference
-- timestamps
-- extraction version
-- confidence / review state
+## Level 4 — Navigation Summaries
 
-## Layer 3 — Long-Term Memory
+Examples:
 
-Later versions may generate:
+- daily summary
+- weekly summary
+- project summary
 
-- daily summaries
-- weekly summaries
-- recurring commitments
-- project context
-- personal knowledge
-- long-term retrieval
+Summaries help users navigate history, but they are **not evidence**.
 
-Long-term memory is not required for the first usable version.
+Important answers should resolve back to memory items and transcripts.
+
+Do not build chains of summaries-of-summaries. Regenerate important summaries from structured memory and evidence when needed.
 
 ---
 
-# Human Correction Is a First-Class Feature
+# Memory Recall Architecture
 
-AI extraction will be wrong sometimes.
+Retrieval should use the cheapest reliable method first.
 
-Every generated item should be correctable.
+```text
+Question
+   |
+   v
+Query Understanding
+   |
+   +--> time range
+   +--> people
+   +--> project/topic
+   +--> memory type
+   +--> exact keywords
+   +--> semantic intent
+   |
+   v
+Retrieval Planner
+   |
+   +--> Structured SQL
+   +--> Full-text search
+   +--> Semantic search when needed
+   |
+   v
+Merge + Rank
+   |
+   v
+Fetch supporting evidence
+   |
+   v
+Small context package
+   |
+   v
+Answer generation
+   |
+   v
+Answer + evidence
+```
+
+The LLM should not receive an entire day, week, or month of transcript text just to answer a narrow question.
+
+---
+
+# Retrieval Strategy
+
+## 1. Structured Retrieval First
+
+Use normal SQL for questions that already map cleanly to structured data.
+
+Examples:
+
+> What tasks do I have from yesterday?
+
+Filter:
+
+- user
+- date
+- type = action
+
+No vector search is required.
+
+## 2. Temporal Filtering
+
+Time is one of the strongest memory signals.
+
+Every searchable record should carry:
+
+- occurred_at
+- local_date
+- timezone
+- session_id
+- event_id
+
+Resolve expressions such as:
+
+- yesterday
+- last week
+- this morning
+- before lunch
+- after the standup
+
+before expensive semantic retrieval when possible.
+
+## 3. Entity Filtering
+
+Support normalized entities such as:
+
+- people
+- projects
+- companies
+- places
+- products
+
+Do not introduce a graph database.
+
+Use relational tables for:
+
+- entities
+- aliases
+- entity_mentions
+
+This enables queries such as:
+
+> What did John say about Kafka last week?
+
+to narrow the search before semantic ranking.
+
+## 4. PostgreSQL Full-Text Search
+
+Use lexical search for exact terms, names, identifiers, acronyms, ticket numbers, and phrases.
+
+Examples:
+
+- Kafka
+- INC-123
+- payment processor
+- Model Y
+
+## 5. Semantic Search
+
+Add pgvector when historical natural-language retrieval requires it.
+
+Do not embed every tiny audio segment by default.
+
+Prefer embeddings for:
+
+- event windows
+- structured memory items
+- selected larger transcript windows
+
+This reduces cost, index size, and noisy matches.
+
+Raw transcript text remains available for evidence and lexical fallback.
+
+## 6. Hybrid Search
+
+When semantic search is enabled:
+
+1. apply user/date/type/entity filters
+2. run lexical search
+3. run vector search
+4. merge candidate lists
+5. rerank a small candidate set
+6. fetch supporting transcript evidence
+
+Reciprocal Rank Fusion is a good initial merge strategy.
+
+A more expensive reranker should only operate on the top candidate set.
+
+## 7. Evidence Expansion
+
+Once the correct memory item or event is found, fetch nearby transcript evidence.
+
+This gives the answering model context without retrieving an entire session.
+
+---
+
+# Recall Ranking Signals
+
+Ranking should be explainable and testable.
+
+Potential signals:
+
+1. query match
+2. structured filters
+3. semantic similarity
+4. lexical match
+5. manual highlight
+6. explicit decision / commitment
+7. user correction or confirmation
+8. temporal fit
+9. source quality
+
+Do **not** globally rank recent memories above old memories.
+
+Recency should matter only when the query implies it.
+
+A six-month-old confirmed decision may be more relevant than something said yesterday.
+
+---
+
+# Memory Lifecycle
+
+Memory items need explicit lifecycle states.
+
+Suggested states:
+
+- possible
+- confirmed
+- corrected
+- superseded
+- dismissed
+
+Never delete history merely because a newer memory exists.
 
 Example:
+
+```text
+Decision A
+superseded_by -> Decision B
+```
+
+This allows the system to answer both:
+
+> What is the current decision?
+
+and:
+
+> What did we originally decide?
+
+---
+
+# Human Correction
+
+Every generated item should be correctable.
 
 ```text
 Call Mike tomorrow
@@ -485,17 +742,13 @@ Call Mike tomorrow
 [Correct] [Edit] [Not a task]
 ```
 
-Do not expose raw model probabilities as the primary UX.
-
-Prefer human-friendly states such as:
+Prefer human-friendly states:
 
 - Confirmed
 - Possible
 - Needs review
 
-Corrections should be stored separately from the original evidence.
-
-They can later improve prompts, evaluation datasets, and extraction quality.
+Corrections are stored separately from original transcript evidence.
 
 ---
 
@@ -509,40 +762,15 @@ Start with:
 - Speaker 2
 - Speaker 3
 
-Allow users to optionally rename speakers.
+Allow optional renaming.
 
-Speaker diarization and speaker identity are separate problems.
-
-The system must never assume that a person's name mentioned in a conversation proves that person is the current speaker.
-
----
-
-# Context
-
-A future version may support lightweight contexts such as:
-
-- Personal
-- Work
-- Meeting
-- Private
-
-Do not require context selection every time a recording starts.
-
-Context should reduce friction, not add setup work.
-
-Private mode may later support:
-
-- immediate pause
-- local-only processing
-- exclusion from long-term memory
+Diarization and real-world identity are separate problems.
 
 ---
 
 # Processing Versioning
 
-Every derived artifact should record how it was produced.
-
-Example metadata:
+Every derived artifact records how it was produced.
 
 ```text
 transcription_provider
@@ -552,57 +780,51 @@ transcription_version
 extraction_model
 extraction_prompt_version
 
+embedding_model
+embedding_version
+
 memory_schema_version
 created_at
 ```
 
-This allows future models or prompts to reprocess old transcripts without modifying original evidence.
-
-Versioning is inexpensive to add now and difficult to retrofit later.
+This allows controlled reprocessing without modifying original evidence.
 
 ---
 
-# Simplified MVP Backend
-
-Do not overbuild infrastructure before the product works.
-
-Initial architecture:
+# Simplified Backend
 
 ```text
-Android
-   |
-   v
-FastAPI
-  /    v     v
-Postgres   Temporary R2
-   |
-   v
-Worker
-   |
-   v
-AI Provider
+                    ┌──────── Android
+                    ├──────── MCP
+                    ├──────── CLI
+                    └──────── Web
+                             |
+                             v
+                         FastAPI
+                        /       \
+                       v         v
+                PostgreSQL    Temporary R2
+                       |
+                       v
+                    Worker
+                       |
+                       v
+                  AI Providers
 ```
 
-That is enough for the first beta.
+One backend owns:
 
-## Intentionally excluded from the initial backend
+- authorization
+- sessions
+- uploads
+- processing state
+- memory extraction
+- search
+- retrieval
+- evidence assembly
+- Ask My Memory
 
-Do not require these at the beginning:
-
-- Redis
-- Dramatiq
-- Kafka
-- Kubernetes
-- dedicated vector database
-- multiple transcription providers
-- multiple LLM providers
-- complex provider routing
-- read replicas
-- regional processing
-
-Introduce them only when a measured problem requires them.
-
-A database-backed job table is acceptable for the earliest worker pipeline.
+A database-backed job table is sufficient for the first beta.
 
 ---
 
@@ -616,8 +838,8 @@ A database-backed job table is acceptable for the earliest worker pipeline.
 - Room / SQLite
 - WorkManager
 - Android Keystore
-- Native Android microphone APIs
-- Foreground service
+- native microphone APIs
+- foreground service
 - OkHttp / Retrofit or Ktor
 - Opus where practical
 
@@ -640,16 +862,16 @@ A database-backed job table is acceptable for the earliest worker pipeline.
 
 - PostgreSQL
 - Supabase initially if it reduces operational work
+- PostgreSQL full-text search
+- pgvector only when semantic retrieval is introduced
 
 ## Authentication
 
-- Supabase Auth or another managed auth provider
+- Supabase Auth or another managed provider
 
-Auth is required when multi-user testing begins.
+Authentication should not block local Phase 0 development.
 
-It does not need to block local Phase 0 development.
-
-## Temporary Audio Storage
+## Temporary Audio
 
 - Cloudflare R2
 - private bucket
@@ -658,49 +880,45 @@ It does not need to block local Phase 0 development.
 
 ## AI
 
-Start with one transcription provider and one LLM provider.
+Start with:
 
-Use thin internal interfaces around provider-specific calls, but do not build a complex plugin framework before a second provider is actually needed.
+- one transcription provider
+- one extraction / answer model
+- one embedding model only when semantic search is introduced
+
+Use thin provider adapters rather than a large provider-plugin framework.
 
 ## Hosting
 
 Initial target:
 
-- Railway for FastAPI
+- Railway API
 - Railway worker
 - Supabase PostgreSQL
 - Cloudflare R2
 
 ## Observability
 
-Add early:
+Early:
 
 - Sentry
-- structured application logs
+- structured logs
 
-Add OpenTelemetry only when distributed tracing becomes useful.
+Later:
 
-Never include full audio, transcript contents, access tokens, or private prompts in ordinary telemetry.
+- OpenTelemetry when distributed tracing becomes useful
 
-## CI/CD
-
-- GitHub Actions
-- Android unit tests
-- Android instrumentation tests
-- backend tests
-- linting
-- formatting
-- build verification
+Never log raw audio, full transcripts, access tokens, or private prompt contents in ordinary telemetry.
 
 ---
 
-# Suggested Data Model
+# Data Model
 
-Keep the schema small.
+Keep the schema relational and evidence-centered.
 
 ## users
 
-Account-level information.
+Account information.
 
 ## devices
 
@@ -708,23 +926,16 @@ Registered phones and watches.
 
 ## recording_sessions
 
-One logical capture session.
-
-Suggested fields:
-
 - id
 - user_id
 - device_id
 - started_at
 - ended_at
+- timezone
 - status
 - created_at
 
 ## audio_segments
-
-Temporary segment metadata.
-
-Suggested fields:
 
 - id
 - recording_session_id
@@ -739,18 +950,28 @@ Suggested fields:
 
 ## transcript_segments
 
-Evidence layer.
-
-Suggested fields:
-
 - id
 - recording_session_id
 - audio_segment_id
+- event_id
 - started_at
 - ended_at
 - text
 - speaker_label
 - confidence
+
+## events
+
+Conversation-level windows.
+
+- id
+- recording_session_id
+- started_at
+- ended_at
+- title
+- context
+- summary
+- extraction_version
 
 ## highlights
 
@@ -758,56 +979,170 @@ User-marked moments.
 
 ## memory_items
 
-One table can initially represent derived objects.
-
-Suggested fields:
-
 - id
+- user_id
 - recording_session_id
+- event_id
 - type
 - title
 - body
-- owner
-- status
+- owner_entity_id
+- state
 - confidence_state
+- occurred_at
+- due_at
 - source_transcript_id
 - extraction_version
+- superseded_by_id
 - created_at
 
-Possible types:
+Types may include:
 
 - decision
 - action
-- idea
 - commitment
-- event
+- idea
+- fact
 - question
+
+## entities
+
+Normalized people, projects, companies, places, or products.
+
+## entity_aliases
+
+Alternative names.
+
+Example:
+
+```text
+Robert Smith
+Bob
+Bob Smith
+Robert
+```
+
+## entity_mentions
+
+Links entities to events, transcript segments, and memory items.
 
 ## daily_summaries
 
-Generated session or day summary.
+Navigation summaries.
 
 ## processing_jobs
 
-Durable asynchronous work state.
+Durable async processing state.
 
-This schema can split into more specialized tables later if actual usage demands it.
+## embeddings
+
+Add only when semantic search is enabled.
+
+Prefer linking embeddings to events and memory items rather than blindly embedding every transcript fragment.
 
 ---
 
-# Initial Search Strategy
+# Database Indexing
 
-Do not introduce vector search until users need historical semantic retrieval.
+Add indexes based on real query patterns.
 
-MVP search can use:
+Likely early indexes:
 
-- PostgreSQL text search
-- date filters
-- type filters
-- session filters
-- speaker labels
+```text
+(user_id, occurred_at)
+(user_id, type, occurred_at)
+(recording_session_id, started_at)
+(event_id, started_at)
+(entity_id, occurred_at)
+```
 
-Add embeddings / pgvector when **Ask My Memory** begins requiring semantic retrieval across significant history.
+Use PostgreSQL full-text indexes for searchable text.
+
+When pgvector is introduced, start with exact search for small datasets and measure recall before adding approximate indexes.
+
+Approximate vector indexes trade some retrieval recall for speed, so they should be introduced deliberately.
+
+---
+
+# Query API
+
+All clients use the same backend contracts.
+
+Initial endpoints:
+
+```text
+/sessions
+/uploads
+/transcripts
+/highlights
+/events
+/memory
+/summary
+/health
+/search
+/ask
+```
+
+Example:
+
+```http
+POST /v1/ask
+```
+
+Request:
+
+```json
+{
+  "question": "What did I decide about Kafka yesterday?"
+}
+```
+
+Response:
+
+```json
+{
+  "answer": "You decided to use the new consumer implementation.",
+  "evidence": [
+    {
+      "event_id": "evt_123",
+      "transcript_id": "tr_456",
+      "timestamp": "2026-09-22T10:42:12-05:00"
+    }
+  ]
+}
+```
+
+---
+
+# Retrieval Efficiency Rules
+
+## Never send full history by default
+
+Retrieve a bounded candidate set.
+
+## Filter before vector search
+
+User, date, entity, type, and context filters reduce cost and improve precision.
+
+## Embed useful units
+
+Prefer event and memory embeddings over thousands of tiny transcript embeddings.
+
+## Rerank narrowly
+
+Run expensive reranking only over a small candidate set.
+
+## Fetch evidence last
+
+First locate the likely memory, then expand nearby transcripts.
+
+## Cache stable navigation views
+
+Daily timelines and summaries can be cached because they are read frequently and change infrequently after processing completes.
+
+## Keep evidence authoritative
+
+Cached summaries and generated answers can always be recreated.
 
 ---
 
@@ -815,86 +1150,83 @@ Add embeddings / pgvector when **Ask My Memory** begins requiring semantic retri
 
 ## Local first
 
-The backend must never be required for recording to continue.
+Recording never depends on backend availability.
 
 ## Stable IDs
 
-Every session and segment receives a stable identifier on-device.
+Sessions and segments receive stable IDs on-device.
 
 ## Idempotency
 
-Retrying uploads or jobs must not create duplicate transcripts or memory items.
+Retries must not create duplicate transcripts or memories.
 
 ## Checksums
 
-Audio segments should use content hashes for integrity validation.
+Validate audio integrity.
 
 ## Explicit acknowledgement
 
-The client deletes recoverable local audio only after the server confirms required processing state.
+Delete recoverable local audio only after required server acknowledgement.
 
 ## No silent failure
 
-Every capture interruption must become visible to the user.
+Expose capture interruptions.
 
 ## Bounded retries
 
-Failed backend jobs should retry with limits.
-
-Repeated failures should become visible rather than retry forever.
+Repeated backend failures become visible.
 
 ---
 
 # Privacy and Security
 
-This product can capture highly sensitive conversations.
-
-Security is part of the product design.
+This application can capture highly sensitive conversations.
 
 ## Device
 
-- encrypt temporary audio at rest
-- protect keys with Android Keystore
-- require explicit microphone permission
-- show recording state
-- make pause / stop immediately available
-- support user deletion
-- protect recovered sessions
+- encrypted temporary audio
+- Android Keystore protected keys
+- explicit microphone permission
+- visible recording state
+- immediate pause / stop
+- deletion controls
 
 ## Backend
 
-- TLS everywhere
+- TLS
 - private object storage
 - short-lived signed URLs
-- authentication on every private endpoint
+- authentication on private endpoints
 - authorization on every user resource
 - secrets outside source control
 - no access tokens in logs
 - no raw transcripts in ordinary logs
-- retention jobs for temporary audio
+- audio retention jobs
 
 ## AI Providers
 
-Users should know when audio or transcript data is sent to a third-party AI provider.
+Users should know when audio or transcript data is sent to third-party processing providers.
 
-Do not claim end-to-end encryption if cloud services must decrypt audio or text to process it.
+Do not claim end-to-end encryption when a cloud processor needs plaintext data.
+
+## MCP / API
+
+- user-scoped authorization
+- least-privilege access
+- read-only MCP tools initially
+- bounded result sizes
+- no raw bulk transcript export unless explicitly requested and authorized
 
 ## Recording Consent
 
-Recording laws and workplace policies vary by jurisdiction.
-
-The product should:
-
-- keep recording state visible
-- make pausing easy
-- provide consent guidance
-- avoid covert-recording UX
+- visible recording state
+- easy pause
+- consent guidance
+- no covert-recording UX
 
 ---
 
 # Cost Controls
-
-Measure cost before optimizing architecture.
 
 Track:
 
@@ -902,50 +1234,48 @@ Track:
 - uploaded minutes
 - transcribed minutes
 - transcription cost
-- LLM input tokens
-- LLM output tokens
-- temporary storage
-- failed retries
+- extraction tokens
+- answer tokens
+- embedding usage
+- storage
+- retry cost
 
-The most important optimization is:
+Important:
 
 ```text
-Recorded time
-    ≠
-Transcribed time
+Recorded time != Transcribed time != LLM context
 ```
 
-Eight hours of capture may contain far less than eight hours of meaningful speech.
-
-Potential optimization path:
+Each stage should reduce unnecessary data.
 
 ```text
 Audio
   ↓
 Measured speech detection
   ↓
-Transcription
+Transcript
   ↓
-Small extraction model
+Event grouping
   ↓
-Structured memory
+Structured extraction
+  ↓
+Small searchable memory
+  ↓
+Targeted retrieval
+  ↓
+Small answer context
 ```
 
-Do not send every transcript through a large reasoning model.
-
-Use larger models only where their quality produces measurable value.
+This is both cheaper and better for recall than repeatedly giving an LLM large transcript histories.
 
 ---
 
 # Scaling Strategy
 
-Scale from observed bottlenecks.
-
 ## Stage 0 — Personal Prototype
 
-- Android only
-- local recording
-- no backend dependency
+- Android
+- local capture
 - battery and reliability testing
 
 ## Stage 1 — Early Beta
@@ -956,24 +1286,33 @@ Scale from observed bottlenecks.
 - one worker
 - one transcription provider
 - one LLM provider
-- Wear OS controller
+- Wear OS
 
-## Stage 2 — Product Validation
+## Stage 2 — Recall Validation
 
-Introduce only as needed:
+- event grouping
+- entities
+- full-text search
+- structured retrieval
+- MCP
+- CLI
+- semantic search only if needed
 
-- stronger asynchronous queue
+## Stage 3 — Product Growth
+
+Introduce when measurements justify them:
+
+- pgvector / HNSW
+- stronger async queue
 - multiple workers
-- embeddings
-- pgvector
+- caching
 - quotas
 - billing
 - autoscaling
-- better caching
 
-## Stage 3 — Growth
+## Stage 4 — Larger Scale
 
-Possible future changes:
+Possible later changes:
 
 - separate transcription workers
 - separate AI workers
@@ -981,15 +1320,11 @@ Possible future changes:
 - database partitioning
 - read replicas
 - regional data placement
-- dedicated search infrastructure
-
-No migration should happen merely because a theoretical user count was reached.
+- dedicated search service only if PostgreSQL becomes a measured bottleneck
 
 ---
 
 # Repository Structure
-
-Keep the monorepo understandable.
 
 ```text
 AI-Daily-Memory/
@@ -999,8 +1334,17 @@ AI-Daily-Memory/
 │
 ├── backend/
 │   ├── app/
+│   │   ├── api/
+│   │   ├── capture/
+│   │   ├── memory/
+│   │   ├── retrieval/
+│   │   └── processing/
 │   ├── migrations/
 │   └── tests/
+│
+├── interfaces/
+│   ├── mcp/
+│   └── cli/
 │
 ├── contracts/
 │   └── openapi/
@@ -1016,107 +1360,52 @@ AI-Daily-Memory/
 └── README.md
 ```
 
-Create additional modules only when the codebase actually needs them.
-
-Use Architecture Decision Records in `docs/adr/` for decisions that are expensive to reverse.
-
----
-
-# API Strategy
-
-Use OpenAPI as the contract between Android and the backend.
-
-Initial endpoint groups should remain small:
-
-```text
-/sessions
-/uploads
-/transcripts
-/highlights
-/memory
-/summary
-/health
-```
-
-Later:
-
-```text
-/auth
-/devices
-/search
-/ask
-/usage
-```
-
-The backend should issue short-lived upload instructions.
-
-Permanent object-storage credentials must never exist in the mobile application.
+Use Architecture Decision Records for decisions that are expensive to reverse.
 
 ---
 
 # Testing Strategy
 
-This application needs heavy reliability testing.
+## Capture Tests
 
-## Android Unit Tests
-
-Test:
-
-- recording state machine
+- state machine
 - segment lifecycle
 - interruption recovery
-- upload state
-- duplicate prevention
-- cleanup rules
-- storage-pressure behavior
+- process death
+- storage pressure
+- background behavior
+- watch communication
 
-## Instrumentation Tests
+## Physical Endurance Tests
 
-Test:
+Measure:
 
-- microphone permission
-- foreground service
-- app backgrounding
-- process recreation
-- notification controls
-- phone reboot recovery where practical
-- Wear OS communication
-
-## Physical Device Endurance Tests
-
-Required.
-
-Measure on real hardware:
-
-- battery drain
-- temperature
+- battery
+- thermal behavior
 - CPU
 - memory
 - storage
 - audio gaps
-- interruption recovery
 - microphone routing
+- recovery
 
 ## Fault Injection
 
 Simulate:
 
-- no network
-- slow network
-- backend timeout
+- offline device
+- slow connection
 - partial upload
-- corrupted segment
+- backend timeout
+- corrupted audio
 - duplicate upload
 - worker crash
-- AI provider timeout
-- Android process death
+- provider timeout
 - low storage
 
-## AI Evaluation
+## Memory Extraction Evaluation
 
-Create a small human-reviewed evaluation dataset.
-
-Measure extraction quality for:
+Maintain a human-reviewed evaluation set for:
 
 - decisions
 - explicit tasks
@@ -1125,22 +1414,39 @@ Measure extraction quality for:
 - ideas
 - highlights
 
-False positive tasks and commitments should be treated seriously.
+## Recall Evaluation
+
+Recall quality must be measured separately from extraction quality.
+
+Create test questions from known captured days and measure:
+
+- did the correct event enter the candidate set?
+- did the correct evidence rank near the top?
+- did the answer cite the correct source?
+- did structured filters resolve correctly?
+- did temporal queries resolve correctly?
+- did entity aliases resolve correctly?
+- did the system abstain when evidence was insufficient?
+
+Track retrieval metrics such as Recall@K and ranking quality on a small controlled benchmark before tuning vector indexes.
 
 ---
 
 # Engineering Targets
 
-These are validation targets, not guarantees.
+Validation targets:
 
-- No permanent loss of successfully persisted local segments during controlled tests
-- No user-visible duplicate transcript segments
-- Recover interrupted sessions whenever usable audio remains
-- No silent recording failure
-- Predictable battery impact
-- Predictable processing cost
-- Every derived memory can trace back to evidence
-- AI corrections never overwrite original evidence
+- no silent capture failure
+- no permanent loss of successfully persisted local segments in controlled tests
+- no user-visible duplicate transcript segments
+- recover interrupted sessions when usable audio remains
+- predictable battery impact
+- predictable processing cost
+- every derived memory traces back to evidence
+- corrections never overwrite evidence
+- retrieval answers are based on bounded evidence
+- Ask My Memory can return source references
+- recall quality is benchmarked, not judged only by demos
 
 ---
 
@@ -1148,108 +1454,111 @@ These are validation targets, not guarantees.
 
 ## Phase 0 — Capture Reliability
 
-Build only the Android recorder.
+Android recording only.
 
-Exit condition:
+Exit:
 
-> The phone can reliably capture a normal working day with acceptable battery, thermal, storage, and recovery behavior.
+> A normal workday can be captured reliably with acceptable battery, thermal, storage, and recovery behavior.
 
 ## Phase 1 — Upload + Transcription
 
-Add:
+Add cloud processing and transcript persistence.
 
-- API
-- temporary cloud upload
-- worker
-- transcription
-- transcript persistence
-- retries
-- audio deletion
+Exit:
 
-Exit condition:
+> Every acknowledged upload becomes a transcript or enters a visible recoverable failure state.
 
-> Every acknowledged upload either becomes a transcript or enters a visible recoverable failure state.
-
-## Phase 2 — Daily Timeline
+## Phase 2 — Daily Timeline + Structured Memory
 
 Add:
 
-- transcript grouping
-- events
+- event grouping
 - highlights
-- basic summary
 - decisions
 - actions
 - ideas
 - commitments
-- correction UX
+- corrections
+- daily summary
 
-Exit condition:
+Exit:
 
-> The daily timeline consistently surfaces information the user would otherwise forget.
+> The timeline consistently surfaces things worth remembering.
 
 ## Phase 3 — Wear OS
 
-Add:
+Add reliable remote control, highlights, Quick Note, and health status.
 
-- phone communication
-- start
-- pause
-- resume
-- stop
-- highlight
-- Quick Note
-- capture-health status
+Exit:
 
-Exit condition:
+> The watch reliably controls the phone in normal daily use.
 
-> The watch reliably controls the phone during normal daily use.
-
-## Phase 4 — Ask My Memory
+## Phase 4 — Recall Engine
 
 Add:
 
-- text search
-- metadata filters
-- historical retrieval
-- evidence-backed answers
+- temporal query parsing
+- structured SQL retrieval
+- entity aliases
+- full-text search
+- evidence expansion
+- recall benchmark
 
-Add embeddings only if plain retrieval is insufficient.
+Exit:
 
-Exit condition:
+> Known questions from prior days retrieve the correct evidence reliably.
 
-> Users can retrieve useful information from prior days with supporting evidence.
+## Phase 5 — MCP + CLI
 
-## Phase 5 — Long-Term Memory
+Expose the recall engine without bypassing it.
 
-Only after daily use proves valuable.
+Exit:
 
-Potential features:
+> External agents and terminal users can safely query the same memory system.
 
-- semantic search
-- recurring commitments
-- project memory
+## Phase 6 — Semantic Recall
+
+Only if Phase 4 shows lexical / structured retrieval gaps.
+
+Add:
+
+- embeddings
+- pgvector
+- hybrid retrieval
+- Reciprocal Rank Fusion
+- small-candidate reranking
+
+Exit:
+
+> Semantic retrieval measurably improves benchmark recall without unacceptable latency or cost.
+
+## Phase 7 — Long-Term Memory
+
+Potential:
+
 - weekly summaries
-- personalized retrieval
-- longer-term relationships between people, topics, decisions, and tasks
+- project memory
+- recurring commitments
+- durable entity relationships
+- memory consolidation
 
-## Phase 6 — Production Hardening
+No graph database unless relational modeling becomes a measured limitation.
 
-Add:
+## Phase 8 — Production Hardening
 
 - account lifecycle
 - export
 - deletion
+- retention settings
 - quotas
 - billing if needed
-- retention settings
 - security review
 - backup / recovery testing
 - load testing
 
-## Phase 7 — iOS + Apple Watch
+## Phase 9 — iOS + Apple Watch
 
-Build only after Android product-market fit and recording architecture are proven.
+Only after the Android product and recall engine are proven.
 
 ---
 
@@ -1259,69 +1568,65 @@ Do not build initially:
 
 - iOS
 - Apple Watch
-- browser dashboard
-- permanent audio archive
 - standalone watch recording
-- voice biometric identity
-- complex speaker recognition
+- permanent audio archive
+- voice biometrics
 - automatic calendar mutations
 - automatic email sending
 - autonomous agents
-- subscriptions before costs justify them
-- Kubernetes
-- Kafka
-- Redis unless job volume requires it
+- graph database
 - dedicated vector database
-- pgvector before semantic search is needed
-- multiple AI provider routing
+- Redis unless job volume needs it
+- Kafka
+- Kubernetes
+- multiple provider routing
 - complex microservices
+- embeddings for every transcript fragment
 - long-term memory graph
-
-These are future options, not current requirements.
+- separate retrieval logic per client
 
 ---
 
 # Architecture Decision Gates
 
-Major features should pass explicit gates before implementation.
-
 ## Gate A — Continuous Capture
 
-Proceed only if real-device testing shows acceptable:
-
-- battery drain
-- thermal behavior
-- reliability
-- audio quality
+Proceed only if battery, thermal, reliability, and audio quality are acceptable.
 
 ## Gate B — Cloud Processing
 
-Proceed only if:
+Proceed only if transcription is useful, reliable, and economically understood.
 
-- transcript quality is useful
-- per-user processing cost is understood
-- retry behavior is reliable
+## Gate C — Structured Memory
 
-## Gate C — AI Memory
+Proceed only if extracted decisions, actions, and commitments are measurably useful and correctable.
 
-Proceed only if extracted decisions, tasks, and commitments are measurably useful and correctable.
+## Gate D — Recall
 
-## Gate D — Semantic Search
+Before semantic search, prove structured + lexical retrieval and measure its gaps.
 
-Add embeddings only when ordinary database search is demonstrably insufficient.
+## Gate E — Semantic Search
 
-## Gate E — Infrastructure Expansion
+Add embeddings only if they measurably improve recall.
 
-Add queues, caching, replicas, or service separation only after metrics identify a bottleneck.
+## Gate F — Approximate Vector Indexes
+
+Use them only when exact vector search latency requires it and benchmark the recall tradeoff.
+
+## Gate G — Infrastructure Expansion
+
+Add queues, replicas, caching, service splitting, or dedicated search only after metrics show the need.
 
 ---
 
 # Definition of Success
 
-The first meaningful product milestone is deliberately simple:
+The first meaningful product milestone is:
 
-> Start AI Daily Memory in the morning, live a normal day, and later discover at least one useful decision, idea, commitment, action item, or highlighted moment that you otherwise would have forgotten.
+> Start AI Daily Memory in the morning, live a normal day, and later retrieve a useful decision, idea, commitment, action item, or highlighted moment that would otherwise have been forgotten — with evidence showing where it came from.
 
-If that happens consistently, the product deserves deeper AI, longer-term memory, additional devices, and more infrastructure.
+The longer-term success criterion is stronger:
 
-Until then, the architecture should remain focused on reliable capture, trustworthy evidence, simple processing, and low operational cost.
+> Months later, ask a natural question through Android, MCP, CLI, API, or web and reliably retrieve the correct memory without scanning or sending the user's entire history to an LLM.
+
+That is the architecture target.
