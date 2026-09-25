@@ -17,10 +17,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import AudioUpload, ProcessingJob
+from app.db.models import AudioUpload, ProcessingJob, SealedDelivery
 from app.storage import ObjectStore
 
 logger = logging.getLogger("app.retention")
@@ -35,6 +35,7 @@ class SweepResult:
     dead: int
     expired: int
     errors: int
+    deliveries_expired: int = 0
 
 
 async def sweep(
@@ -100,8 +101,9 @@ async def sweep(
         dead=counts["transcription_failed"],
         expired=counts["retention_expired"],
         errors=errors,
+        deliveries_expired=await _expire_deliveries(sessions, clock),
     )
-    if rows:
+    if rows or result.deliveries_expired:
         logger.info(
             "retention_sweep",
             extra={
@@ -109,6 +111,7 @@ async def sweep(
                 "dead": result.dead,
                 "expired": result.expired,
                 "errors": result.errors,
+                "deliveries_expired": result.deliveries_expired,
             },
         )
     return result
@@ -129,3 +132,27 @@ async def _mark_failed(
         )
         await session.commit()
     return moved is not None
+
+
+async def _expire_deliveries(
+    sessions: async_sessionmaker[AsyncSession],
+    clock: datetime | ColumnElement[datetime],
+) -> int:
+    """Sealed transcripts the phone never collected within the hold are deleted, and their
+    clips marked failed so the phone (which still has the audio) uploads them again."""
+    async with sessions() as session:
+        uploads = (
+            await session.scalars(
+                delete(SealedDelivery)
+                .where(SealedDelivery.expires_at <= clock)
+                .returning(SealedDelivery.upload_id),
+            )
+        ).all()
+        if uploads:
+            await session.execute(
+                update(AudioUpload)
+                .where(AudioUpload.id.in_(uploads), AudioUpload.state == "transcribed")
+                .values(state="failed", failure_code="delivery_expired"),
+            )
+        await session.commit()
+    return len(uploads)

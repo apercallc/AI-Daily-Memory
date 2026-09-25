@@ -2,10 +2,13 @@ package com.apercallc.aidailymemory.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -16,21 +19,34 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.apercallc.aidailymemory.R
-import com.apercallc.aidailymemory.net.LinkInput
+import com.apercallc.aidailymemory.net.ConnectError
+import com.apercallc.aidailymemory.net.LinkProblem
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.net.URI
 import java.net.URISyntaxException
 
 /** What the account section shows; [host] is null while not connected. */
-data class AccountUi(val host: String?, val rejected: Boolean, val saveFailed: Boolean = false)
+data class AccountUi(
+    val host: String? = null,
+    val problem: LinkProblem = LinkProblem.NONE,
+    val connecting: Boolean = false,
+    val error: ConnectError? = null,
+    /** Clips that gave up plus segments that couldn't be read; their audio stays on the phone. */
+    val uploadProblems: Int = 0,
+)
 
 /**
  * Connects the phone to the user's account so speech clips can be transcribed (Phase 1).
@@ -40,8 +56,10 @@ data class AccountUi(val host: String?, val rejected: Boolean, val saveFailed: B
 @Composable
 fun AccountSection(
     account: AccountUi,
-    onConnect: (url: String, token: String) -> LinkInput,
+    onConnect: (url: String, token: String, includeBacklog: Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDisconnect: () -> Unit,
+    onRetryUploads: () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -51,43 +69,72 @@ fun AccountSection(
             modifier = Modifier.semantics { heading() },
         )
         if (account.host != null) {
-            Text(
-                text = stringResource(R.string.account_connected, account.host),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = stringResource(R.string.account_upload_rules),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(
-                onClick = onDisconnect,
-                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-            ) { Text(stringResource(R.string.account_disconnect)) }
+            Connected(account, onDisconnect, onRetryUploads)
         } else {
-            ConnectForm(account, onConnect)
+            ConnectForm(account, onConnect, onEdit)
         }
     }
 }
 
 @Composable
-private fun ConnectForm(account: AccountUi, onConnect: (String, String) -> LinkInput) {
+private fun Connected(account: AccountUi, onDisconnect: () -> Unit, onRetryUploads: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Text(
+        text = stringResource(R.string.account_connected, account.host.orEmpty()),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    Text(
+        text = stringResource(R.string.account_upload_rules),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (account.uploadProblems > 0) {
+        Status(
+            pluralStringResource(R.plurals.account_upload_problems, account.uploadProblems, account.uploadProblems),
+            isError = true,
+        )
+        OutlinedButton(
+            onClick = onRetryUploads,
+            modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+        ) { Text(stringResource(R.string.account_retry_uploads)) }
+    }
+    OutlinedButton(
+        onClick = onDisconnect,
+        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+    ) { Text(stringResource(R.string.account_disconnect)) }
+}
+
+@Composable
+private fun ConnectForm(
+    account: AccountUi,
+    onConnect: (String, String, Boolean) -> Unit,
+    onEdit: () -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     var url by rememberSaveable { mutableStateOf("https://") }
     var token by remember { mutableStateOf("") }
-    var problem by remember { mutableStateOf<LinkInput?>(null) }
-    Text(
-        text = stringResource(if (account.rejected) R.string.account_rejected else R.string.account_explainer),
-        style = MaterialTheme.typography.bodyMedium,
-        color = if (account.rejected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    val urlError = problem == LinkInput.InvalidUrl
-    val tokenError = problem == LinkInput.InvalidToken
+    var includeBacklog by rememberSaveable { mutableStateOf(false) }
+    when (account.problem) {
+        LinkProblem.REJECTED -> Status(stringResource(R.string.account_rejected), isError = true)
+        LinkProblem.UNREADABLE -> Status(stringResource(R.string.account_unreadable), isError = true)
+        LinkProblem.NONE -> Text(
+            text = stringResource(R.string.account_explainer),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val urlError = account.error == ConnectError.INVALID_URL
+    val tokenError = account.error == ConnectError.INVALID_TOKEN || account.error == ConnectError.REJECTED
     val urlErrorText = stringResource(R.string.account_url_invalid)
-    val tokenErrorText = stringResource(R.string.account_token_invalid)
+    val tokenErrorText = stringResource(
+        if (account.error == ConnectError.REJECTED) R.string.account_token_rejected else R.string.account_token_invalid,
+    )
     OutlinedTextField(
         value = url,
-        onValueChange = { url = it },
+        onValueChange = {
+            url = it
+            onEdit()
+        },
         label = { Text(stringResource(R.string.account_url)) },
         singleLine = true,
         isError = urlError,
@@ -99,7 +146,10 @@ private fun ConnectForm(account: AccountUi, onConnect: (String, String) -> LinkI
     )
     OutlinedTextField(
         value = token,
-        onValueChange = { token = it },
+        onValueChange = {
+            token = it
+            onEdit()
+        },
         label = { Text(stringResource(R.string.account_token)) },
         singleLine = true,
         isError = tokenError,
@@ -110,21 +160,41 @@ private fun ConnectForm(account: AccountUi, onConnect: (String, String) -> LinkI
             .fillMaxWidth()
             .semantics { if (tokenError) error(tokenErrorText) },
     )
-    if (account.saveFailed) {
-        Text(
-            text = stringResource(R.string.account_save_failed),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+    // Off by default: connecting must not quietly upload everything recorded before.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = spacing.minTouchTarget)
+            .toggleable(value = includeBacklog, role = Role.Checkbox, onValueChange = { includeBacklog = it }),
+    ) {
+        Checkbox(checked = includeBacklog, onCheckedChange = null)
+        Text(stringResource(R.string.account_include_backlog), style = MaterialTheme.typography.bodyMedium)
+    }
+    when (account.error) {
+        ConnectError.UNREACHABLE -> Status(stringResource(R.string.account_unreachable), isError = true)
+        ConnectError.SAVE_FAILED -> Status(stringResource(R.string.account_save_failed), isError = true)
+        else -> Unit
     }
     Button(
-        onClick = {
-            val result = onConnect(url, token)
-            problem = result.takeUnless { it is LinkInput.Valid }
-            if (result is LinkInput.Valid) token = ""
-        },
+        onClick = { onConnect(url, token, includeBacklog) },
+        enabled = !account.connecting,
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-    ) { Text(stringResource(R.string.account_connect)) }
+    ) {
+        Text(stringResource(if (account.connecting) R.string.account_checking else R.string.account_connect))
+    }
+}
+
+/** Announced by TalkBack when it appears, not only when focused. */
+@Composable
+private fun Status(text: String, isError: Boolean) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    )
 }
 
 /** Shown instead of the full URL: enough to recognize the server, nothing more. */

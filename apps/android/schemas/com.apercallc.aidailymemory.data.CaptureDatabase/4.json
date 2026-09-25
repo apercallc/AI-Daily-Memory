@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 4,
-    "identityHash": "148dc1a1069d47a48113e8e735277e50",
+    "identityHash": "75f5f34754a4c8f75874439895bc5347",
     "entities": [
       {
         "tableName": "recording_transition",
@@ -582,11 +582,41 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_clip_upload_state` ON `${TABLE_NAME}` (`state`)"
           }
         ]
+      },
+      {
+        "tableName": "clip_plan",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `outcome` TEXT NOT NULL, `planned_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plannedAtEpochMs",
+            "columnName": "planned_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '148dc1a1069d47a48113e8e735277e50')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '75f5f34754a4c8f75874439895bc5347')"
     ]
   }
 }

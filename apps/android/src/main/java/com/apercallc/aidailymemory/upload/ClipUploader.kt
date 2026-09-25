@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.upload
 import android.util.Log
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.data.ClipDao
+import com.apercallc.aidailymemory.data.ClipPlanEntity
 import com.apercallc.aidailymemory.data.ClipUploadEntity
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.data.SegmentEntity
@@ -10,22 +11,28 @@ import com.apercallc.aidailymemory.data.SpeechDao
 import com.apercallc.aidailymemory.net.ApiException
 import com.apercallc.aidailymemory.net.ClipRequest
 import com.apercallc.aidailymemory.net.ServerLink
+import com.apercallc.aidailymemory.net.StorageException
 import com.apercallc.aidailymemory.net.UploadApi
 import com.apercallc.aidailymemory.recording.audio.AdtsScanner
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.speech.ClipPlanner
 import com.apercallc.aidailymemory.recording.speech.SpeechRegion
+import com.apercallc.aidailymemory.recording.upload.UploadStop
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
-/** Why a run stopped early; each maps to a different "try again when" for the job. */
-enum class UploadStop { NOT_LINKED, OFFLINE, UNAUTHORIZED, QUOTA, SERVER }
-
+/**
+ * One run's result. [remaining] counts clips still pending *and* segments not yet planned, so
+ * a backlog larger than one batch keeps the job going.
+ */
 data class UploadRun(val received: Int, val failed: Int, val remaining: Int, val stoppedBy: UploadStop?)
 
 /**
@@ -42,11 +49,23 @@ class ClipUploader(
     private val speech: SpeechDao,
     private val api: UploadApi,
     private val link: () -> ServerLink?,
+    /** Only audio captured at or after this time is uploaded (see LinkStore). */
+    private val uploadSinceEpochMs: () -> Long,
     private val ids: UuidV7Generator,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val planBatch: Int = PLAN_BATCH,
 ) {
-    suspend fun run(limit: Int = BATCH): UploadRun {
-        val server = link() ?: return UploadRun(0, 0, clips.pendingCount(), UploadStop.NOT_LINKED)
-        planClips()
+    /** The link a run used, so a rejection can clear exactly that link. */
+    var lastLink: ServerLink? = null
+        private set
+
+    suspend fun run(limit: Int = BATCH): UploadRun = withContext(io) {
+        val server = link()
+        lastLink = server
+        if (server == null) return@withContext UploadRun(0, 0, 0, UploadStop.NOT_LINKED)
+        val since = uploadSinceEpochMs()
+        planClips(since)
         var received = 0
         var failed = 0
         var stop: UploadStop? = null
@@ -63,16 +82,32 @@ class ClipUploader(
                 }
             }
         }
-        markUploadedSegments()
-        val remaining = clips.pendingCount()
+        for (segment in clips.fullyUploaded()) store.markUploaded(segment)
+        val remaining = clips.pendingCount() + clips.unplannedCount(since)
         Log.i(TAG, "clip_upload_batch received=$received failed=$failed remaining=$remaining stop=$stop")
-        return UploadRun(received, failed, remaining, stop)
+        UploadRun(received, failed, remaining, stop)
     }
 
-    /** Turns speech regions into frame-aligned clips with their final size and checksum. */
-    private suspend fun planClips() {
-        for (segment in clips.unplanned(PLAN_BATCH)) {
-            val audio = store.readAudio(segment) ?: continue
+    /**
+     * Turns speech regions into frame-aligned clips with their final size and checksum. Every
+     * segment leaves the queue with an outcome, so none can block the ones behind it.
+     */
+    private suspend fun planClips(since: Long) {
+        for (segment in clips.unplanned(since, planBatch)) {
+            currentCoroutineContext().ensureActive()
+            val analysis = speech.analysis(segment.segmentId)
+            if (analysis == null || analysis.regionCount == 0) {
+                // No speech: nothing to decrypt or upload. The segment stays SEALED; what
+                // no-speech audio means for retention is a separate, explicit decision.
+                clips.plan(ClipPlanEntity(segment.segmentId, NO_SPEECH, now()), emptyList())
+                continue
+            }
+            val audio = store.readAudio(segment)
+            if (audio == null) {
+                Log.w(TAG, "clip_plan_unreadable")
+                clips.plan(ClipPlanEntity(segment.segmentId, UNREADABLE, now()), emptyList())
+                continue
+            }
             val frames = frameOffsets(audio)
             val regions = speech.regions(segment.segmentId).map {
                 SpeechRegion(it.startMs, it.endMs, it.speechMs, it.lowConfidence)
@@ -93,7 +128,8 @@ class ClipUploader(
                     lastError = null,
                 )
             }
-            clips.plan(planned)
+            val outcome = if (planned.isEmpty()) EMPTY else PLANNED
+            clips.plan(ClipPlanEntity(segment.segmentId, outcome, now()), planned)
         }
     }
 
@@ -106,7 +142,8 @@ class ClipUploader(
 
     private suspend fun upload(server: ServerLink, clip: ClipUploadEntity, cache: AudioCache): Outcome {
         val segment = cache.segment(clip.segmentId) ?: return fail(clip, "segment_missing")
-        val (audio, frames) = cache.audio(segment) ?: return fail(clip, "audio_unreadable")
+        // A read can fail transiently (Keystore busy): retry within the budget.
+        val (audio, frames) = cache.audio(segment) ?: return retry(clip, "audio_unreadable")
         if (clip.endFrame > frames.size - 1) return fail(clip, "audio_changed")
         val bytes = slice(audio, frames, clip.firstFrame, clip.endFrame)
         // The plan fixed the checksum; different bytes now means the file changed underneath.
@@ -117,12 +154,19 @@ class ClipUploader(
                 api.put(target, bytes)
                 state = api.complete(server, clip.clipId)
             }
-            if (state.state == "received" || state.state == "transcribed") {
-                clips.update(clip.copy(state = RECEIVED, lastError = null))
-                Outcome.Received
-            } else {
-                retry(clip, "state_${state.state}")
+            when (state.state) {
+                in DONE_STATES -> {
+                    clips.update(clip.copy(state = RECEIVED, lastError = null))
+                    Outcome.Received
+                }
+                // Processing failed for good on the server (or the transcript expired before
+                // it was collected). The audio is still here: upload again under a new id.
+                "failed" -> reissue(clip)
+                else -> retry(clip, "state_${state.state}")
             }
+        } catch (e: StorageException) {
+            // Expired URL, clock skew, signature: never an account problem. Ask again later.
+            retry(clip, "storage_${e.status}")
         } catch (e: ApiException) {
             handle(clip, e)
         } catch (e: IOException) {
@@ -135,9 +179,8 @@ class ClipUploader(
         e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN -> Outcome.Stop(UploadStop.UNAUTHORIZED)
         e.status == HTTP_TOO_MANY -> Outcome.Stop(UploadStop.QUOTA)
         e.status >= HTTP_SERVER_ERROR -> Outcome.Stop(UploadStop.SERVER)
-        // Storage said no to the PUT, or the bytes didn't verify: upload again next run.
         e.code in RETRYABLE_CODES -> retry(clip, e.code)
-        // Conflicts and validation errors won't change on retry: terminal, and visible.
+        // Conflicts and validation errors won't change on retry: terminal, and shown.
         else -> fail(clip, e.code)
     }
 
@@ -148,14 +191,16 @@ class ClipUploader(
         return Outcome.Retry
     }
 
+    private suspend fun reissue(clip: ClipUploadEntity): Outcome {
+        if (clip.attempts + 1 >= MAX_ATTEMPTS) return fail(clip, "server_failed")
+        clips.reissue(clip.clipId, ids.next().toString())
+        return Outcome.Retry
+    }
+
     private suspend fun fail(clip: ClipUploadEntity, reason: String): Outcome {
         Log.e(TAG, "clip_upload_failed reason=$reason")
         clips.update(clip.copy(state = FAILED, lastError = reason))
         return Outcome.Failed
-    }
-
-    private suspend fun markUploadedSegments() {
-        for (segment in clips.fullyUploaded()) store.markUploaded(segment)
     }
 
     private fun request(segment: SegmentEntity, clip: ClipUploadEntity): ClipRequest {
@@ -202,6 +247,10 @@ class ClipUploader(
         const val PENDING = "PENDING"
         const val RECEIVED = "RECEIVED"
         const val FAILED = "FAILED"
+        const val PLANNED = "PLANNED"
+        const val NO_SPEECH = "NO_SPEECH"
+        const val UNREADABLE = "UNREADABLE"
+        const val EMPTY = "EMPTY"
         const val MAX_ATTEMPTS = 5
         private const val BATCH = 100
         private const val PLAN_BATCH = 50
@@ -210,7 +259,10 @@ class ClipUploader(
         private const val HTTP_FORBIDDEN = 403
         private const val HTTP_TOO_MANY = 429
         private const val HTTP_SERVER_ERROR = 500
-        private val RETRYABLE_CODES = setOf("upload_integrity_failed", "upload_missing", "storage_rejected")
+        private val DONE_STATES = setOf("received", "transcribed", "delivered")
+
+        /** Integrity mismatches and a concurrent create settle on a later attempt. */
+        private val RETRYABLE_CODES = setOf("upload_integrity_failed", "upload_missing", "conflict")
 
         /** Frame start offsets, plus the end of the last frame as a sentinel. */
         internal fun frameOffsets(audio: ByteArray): IntArray {

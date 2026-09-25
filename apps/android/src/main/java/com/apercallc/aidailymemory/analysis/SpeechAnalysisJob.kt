@@ -10,6 +10,7 @@ import android.util.Log
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.platform.logFailure
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -43,7 +44,8 @@ class SpeechAnalysisJobService : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         val container = (application as AiDailyMemoryApplication).container
-        running = container.appScope.launch {
+        // Decoding and file reads block: keep them off the shared Default pool.
+        running = container.appScope.launch(Dispatchers.IO) {
             var more = false
             try {
                 more = container.speechAnalyzer.analyzePending().remaining > 0

@@ -9,13 +9,16 @@ import android.content.Context
 import android.util.Log
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.upload.NextUpload
+import com.apercallc.aidailymemory.recording.upload.UploadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
  * Uploads run while charging on an unmetered network (ADR-0015): no mobile data and no
- * daytime battery. Only scheduled once the phone is linked to an account.
+ * daytime battery. Only scheduled once the phone is linked to an account. Transient failures
+ * use the system's exponential backoff, so a down server is never hammered.
  */
 class UploadScheduler(context: Context) {
     private val app = context.applicationContext
@@ -24,6 +27,7 @@ class UploadScheduler(context: Context) {
         val info = JobInfo.Builder(JOB_ID, ComponentName(app, UploadJobService::class.java))
             .setRequiresCharging(true)
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
+            .setBackoffCriteria(INITIAL_BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setPersisted(true)
             .build()
         val result = app.getSystemService(JobScheduler::class.java).schedule(info)
@@ -36,6 +40,8 @@ class UploadScheduler(context: Context) {
 
     companion object {
         const val JOB_ID = 1_002
+        /** Doubles per failed attempt; the system caps it at five hours. */
+        const val INITIAL_BACKOFF_MS = 10 * 60_000L
         private const val TAG = "UploadJob"
     }
 }
@@ -46,32 +52,39 @@ class UploadJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val container = (application as AiDailyMemoryApplication).container
         running = container.appScope.launch {
-            var reschedule = false
-            try {
+            val next = try {
+                container.links.ensureLoaded()
                 val run = container.clipUploader.run()
-                // More work, or a transient stop: try again on the next eligible window.
-                reschedule = run.remaining > 0 && run.stoppedBy in RETRY_LATER
-                if (run.stoppedBy == UploadStop.UNAUTHORIZED) container.onLinkRejected()
+                UploadPolicy.next(run.received, run.remaining, run.stoppedBy, crashed = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 logFailure(TAG, "upload_run_failed", e)
-                reschedule = true
-            } finally {
-                jobFinished(params, false)
+                NextUpload.BACKOFF
             }
-            if (reschedule) container.uploadScheduler.schedule()
+            when (next) {
+                NextUpload.NOW -> {
+                    jobFinished(params, false)
+                    container.uploadScheduler.schedule()
+                }
+                NextUpload.BACKOFF -> jobFinished(params, true)
+                NextUpload.SIGN_OUT -> {
+                    container.clipUploader.lastLink?.let(container::onLinkRejected)
+                    jobFinished(params, false)
+                }
+                NextUpload.NONE -> jobFinished(params, false)
+            }
         }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
         running?.cancel()
+        // Unplugged or off Wi-Fi: retry in the next eligible window.
         return true
     }
 
     private companion object {
         const val TAG = "UploadJob"
-        val RETRY_LATER = setOf(null, UploadStop.OFFLINE, UploadStop.SERVER, UploadStop.QUOTA)
     }
 }

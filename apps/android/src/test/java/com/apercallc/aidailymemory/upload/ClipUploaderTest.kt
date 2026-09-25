@@ -14,6 +14,7 @@ import com.apercallc.aidailymemory.data.SpeechRegionEntity
 import com.apercallc.aidailymemory.net.ApiException
 import com.apercallc.aidailymemory.net.ClipRequest
 import com.apercallc.aidailymemory.net.ServerLink
+import com.apercallc.aidailymemory.net.StorageException
 import com.apercallc.aidailymemory.net.UploadApi
 import com.apercallc.aidailymemory.net.UploadState
 import com.apercallc.aidailymemory.net.UploadTarget
@@ -24,6 +25,7 @@ import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.segment.SegmentState
 import com.apercallc.aidailymemory.recording.speech.EnergyVad
+import com.apercallc.aidailymemory.recording.upload.UploadStop
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
@@ -33,6 +35,8 @@ import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.time.OffsetDateTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -74,14 +78,19 @@ class ClipUploaderTest {
             onComplete(uploadId).also { completes += uploadId }
     }
 
-    private fun uploader() = ClipUploader(
+    private var since = 0L
+
+    private fun uploader(planBatch: Int = 50) = ClipUploader(
         store = store,
         segments = db.segments(),
         clips = db.clips(),
         speech = db.speech(),
         api = api,
         link = { linked },
+        uploadSinceEpochMs = { since },
         ids = UuidV7Generator(),
+        io = Dispatchers.Unconfined,
+        planBatch = planBatch,
     )
 
     @Before
@@ -169,13 +178,90 @@ class ClipUploaderTest {
     }
 
     @Test
-    fun `a segment with no speech needs no upload and is done`() = runTest {
+    fun `a segment with no speech leaves the queue without upload and is not called uploaded`() = runTest {
         val segment = analyzed()
 
-        uploader().run()
+        val run = uploader().run()
 
         assertTrue(api.creates.isEmpty())
-        assertEquals(SegmentState.UPLOADED.name, stateOf(segment))
+        assertEquals(0, run.remaining)
+        assertEquals(ClipUploader.NO_SPEECH, db.clips().planFor(segment.segmentId)?.outcome)
+        // "No speech detected" is not "transcript stored": the audio isn't released.
+        assertEquals(SegmentState.SEALED.name, stateOf(segment))
+    }
+
+    @Test
+    fun `a storage 403 is retried and never treated as a signed-out account`() = runTest {
+        val segment = analyzed(0L to 500L)
+        api.onPut = { throw StorageException(403) }
+
+        val run = uploader().run()
+
+        assertEquals(null, run.stoppedBy)
+        val clip = db.clips().forSegment(segment.segmentId).single()
+        assertEquals(ClipUploader.PENDING, clip.state)
+        assertEquals("storage_403", clip.lastError)
+    }
+
+    @Test
+    fun `audio recorded before the account was linked stays on the phone unless included`() = runTest {
+        val before = analyzed(0L to 500L)
+        since = System.currentTimeMillis() + 60_000
+
+        val run = uploader().run()
+
+        assertTrue(api.creates.isEmpty())
+        assertEquals(0, run.remaining)
+        assertEquals(null, db.clips().planFor(before.segmentId))
+
+        since = 0 // the user chose to include what was already recorded
+        uploader().run()
+        assertEquals(1, api.creates.size)
+    }
+
+    @Test
+    fun `a backlog larger than one planning batch is counted as remaining`() = runTest {
+        analyzed(0L to 500L)
+        analyzed(0L to 500L)
+        analyzed(0L to 500L)
+
+        val run = uploader(planBatch = 1).run()
+
+        assertEquals(1, run.received)
+        assertEquals(2, run.remaining)
+    }
+
+    @Test
+    fun `an unreadable segment leaves the queue, is shown, and can be retried`() = runTest {
+        val broken = analyzed(0L to 500L)
+        val fine = analyzed(0L to 500L)
+        File(directory, broken.fileName).delete()
+
+        uploader(planBatch = 1).run()
+        uploader(planBatch = 1).run()
+
+        assertEquals(ClipUploader.UNREADABLE, db.clips().planFor(broken.segmentId)?.outcome)
+        assertEquals(SegmentState.UPLOADED.name, stateOf(fine))
+        assertEquals(1, db.clips().observeProblems().first())
+
+        db.clips().retryProblems()
+        assertEquals(null, db.clips().planFor(broken.segmentId))
+        assertEquals(0, db.clips().observeProblems().first())
+    }
+
+    @Test
+    fun `when the server gave up on a clip, it is uploaded again under a new id`() = runTest {
+        val segment = analyzed(0L to 500L)
+        api.onCreate = { UploadState("failed", null) }
+        uploader().run()
+        val first = api.creates.single().uploadId
+
+        api.onCreate = { UploadState("pending", UploadTarget("https://s/${it.uploadId}", emptyMap())) }
+        uploader().run()
+
+        val second = api.creates.last().uploadId
+        assertTrue(first != second)
+        assertEquals(ClipUploader.RECEIVED, db.clips().forSegment(segment.segmentId).single().state)
     }
 
     @Test
@@ -262,7 +348,7 @@ class ClipUploaderTest {
     }
 
     @Test
-    fun `audio that changed after planning is never uploaded`() = runTest {
+    fun `audio that can't be read after planning is retried, then shown, never uploaded`() = runTest {
         val segment = analyzed(0L to 500L)
         api.onCreate = { throw IOException("offline") }
         uploader().run() // plans, then stops
@@ -270,11 +356,14 @@ class ClipUploaderTest {
         api.onCreate = { UploadState("pending", UploadTarget("https://s", emptyMap())) }
 
         uploader().run()
+        assertEquals(ClipUploader.PENDING, db.clips().forSegment(segment.segmentId).single().state)
+        repeat(ClipUploader.MAX_ATTEMPTS) { uploader().run() }
 
         val clip = db.clips().forSegment(segment.segmentId).single()
         assertEquals(ClipUploader.FAILED, clip.state)
         assertEquals("audio_unreadable", clip.lastError)
         assertTrue(api.puts.isEmpty())
+        assertEquals(1, db.clips().observeProblems().first())
     }
 
     @Test

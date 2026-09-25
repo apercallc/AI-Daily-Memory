@@ -22,7 +22,8 @@ async def test_create_account_prints_a_token_once_and_stores_only_its_hash(
     assert code == 0
     lines = out.getvalue().splitlines()
     user_id = uuid.UUID(lines[0].removeprefix("account: "))
-    token = lines[1].removeprefix("device token (shown once): ")
+    uuid.UUID(lines[1].removeprefix("token id: "))
+    token = lines[2].removeprefix("device token (shown once): ")
     assert token.startswith("adm_")
     with db.connect() as connection:
         row = connection.execute(
@@ -49,18 +50,21 @@ async def test_issue_and_revoke_for_an_existing_account(db: Engine, database_url
         )
         == 0
     )
-    with db.connect() as connection:
-        token_id = str(
-            connection.execute(
-                text("SELECT id FROM access_tokens WHERE name = 'Watch'"),
-            ).scalar_one(),
-        )
+    token_id = issued.getvalue().splitlines()[1].removeprefix("token id: ")
+    listed = io.StringIO()
+    assert await run(["list-tokens", "--user-id", user_id], settings, listed) == 0
+    assert token_id in listed.getvalue()
+    assert "active" in listed.getvalue()
+    assert "adm_" not in listed.getvalue()  # never the secret
     revoke = ["revoke-token", "--user-id", user_id, "--token-id", token_id]
     first, second = io.StringIO(), io.StringIO()
 
     assert await run(revoke, settings, first) == 0
     assert await run(revoke, settings, second) == 1
     assert "Not found" in second.getvalue()
+    relisted = io.StringIO()
+    await run(["list-tokens", "--user-id", user_id], settings, relisted)
+    assert f"{token_id}  device  revoked" in relisted.getvalue()
 
 
 async def test_unknown_account_and_missing_database_are_reported(

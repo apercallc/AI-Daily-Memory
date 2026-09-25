@@ -168,22 +168,48 @@ interface SpeechDao {
 
 @Dao
 interface ClipDao {
-    /** Analyzed segments with speech whose clips haven't been planned yet. */
+    /**
+     * Analyzed segments captured since [sinceEpochMs] that have no plan yet, oldest first.
+     * [sinceEpochMs] keeps audio recorded before the account was linked on the phone unless
+     * the user chose to include it.
+     */
     @Query(
         """
         SELECT s.* FROM audio_segment s
         JOIN segment_speech a ON a.segment_id = s.segment_id AND a.outcome = 'OK'
-        WHERE s.state = 'SEALED'
-            AND NOT EXISTS (SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id)
+        WHERE s.state = 'SEALED' AND s.start_occurred_at_epoch_ms >= :sinceEpochMs
+            AND NOT EXISTS (SELECT 1 FROM clip_plan p WHERE p.segment_id = s.segment_id)
         ORDER BY s.start_occurred_at_epoch_ms, s.sequence
         LIMIT :limit
         """,
     )
-    suspend fun unplanned(limit: Int): List<SegmentEntity>
+    suspend fun unplanned(sinceEpochMs: Long, limit: Int): List<SegmentEntity>
 
-    /** Idempotent: planning the same segment twice keeps the first plan (and its clip ids). */
+    @Query(
+        """
+        SELECT COUNT(*) FROM audio_segment s
+        JOIN segment_speech a ON a.segment_id = s.segment_id AND a.outcome = 'OK'
+        WHERE s.state = 'SEALED' AND s.start_occurred_at_epoch_ms >= :sinceEpochMs
+            AND NOT EXISTS (SELECT 1 FROM clip_plan p WHERE p.segment_id = s.segment_id)
+        """,
+    )
+    suspend fun unplannedCount(sinceEpochMs: Long): Int
+
+    /** Records a segment's plan and its clips together; planning twice keeps the first. */
+    @Transaction
+    suspend fun plan(plan: ClipPlanEntity, clips: List<ClipUploadEntity>) {
+        insertPlan(plan)
+        insertClips(clips)
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun plan(clips: List<ClipUploadEntity>)
+    suspend fun insertPlan(plan: ClipPlanEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertClips(clips: List<ClipUploadEntity>)
+
+    @Query("SELECT * FROM clip_plan WHERE segment_id = :segmentId")
+    suspend fun planFor(segmentId: String): ClipPlanEntity?
 
     @Query("SELECT * FROM clip_upload WHERE state = 'PENDING' ORDER BY segment_id, first_frame LIMIT :limit")
     suspend fun pending(limit: Int): List<ClipUploadEntity>
@@ -191,19 +217,22 @@ interface ClipDao {
     @Update
     suspend fun update(clip: ClipUploadEntity)
 
+    /** A new upload id for the same clip (the server gave up on the old one). */
+    @Query(
+        "UPDATE clip_upload SET clip_id = :newId, attempts = attempts + 1, " +
+            "last_error = 'server_failed' WHERE clip_id = :oldId",
+    )
+    suspend fun reissue(oldId: String, newId: String)
+
     @Query("SELECT * FROM clip_upload WHERE segment_id = :segmentId ORDER BY first_frame")
     suspend fun forSegment(segmentId: String): List<ClipUploadEntity>
 
-    /**
-     * Sealed, analyzed segments whose every clip the server has verified, or which had no
-     * speech to upload at all: ready for UploadCompleted.
-     */
+    /** Planned segments whose every clip the server has verified: ready for UploadCompleted. */
     @Query(
         """
         SELECT s.* FROM audio_segment s
-        JOIN segment_speech a ON a.segment_id = s.segment_id AND a.outcome = 'OK'
+        JOIN clip_plan p ON p.segment_id = s.segment_id AND p.outcome = 'PLANNED'
         WHERE s.state = 'SEALED'
-            AND (a.region_count = 0 OR EXISTS (SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id))
             AND NOT EXISTS (
                 SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id AND c.state != 'RECEIVED'
             )
@@ -213,4 +242,24 @@ interface ClipDao {
 
     @Query("SELECT COUNT(*) FROM clip_upload WHERE state = 'PENDING'")
     suspend fun pendingCount(): Int
+
+    /** Clips that gave up plus segments that couldn't be read: shown to the user. */
+    @Query(
+        "SELECT (SELECT COUNT(*) FROM clip_upload WHERE state = 'FAILED') + " +
+            "(SELECT COUNT(*) FROM clip_plan WHERE outcome = 'UNREADABLE')",
+    )
+    fun observeProblems(): Flow<Int>
+
+    /** The user asked to try again: failed clips restart, unreadable segments are re-planned. */
+    @Transaction
+    suspend fun retryProblems() {
+        resetFailedClips()
+        forgetUnreadablePlans()
+    }
+
+    @Query("UPDATE clip_upload SET state = 'PENDING', attempts = 0, last_error = NULL WHERE state = 'FAILED'")
+    suspend fun resetFailedClips()
+
+    @Query("DELETE FROM clip_plan WHERE outcome = 'UNREADABLE'")
+    suspend fun forgetUnreadablePlans()
 }

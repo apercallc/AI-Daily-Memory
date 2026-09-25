@@ -140,14 +140,43 @@ class HttpUploadApiTest {
     }
 
     @Test
-    fun `storage refusing a put is a retryable api error`() {
+    fun `storage refusing a put is a storage error, never an api (account) error`() {
         respond = { 403 to "SignatureDoesNotMatch" }
 
-        val error = assertFailsWith<ApiException> {
+        val error = assertFailsWith<StorageException> {
             api.put(UploadTarget("$base/put", emptyMap()), ByteArray(3))
         }
 
-        assertEquals("storage_rejected", error.code)
+        assertEquals(403, error.status)
+    }
+
+    @Test
+    fun `me returns the storage mode and revoke deletes the current token`() {
+        respond = { exchange ->
+            if (exchange.requestMethod == "GET") {
+                200 to JSONObject().put("storage_mode", "phone_only").toString()
+            } else {
+                204 to ""
+            }
+        }
+
+        assertEquals("phone_only", api.me(ServerLink(base, token)))
+        api.revokeCurrent(ServerLink(base, token))
+
+        assertEquals(listOf("GET /v1/me", "DELETE /v1/tokens/current"), requests.map { it.first })
+        assertEquals("Bearer $token", requests.last().second["authorization"])
+    }
+
+    @Test
+    fun `an upload target that isn't https is refused`() {
+        respond = {
+            200 to JSONObject()
+                .put("state", "pending")
+                .put("upload", JSONObject().put("url", "ftp://evil.example/x").put("headers", JSONObject()))
+                .toString()
+        }
+
+        assertFailsWith<IOException> { api.create(ServerLink(base, token), clip) }
     }
 
     @Test

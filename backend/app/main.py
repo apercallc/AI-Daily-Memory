@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.account import router as account_router
+from app.api.deliveries import router as deliveries_router
 from app.api.health import router as health_router
 from app.api.uploads import router as uploads_router
 from app.config import Settings, get_settings
@@ -63,6 +65,8 @@ def create_app(
     )
     application.include_router(health_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")
+    application.include_router(deliveries_router, prefix="/v1")
+    application.include_router(account_router, prefix="/v1")
     return application
 
 

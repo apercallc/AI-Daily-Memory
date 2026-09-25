@@ -191,13 +191,23 @@
     <string name="account_title">Account</string>
     <string name="account_explainer">Connect your account to turn speech into transcripts and your daily report. Only speech clips are sent, and only while charging on Wi-Fi.</string>
     <string name="account_rejected">Your account connection was signed out. Connect again with a new device token.</string>
+    <string name="account_unreadable">This phone can no longer read its saved connection. Connect again.</string>
     <string name="account_url">Server address</string>
     <string name="account_token">Device token</string>
     <string name="account_url_invalid">Enter an https:// address.</string>
     <string name="account_token_invalid">That doesn\'t look like a device token (it starts with adm_).</string>
+    <string name="account_token_rejected">The server didn\'t accept this token. Check it or ask for a new one.</string>
+    <string name="account_unreachable">Couldn\'t reach the server. Check the address and your connection.</string>
     <string name="account_save_failed">Couldn\'t store the token securely on this phone. Nothing was saved.</string>
+    <string name="account_include_backlog">Also transcribe speech already recorded on this phone</string>
     <string name="account_connect">Connect</string>
+    <string name="account_checking">Checking…</string>
     <string name="account_connected">Connected to %1$s</string>
     <string name="account_upload_rules">Speech clips upload while charging on Wi-Fi. Audio stays on this phone until its transcript is stored.</string>
+    <plurals name="account_upload_problems">
+        <item quantity="one">%1$d clip couldn\'t upload. Its audio stays on this phone.</item>
+        <item quantity="other">%1$d clips couldn\'t upload. Their audio stays on this phone.</item>
+    </plurals>
+    <string name="account_retry_uploads">Try again</string>
     <string name="account_disconnect">Disconnect</string>
 </resources>

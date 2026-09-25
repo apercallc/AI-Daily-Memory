@@ -7,13 +7,23 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import AudioUpload, Transcript, TranscriptSegment, User
+from app.db.models import (
+    AudioUpload,
+    DeviceKey,
+    SealedDelivery,
+    Transcript,
+    TranscriptSegment,
+    User,
+)
 from app.jobs import ClaimedJob
+from app.retention import MAX_HOLD
+from app.sealing import seal, transcript_payload
 from app.storage import ObjectMissingError, ObjectStore
 
 logger = logging.getLogger("app.transcription")
@@ -102,15 +112,24 @@ class TranscribeHandler:
                 raise JobError("upload_missing", retryable=False)
             key, state = upload.object_key, upload.state
             codec, rate, duration = upload.codec, upload.sample_rate_hz, upload.duration_ms
+            clip = (upload.segment_id, upload.offset_ms, upload.captured_at)
             mode = await session.scalar(select(User.storage_mode).where(User.id == job.user_id))
+            # Phone modes (ADR-0014): the transcript is sealed to the phone, never stored in
+            # the clear. Phase 2 will hold it until the day's report is built; until then there
+            # is nothing else to derive, so it is sealed as soon as it exists.
+            device_key = None
+            if mode != "full_cloud":
+                device_key = await session.scalar(
+                    select(DeviceKey)
+                    .where(DeviceKey.user_id == job.user_id, DeviceKey.revoked_at.is_(None))
+                    .order_by(DeviceKey.created_at.desc())
+                    .limit(1),
+                )
 
         if state not in ("received", "transcribed"):
             raise JobError(f"upload_{state}", retryable=False)
-        # Only full cloud memory keeps transcripts on the server today. The other modes need
-        # the transient hold + phone bundle (ADR-0014), which doesn't exist yet: refuse rather
-        # than silently keep what the user was promised we wouldn't.
-        if state != "transcribed" and mode != "full_cloud":
-            raise JobError("storage_mode_unsupported", retryable=False)
+        if state != "transcribed" and mode != "full_cloud" and device_key is None:
+            raise JobError("device_key_missing", retryable=False)
 
         if state != "transcribed":
             try:
@@ -126,7 +145,20 @@ class TranscribeHandler:
             except TimeoutError as e:
                 raise JobError("provider_timeout", retryable=True) from e
             validate(result, duration)
-            await self._persist(job.subject_id, job.user_id, result)
+            if device_key is None:
+                await self._persist(job.subject_id, job.user_id, result)
+            else:
+                payload = transcript_payload(
+                    upload_id=job.subject_id,
+                    segment_id=clip[0],
+                    offset_ms=clip[1],
+                    captured_at=clip[2],
+                    provider=self.provider.name,
+                    model=self.provider.model,
+                    result=result,
+                )
+                sealed = seal(device_key.public_key, job.subject_id, payload)
+                await self._persist_sealed(job.subject_id, job.user_id, device_key.id, sealed)
 
         # Only after the transcript is committed (ADR-0003): delete the temporary audio. A
         # failure here retries the job, which lands back on this idempotent step.
@@ -172,6 +204,28 @@ class TranscribeHandler:
                 for span in result.spans
             )
             upload.active_transcript_id = transcript.id
+            upload.state = "transcribed"
+
+    async def _persist_sealed(
+        self,
+        upload_id: uuid.UUID,
+        user_id: uuid.UUID,
+        device_key_id: uuid.UUID,
+        ciphertext: bytes,
+    ) -> None:
+        async with self.sessions() as session, session.begin():
+            upload = await session.get(AudioUpload, upload_id, with_for_update=True)
+            if upload is None or upload.state == "transcribed":
+                return
+            session.add(
+                SealedDelivery(
+                    user_id=user_id,
+                    upload_id=upload_id,
+                    device_key_id=device_key_id,
+                    ciphertext=ciphertext,
+                    expires_at=datetime.now(UTC) + MAX_HOLD,
+                ),
+            )
             upload.state = "transcribed"
 
     async def on_dead(self, job: ClaimedJob, error_code: str) -> None:

@@ -22,10 +22,11 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deliveries import active_key
 from app.auth import Principal, require
 from app.config import Settings
 from app.db import get_session
-from app.db.models import AudioUpload, UploadState
+from app.db.models import AudioUpload, UploadState, User
 from app.errors import ErrorResponse, error_response
 from app.jobs import enqueue
 from app.storage import ObjectStore, audio_key
@@ -186,13 +187,23 @@ async def _create(
     if earlier is not None:
         if not _same_clip(earlier, body):
             return _conflict(body.upload_id)
-        if earlier.state != "pending":
+        if earlier.state not in ("pending", "failed"):
             # Already on the server: report it under the id that has it.
             response.status_code = 200
             return UploadStatus(upload_id=earlier.id, state=_state(earlier))
-        # Never verified: replace it with the phone's current id.
+        # Never verified, or processing failed for good: replace it with the current id.
         await store.delete(earlier.object_key)
         await session.execute(delete(AudioUpload).where(AudioUpload.id == earlier.id))
+
+    # Phone storage modes need somewhere to seal the transcript (ADR-0014).
+    mode = await session.scalar(select(User.storage_mode).where(User.id == principal.user_id))
+    if mode != "full_cloud" and await active_key(session, principal.token_id) is None:
+        await session.rollback()
+        return error_response(
+            409,
+            "Register this phone's device key before uploading.",
+            code="device_key_required",
+        )
 
     # Serialize this user's creates so concurrent requests can't all pass the quota check.
     await session.execute(

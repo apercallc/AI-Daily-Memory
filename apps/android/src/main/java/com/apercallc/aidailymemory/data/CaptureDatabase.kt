@@ -23,6 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SegmentSpeechEntity::class,
         SpeechRegionEntity::class,
         ClipUploadEntity::class,
+        ClipPlanEntity::class,
     ],
     version = 4,
     exportSchema = true,
@@ -95,7 +96,7 @@ abstract class CaptureDatabase : RoomDatabase() {
             }
         }
     
-        /** Adds the clip upload queue (ADR-0015, Phase 1). New table only. */
+        /** Adds the clip upload queue and plan outcomes (ADR-0015, Phase 1). New tables only. */
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -113,6 +114,11 @@ abstract class CaptureDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_clip_upload_state` ON `clip_upload` (`state`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `clip_plan` (" +
+                        "`segment_id` TEXT NOT NULL, `outcome` TEXT NOT NULL, " +
+                        "`planned_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
                 )
             }
         }

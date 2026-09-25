@@ -95,6 +95,10 @@ class SessionMigrationTest {
                 cursor.moveToFirst()
                 assertEquals(0, cursor.getInt(0))
             }
+            db.query("SELECT COUNT(*) FROM clip_plan").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0, cursor.getInt(0))
+            }
         }
     }
 

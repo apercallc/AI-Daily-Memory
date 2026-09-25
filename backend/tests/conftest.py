@@ -101,11 +101,15 @@ def make_account(
     revoked: bool = False,
     expires_at: datetime | None = None,
     last_used_at: datetime | None = None,
+    storage_mode: str = "phone_only",
 ) -> Account:
     user_id = uuid.uuid4()
     token = new_token()
     with engine.begin() as connection:
-        connection.execute(text("INSERT INTO users (id) VALUES (:id)"), {"id": user_id})
+        connection.execute(
+            text("INSERT INTO users (id, storage_mode) VALUES (:id, :mode)"),
+            {"id": user_id, "mode": storage_mode},
+        )
         connection.execute(
             text(
                 "INSERT INTO access_tokens (id, user_id, token_hash, kind, scopes, name, "

@@ -12,64 +12,117 @@ import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.integration.android.AndroidKeysetManager
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.security.ProviderException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+
+/** Where the link stands, for the settings screen. */
+enum class LinkProblem {
+    NONE,
+
+    /** The server refused the token (revoked or expired): reconnect with a new one. */
+    REJECTED,
+
+    /** The token can't be decrypted any more (Keystore reset): reconnect. */
+    UNREADABLE,
+}
 
 /**
  * The account link: backend URL plus device token (AGENTS rule 4: a user-owned secret).
  *
  * The token is encrypted with a Keystore-wrapped AEAD key and bound to its purpose as
  * associated data; the file is excluded from backup and device transfer like all app data.
- * If the key is lost (Keystore reset), the link reads as absent and the user reconnects:
- * a secret that can't be decrypted is never guessed at or silently replaced.
+ * If the key is lost the link reads as absent and [problem] says so: a secret that can't be
+ * decrypted is never guessed at or silently replaced.
+ *
+ * Nothing touches the Keystore until [load] (call it off the main thread).
  */
 class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Aead) {
-    private val _link = MutableStateFlow(read())
+    private val _link = MutableStateFlow<ServerLink?>(null)
     val link: StateFlow<ServerLink?> = _link.asStateFlow()
 
-    private val _rejected = MutableStateFlow(prefs.getBoolean(KEY_REJECTED, false))
+    private val _problem = MutableStateFlow(LinkProblem.NONE)
+    val problem: StateFlow<LinkProblem> = _problem.asStateFlow()
 
-    /** The server refused the token (revoked or expired): the user must reconnect. */
-    val rejected: StateFlow<Boolean> = _rejected.asStateFlow()
+    @Volatile private var loaded = false
 
     val isLinked: Boolean get() = _link.value != null
 
-    fun save(link: ServerLink) {
+    /**
+     * Upload only audio captured at or after this time (epoch ms): audio recorded before the
+     * account was linked stays on the phone unless the user chose to include it. 0 = all.
+     */
+    val uploadSinceEpochMs: Long get() = prefs.getLong(KEY_SINCE, Long.MAX_VALUE)
+
+    /** [load] on the IO dispatcher. */
+    suspend fun ensureLoaded() = withContext(Dispatchers.IO) { load() }
+
+    /** Reads the stored link once. Blocking Keystore work: call from a background thread. */
+    @Synchronized
+    fun load() {
+        if (loaded) return
+        loaded = true
+        if (prefs.getBoolean(KEY_REJECTED, false)) _problem.value = LinkProblem.REJECTED
+        val url = prefs.getString(KEY_URL, null) ?: return
+        val sealed = prefs.getString(KEY_TOKEN, null) ?: return
+        try {
+            val token = aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), AD).toString(Charsets.UTF_8)
+            _link.value = ServerLink(url, token)
+        } catch (e: GeneralSecurityException) {
+            logFailure(TAG, "link_unreadable", e, warning = true)
+            _problem.value = LinkProblem.UNREADABLE
+        } catch (e: IllegalArgumentException) {
+            logFailure(TAG, "link_invalid", e, warning = true)
+            _problem.value = LinkProblem.UNREADABLE
+        }
+    }
+
+    /**
+     * Stores the link. [includeBacklog] = upload speech recorded before now as well.
+     * @throws GeneralSecurityException if the token can't be sealed (nothing is stored).
+     */
+    @Synchronized
+    fun save(link: ServerLink, linkedAtEpochMs: Long, includeBacklog: Boolean) {
         val sealed = aead().encrypt(link.token.toByteArray(Charsets.UTF_8), AD)
         prefs.edit {
             putString(KEY_URL, link.baseUrl)
             putString(KEY_TOKEN, Base64.encodeToString(sealed, Base64.NO_WRAP))
+            putLong(KEY_SINCE, if (includeBacklog) 0 else linkedAtEpochMs)
             putBoolean(KEY_REJECTED, false)
         }
+        loaded = true
         _link.value = link
-        _rejected.value = false
+        _problem.value = LinkProblem.NONE
     }
 
-    /** Forgets the token; [rejected] records whether the server forced it. */
-    fun clear(rejected: Boolean = false) {
+    /** Forgets the token (Disconnect). */
+    @Synchronized
+    fun clear() = forget(LinkProblem.NONE)
+
+    /**
+     * The server refused [rejected]. Clears only if it is still the stored link, so a run that
+     * started with an old token can't wipe a token the user entered since.
+     */
+    @Synchronized
+    fun clearIfCurrent(rejected: ServerLink): Boolean {
+        if (_link.value != rejected) return false
+        forget(LinkProblem.REJECTED)
+        return true
+    }
+
+    private fun forget(problem: LinkProblem) {
         prefs.edit {
             remove(KEY_URL)
             remove(KEY_TOKEN)
-            putBoolean(KEY_REJECTED, rejected)
+            remove(KEY_SINCE)
+            putBoolean(KEY_REJECTED, problem == LinkProblem.REJECTED)
         }
+        loaded = true
         _link.value = null
-        _rejected.value = rejected
-    }
-
-    private fun read(): ServerLink? {
-        val url = prefs.getString(KEY_URL, null) ?: return null
-        val sealed = prefs.getString(KEY_TOKEN, null) ?: return null
-        return try {
-            val token = aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), AD).toString(Charsets.UTF_8)
-            ServerLink(url, token)
-        } catch (e: GeneralSecurityException) {
-            logFailure(TAG, "link_unreadable", e, warning = true)
-            null
-        } catch (e: IllegalArgumentException) {
-            logFailure(TAG, "link_invalid", e, warning = true)
-            null
-        }
+        _problem.value = problem
     }
 
     companion object {
@@ -77,13 +130,18 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         private const val TAG = "LinkStore"
         private const val KEY_URL = "base_url"
         private const val KEY_TOKEN = "token_sealed"
+        private const val KEY_SINCE = "upload_since_epoch_ms"
         private const val KEY_REJECTED = "rejected"
         private val AD = "aidm:server-token:v1".toByteArray(Charsets.UTF_8)
         private const val KEYSET = "link_keyset"
         private const val KEYSET_PREFS = "link_keys"
         private const val MASTER_KEY_URI = "android-keystore://aidm_link_master_key"
 
-        /** Keystore-backed AEAD; refuses Tink's cleartext-keyset fallback. */
+        /**
+         * Keystore-backed AEAD; refuses Tink's cleartext-keyset fallback. Keystore failures
+         * that surface as the unchecked ProviderException are converted, so callers only
+         * handle GeneralSecurityException.
+         */
         fun keystoreAead(context: Context): Aead {
             try {
                 AeadConfig.register()
@@ -93,10 +151,30 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
                     .withMasterKeyUri(MASTER_KEY_URI)
                     .build()
                 if (!manager.isUsingKeystore) throw GeneralSecurityException("Android Keystore unavailable")
-                return manager.keysetHandle.getPrimitive(RegistryConfiguration.get(), Aead::class.java)
+                val aead = manager.keysetHandle.getPrimitive(RegistryConfiguration.get(), Aead::class.java)
+                return KeystoreGuard(aead)
             } catch (e: IOException) {
                 throw GeneralSecurityException("keyset unreadable", e)
+            } catch (e: ProviderException) {
+                throw GeneralSecurityException("keystore failure", e)
             }
         }
+    }
+}
+
+/** Converts ProviderException from Keystore-backed operations into a checked failure. */
+internal class KeystoreGuard(private val inner: Aead) : Aead {
+    override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray = guard {
+        inner.encrypt(plaintext, associatedData)
+    }
+
+    override fun decrypt(ciphertext: ByteArray, associatedData: ByteArray): ByteArray = guard {
+        inner.decrypt(ciphertext, associatedData)
+    }
+
+    private inline fun <T> guard(block: () -> T): T = try {
+        block()
+    } catch (e: ProviderException) {
+        throw GeneralSecurityException("keystore failure", e)
     }
 }

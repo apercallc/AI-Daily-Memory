@@ -23,6 +23,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -37,7 +38,7 @@ NAMING = {
 }
 
 StorageMode = Literal["phone_only", "reports_cloud", "full_cloud"]
-UploadState = Literal["pending", "received", "transcribed", "failed"]
+UploadState = Literal["pending", "received", "transcribed", "delivered", "failed"]
 STORAGE_MODES: tuple[str, ...] = get_args(StorageMode)
 UPLOAD_STATES: tuple[str, ...] = get_args(UploadState)
 JOB_STATES = ("queued", "running", "succeeded", "dead")
@@ -192,3 +193,44 @@ class TranscriptSegment(Base):
     text: Mapped[str] = mapped_column(Text)
     speaker: Mapped[str | None] = mapped_column(String(32))
     confidence: Mapped[float | None]
+
+
+class DeviceKey(Base):
+    """A phone's HPKE public key (X25519, ADR-0014). Transcripts for users who keep their
+    memory on the phone are sealed to it, so the server can't read what it holds."""
+
+    __tablename__ = "device_keys"
+    __table_args__ = (
+        Index(
+            "uq_device_keys_one_active_per_token",
+            "token_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    token_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("access_tokens.id", ondelete="CASCADE"))
+    public_key: Mapped[bytes] = mapped_column(LargeBinary(32))
+    created_at: Mapped[datetime] = _created()
+    revoked_at: Mapped[datetime | None]
+
+
+class SealedDelivery(Base):
+    """A transcript sealed to a device key, waiting for the phone to fetch and acknowledge it.
+    Deleted on acknowledgement or after the 7-day hold (ADR-0014)."""
+
+    __tablename__ = "sealed_deliveries"
+    __table_args__ = (UniqueConstraint("upload_id", "device_key_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    upload_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("audio_uploads.id", ondelete="CASCADE"))
+    device_key_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("device_keys.id", ondelete="CASCADE"),
+        index=True,
+    )
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = _created()
+    expires_at: Mapped[datetime]

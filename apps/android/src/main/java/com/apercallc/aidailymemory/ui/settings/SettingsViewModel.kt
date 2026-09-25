@@ -10,18 +10,20 @@ import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
-import com.apercallc.aidailymemory.net.LinkInput
-import java.security.GeneralSecurityException
+import com.apercallc.aidailymemory.net.AccountLinker
+import com.apercallc.aidailymemory.net.ConnectError
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The next thing the schedule will do, for the "Next: …" line. */
 data class NextChange(val action: RhythmAction, val at: ZonedDateTime, val quietLabel: String?)
@@ -53,39 +55,57 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateRetention(retention: AudioRetention) = settings.setRetention(retention)
 
-    private val saveFailed = MutableStateFlow(false)
+    private val linker = AccountLinker(
+        links = container.links,
+        api = container.accountApi,
+        onLinked = container.uploadScheduler::schedule,
+        onUnlinked = container.uploadScheduler::cancel,
+    )
+    private val connecting = MutableStateFlow(false)
+    private val connectError = MutableStateFlow<ConnectError?>(null)
 
     val account: StateFlow<AccountUi> = combine(
         container.links.link,
-        container.links.rejected,
-        saveFailed,
-    ) { link, rejected, failed ->
-        AccountUi(host = link?.let { hostOf(it.baseUrl) }, rejected = rejected, saveFailed = failed)
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-        AccountUi(host = null, rejected = false),
-    )
+        container.links.problem,
+        connecting,
+        connectError,
+        container.database.clips().observeProblems(),
+    ) { link, problem, busy, error, problems ->
+        AccountUi(
+            host = link?.let { hostOf(it.baseUrl) },
+            problem = problem,
+            connecting = busy,
+            error = error,
+            uploadProblems = problems,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 
-    /** Validates, stores the token encrypted, and schedules uploads. Returns what to show. */
-    fun connect(url: String, token: String): LinkInput {
-        val input = LinkInput.parse(url, token)
-        if (input !is LinkInput.Valid) return input
-        saveFailed.value = try {
-            container.links.save(input.link)
-            container.uploadScheduler.schedule()
-            false
-        } catch (e: GeneralSecurityException) {
-            // Keystore unusable: nothing is stored in the clear; tell the user.
-            logFailure(TAG, "account_link_save_failed", e)
-            true
+    /** Verifies the token with the server, then stores it sealed. Off the main thread. */
+    fun connect(url: String, token: String, includeBacklog: Boolean) {
+        if (connecting.value) return
+        connecting.value = true
+        connectError.value = null
+        viewModelScope.launch {
+            connectError.value = withContext(Dispatchers.IO) { linker.connect(url, token, includeBacklog) }
+            connecting.value = false
         }
-        return input
     }
 
+    fun clearConnectError() {
+        connectError.value = null
+    }
+
+    /** Outlives the screen: the server-side revoke must not be cancelled by leaving it. */
     fun disconnect() {
-        container.links.clear()
-        container.uploadScheduler.cancel()
+        container.appScope.launch(Dispatchers.IO) { linker.disconnect() }
+    }
+
+    /** Failed clips start over; unreadable segments are read again. */
+    fun retryUploads() {
+        container.appScope.launch(Dispatchers.IO) {
+            container.database.clips().retryProblems()
+            container.uploadScheduler.schedule()
+        }
     }
 
     companion object {

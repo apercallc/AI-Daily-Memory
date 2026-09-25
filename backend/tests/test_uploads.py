@@ -32,7 +32,8 @@ def client(db: Engine, database_url: str, store: FakeObjectStore) -> Iterator[Te
 
 @pytest.fixture
 def account(db: Engine) -> Account:
-    return make_account(db)
+    # Protocol tests: full cloud needs no device key (phone modes are in test_deliveries).
+    return make_account(db, storage_mode="full_cloud")
 
 
 def clip(**overrides: Any) -> dict[str, Any]:
@@ -100,7 +101,7 @@ def test_another_users_upload_id_is_indistinguishable_from_a_conflict(
 ) -> None:
     body = clip()
     client.post("/v1/uploads", json=body, headers=account.headers)
-    other = make_account(db)
+    other = make_account(db, storage_mode="full_cloud")
 
     response = client.post("/v1/uploads", json=body, headers=other.headers)
 
@@ -281,7 +282,7 @@ def test_uploads_are_invisible_to_other_users(
 ) -> None:
     body = clip()
     client.post("/v1/uploads", json=body, headers=account.headers)
-    other = make_account(db)
+    other = make_account(db, storage_mode="full_cloud")
 
     assert client.get(f"/v1/uploads/{body['upload_id']}", headers=other.headers).status_code == 404
     completed = client.post(f"/v1/uploads/{body['upload_id']}/complete", headers=other.headers)
@@ -313,7 +314,11 @@ def test_daily_quota_is_enforced_per_user(client: TestClient, account: Account, 
         assert created.status_code == 201
 
     over = client.post("/v1/uploads", json=clip(), headers=account.headers)
-    fresh_user = client.post("/v1/uploads", json=clip(), headers=make_account(db).headers)
+    fresh_user = client.post(
+        "/v1/uploads",
+        json=clip(),
+        headers=make_account(db, storage_mode="full_cloud").headers,
+    )
 
     assert over.status_code == 429
     assert over.json()["error"]["code"] == "quota_exceeded"

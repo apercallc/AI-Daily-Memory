@@ -21,8 +21,14 @@ data class ServerLink(val baseUrl: String, val token: String) {
     override fun toString(): String = "ServerLink(baseUrl=$baseUrl, token=<redacted>)"
 }
 
-/** The server said no, with its error envelope's code (app/errors.py). */
+/** The backend said no, with its error envelope's code (app/errors.py). */
 class ApiException(val status: Int, val code: String) : IOException("api_error status=$status code=$code")
+
+/**
+ * Object storage refused a presigned PUT (expired URL, clock skew, signature). Never an
+ * account problem: the backend is the only party that can reject the device token.
+ */
+class StorageException(val status: Int) : IOException("storage_rejected status=$status")
 
 data class ClipRequest(
     val uploadId: String,
@@ -43,6 +49,15 @@ data class UploadTarget(val url: String, val headers: Map<String, String>)
 
 data class UploadState(val state: String, val target: UploadTarget?)
 
+/** The calling device's account (backend/app/api/account.py). */
+interface AccountApi {
+    /** Verifies the token; returns the account's storage mode (ADR-0014). */
+    fun me(link: ServerLink): String
+
+    /** Revokes the calling token on the server (Disconnect). */
+    fun revokeCurrent(link: ServerLink)
+}
+
 /** The one seam to the backend upload protocol (docs: backend/app/api/uploads.py). */
 interface UploadApi {
     fun create(link: ServerLink, clip: ClipRequest): UploadState
@@ -59,7 +74,14 @@ interface UploadApi {
 class HttpUploadApi(
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 60_000,
-) : UploadApi {
+) : UploadApi, AccountApi {
+    override fun me(link: ServerLink): String =
+        request(link, "GET", "/v1/me", null).optString("storage_mode").ifEmpty { throw IOException("missing_mode") }
+
+    override fun revokeCurrent(link: ServerLink) {
+        request(link, "DELETE", "/v1/tokens/current", null)
+    }
+
     override fun create(link: ServerLink, clip: ClipRequest): UploadState {
         val body = JSONObject()
             .put("upload_id", clip.uploadId)
@@ -90,7 +112,7 @@ class HttpUploadApi(
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use { it.write(bytes) }
             val status = connection.responseCode
-            if (status !in 200..299) throw ApiException(status, "storage_rejected")
+            if (status !in 200..299) throw StorageException(status)
         } finally {
             connection.disconnect()
         }
@@ -112,7 +134,7 @@ class HttpUploadApi(
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
             val json = try {
-                if (text.isEmpty()) JSONObject() else JSONObject(text)
+                if (text.isBlank()) JSONObject() else JSONObject(text)
             } catch (e: JSONException) {
                 throw IOException("unparseable_response status=$status", e)
             }
@@ -138,10 +160,15 @@ class HttpUploadApi(
     private fun parseState(json: JSONObject): UploadState {
         val state = json.optString("state").ifEmpty { throw IOException("missing_state") }
         val target = json.optJSONObject("upload")?.let { upload ->
+            val url = upload.optString("url")
+            // Presigned URLs must be HTTPS too (loopback only in tests).
+            if (!url.startsWith("https://") && !url.startsWith("http://127.0.0.1")) {
+                throw IOException("unsafe_upload_url")
+            }
             val headers = upload.optJSONObject("headers")
             UploadTarget(
-                url = upload.getString("url"),
-                headers = headers?.keys()?.asSequence()?.associateWith { headers.getString(it) }.orEmpty(),
+                url = url,
+                headers = headers?.keys()?.asSequence()?.associateWith { headers.optString(it) }.orEmpty(),
             )
         }
         return UploadState(state, target)

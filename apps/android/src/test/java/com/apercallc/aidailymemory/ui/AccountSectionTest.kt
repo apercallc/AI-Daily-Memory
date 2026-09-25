@@ -1,11 +1,13 @@
 package com.apercallc.aidailymemory.ui
 
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.apercallc.aidailymemory.net.LinkInput
+import com.apercallc.aidailymemory.net.ConnectError
+import com.apercallc.aidailymemory.net.LinkProblem
 import com.apercallc.aidailymemory.ui.settings.AccountSection
 import com.apercallc.aidailymemory.ui.settings.AccountUi
 import com.apercallc.aidailymemory.ui.settings.hostOf
@@ -24,88 +26,93 @@ class AccountSectionTest {
 
     private val token = "adm_" + "Q".repeat(43)
 
-    @Test
-    fun `bad input is explained in place and nothing connects`() {
-        val attempts = mutableListOf<Pair<String, String>>()
-        compose.setContent {
-            AiDailyMemoryTheme {
-                AccountSection(
-                    account = AccountUi(host = null, rejected = false),
-                    onConnect = { url, token -> attempts += url to token; LinkInput.parse(url, token) },
-                    onDisconnect = {},
-                )
-            }
-        }
-
-        compose.onNodeWithText("Server address").performTextClearance()
-        compose.onNodeWithText("Server address").performTextInput("https://api.example")
-        compose.onNodeWithText("Device token").performTextInput("not-a-token")
-        compose.onNodeWithText("Connect").performClick()
-        compose.onNodeWithText("That doesn't look like a device token (it starts with adm_).").assertExists()
-
-        compose.onNodeWithText("Server address").performTextClearance()
-        compose.onNodeWithText("Server address").performTextInput("http://plain.example")
-        compose.onNodeWithText("Connect").performClick()
-        compose.onNodeWithText("Enter an https:// address.").assertExists()
-        assertEquals(2, attempts.size)
+    private fun show(
+        account: AccountUi,
+        onConnect: (String, String, Boolean) -> Unit = { _, _, _ -> },
+        onEdit: () -> Unit = {},
+        onDisconnect: () -> Unit = {},
+        onRetry: () -> Unit = {},
+    ) = compose.setContent {
+        AiDailyMemoryTheme { AccountSection(account, onConnect, onEdit, onDisconnect, onRetry) }
     }
 
     @Test
-    fun `a valid token connects and is cleared from the field`() {
-        var connected: LinkInput? = null
-        compose.setContent {
-            AiDailyMemoryTheme {
-                AccountSection(
-                    account = AccountUi(host = null, rejected = false),
-                    onConnect = { url, token -> LinkInput.parse(url, token).also { connected = it } },
-                    onDisconnect = {},
-                )
-            }
-        }
+    fun `connect sends the typed values and the backlog choice, off by default`() {
+        val sent = mutableListOf<Triple<String, String, Boolean>>()
+        show(AccountUi(), onConnect = { u, t, b -> sent += Triple(u, t, b) })
 
         compose.onNodeWithText("Server address").performTextClearance()
         compose.onNodeWithText("Server address").performTextInput("https://api.example")
         compose.onNodeWithText("Device token").performTextInput(token)
         compose.onNodeWithText("Connect").performClick()
+        compose.onNodeWithText("Also transcribe speech already recorded on this phone").performClick()
+        compose.onNodeWithText("Connect").performClick()
 
-        assertTrue(connected is LinkInput.Valid)
+        assertEquals(
+            listOf(
+                Triple("https://api.example", token, false),
+                Triple("https://api.example", token, true),
+            ),
+            sent,
+        )
     }
 
     @Test
-    fun `a connected account shows only the host and can disconnect`() {
+    fun `editing clears a shown error`() {
+        var edits = 0
+        show(AccountUi(error = ConnectError.INVALID_URL), onEdit = { edits++ })
+
+        compose.onNodeWithText("Enter an https:// address.").assertExists()
+        compose.onNodeWithText("Device token").performTextInput("a")
+
+        assertEquals(1, edits)
+    }
+
+    @Test
+    fun `each connect problem is explained`() {
+        show(AccountUi(error = ConnectError.REJECTED))
+        compose.onNodeWithText("The server didn't accept this token. Check it or ask for a new one.")
+            .assertExists()
+    }
+
+    @Test
+    fun `unreachable and save failures are explained`() {
+        show(AccountUi(error = ConnectError.UNREACHABLE))
+        compose.onNodeWithText("Couldn't reach the server. Check the address and your connection.")
+            .assertExists()
+    }
+
+    @Test
+    fun `while checking, connect can't be pressed twice`() {
+        show(AccountUi(connecting = true))
+
+        compose.onNodeWithText("Checking…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a signed-out or unreadable link asks the user to reconnect`() {
+        show(AccountUi(problem = LinkProblem.UNREADABLE))
+
+        compose.onNodeWithText("This phone can no longer read its saved connection. Connect again.")
+            .assertExists()
+    }
+
+    @Test
+    fun `a connected account shows the host, upload problems with retry, and disconnect`() {
+        var retried = false
         var disconnected = false
-        compose.setContent {
-            AiDailyMemoryTheme {
-                AccountSection(
-                    account = AccountUi(host = hostOf("https://api.example/v1"), rejected = false),
-                    onConnect = { _, _ -> LinkInput.InvalidUrl },
-                    onDisconnect = { disconnected = true },
-                )
-            }
-        }
+        show(
+            AccountUi(host = hostOf("https://api.example/v1"), uploadProblems = 2),
+            onDisconnect = { disconnected = true },
+            onRetry = { retried = true },
+        )
 
         compose.onNodeWithText("Connected to api.example").assertExists()
+        compose.onNodeWithText("2 clips couldn't upload. Their audio stays on this phone.").assertExists()
+        compose.onNodeWithText("Try again").performClick()
         compose.onNodeWithText("Disconnect").performClick()
+        assertTrue(retried)
         assertTrue(disconnected)
-    }
-
-    @Test
-    fun `a rejected token asks the user to reconnect, and a failed save says nothing was stored`() {
-        compose.setContent {
-            AiDailyMemoryTheme {
-                AccountSection(
-                    account = AccountUi(host = null, rejected = true, saveFailed = true),
-                    onConnect = { _, _ -> LinkInput.InvalidUrl },
-                    onDisconnect = {},
-                )
-            }
-        }
-
-        compose.onNodeWithText(
-            "Your account connection was signed out. Connect again with a new device token.",
-        ).assertExists()
-        compose.onNodeWithText("Couldn't store the token securely on this phone. Nothing was saved.")
-            .assertExists()
     }
 
     @Test

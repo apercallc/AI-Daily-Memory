@@ -170,6 +170,18 @@ data class SpeechRegionEntity(
     @ColumnInfo(name = "low_confidence") val lowConfidence: Boolean,
 )
 
+/**
+ * Whether a segment's clips have been planned, and how that went. One row per segment, so
+ * segments that can't be planned leave the queue but stay visible (never silently stuck).
+ */
+@Entity(tableName = "clip_plan")
+data class ClipPlanEntity(
+    @PrimaryKey @ColumnInfo(name = "segment_id") val segmentId: String,
+    /** PLANNED, NO_SPEECH, UNREADABLE (retryable by the user), or EMPTY. */
+    val outcome: String,
+    @ColumnInfo(name = "planned_at_epoch_ms") val plannedAtEpochMs: Long,
+)
+
 /** Totals across analyzed segments, for the Gate B cost model (docs/performance). */
 data class SpeechTotals(val analyzedMs: Long, val speechMs: Long, val paddedMs: Long)
 

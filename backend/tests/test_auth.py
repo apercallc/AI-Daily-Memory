@@ -94,12 +94,13 @@ async def test_issue_and_revoke_through_the_service(db: Engine, database_url: st
     try:
         async with database.sessions() as session:
             await session.execute(text("INSERT INTO users (id) VALUES (:id)"), {"id": user_id})
-            token = await issue_token(session, user_id, kind="api", name="my assistant")
+            issued = await issue_token(session, user_id, kind="api", name="my assistant")
             await session.commit()
             token_id = await session.scalar(
                 text("SELECT id FROM access_tokens WHERE token_hash = :h"),
-                {"h": hash_token(token)},
+                {"h": hash_token(issued.token)},
             )
+            assert token_id == issued.token_id
             scopes = await session.scalar(text("SELECT scopes FROM access_tokens"))
             assert scopes == ["memory:read"]  # API keys start read-only
 
@@ -112,3 +113,25 @@ async def test_issue_and_revoke_through_the_service(db: Engine, database_url: st
             await session.commit()
     finally:
         await database.dispose()
+
+
+def test_me_reports_the_storage_mode_so_connect_can_verify_a_token(
+    client: TestClient,
+    db: Engine,
+) -> None:
+    account = make_account(db, storage_mode="reports_cloud")
+
+    response = client.get("/v1/me", headers=account.headers)
+
+    assert response.json() == {
+        "storage_mode": "reports_cloud",
+        "scopes": ["memory:read", "upload:write"],
+    }
+    assert client.get("/v1/me").status_code == 401
+
+
+def test_disconnect_revokes_the_token_on_the_server(client: TestClient, db: Engine) -> None:
+    account = make_account(db)
+
+    assert client.delete("/v1/tokens/current", headers=account.headers).status_code == 204
+    assert client.get("/v1/me", headers=account.headers).status_code == 401

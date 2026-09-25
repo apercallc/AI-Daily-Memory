@@ -6,7 +6,9 @@ import android.util.Log
 import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
 import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
 import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
+import com.apercallc.aidailymemory.net.AccountApi
 import com.apercallc.aidailymemory.net.HttpUploadApi
+import com.apercallc.aidailymemory.net.ServerLink
 import com.apercallc.aidailymemory.net.LinkStore
 import com.apercallc.aidailymemory.upload.ClipUploader
 import com.apercallc.aidailymemory.upload.UploadScheduler
@@ -261,6 +263,9 @@ class AppContainer(context: Context) {
     }
     private val linkAead by lazy { LinkStore.keystoreAead(app) }
 
+    private val backend by lazy { HttpUploadApi() }
+    val accountApi: AccountApi get() = backend
+
     val uploadScheduler = UploadScheduler(app)
 
     /** Phase 1 uploads (ADR-0015); runs only while linked, charging, on unmetered networks. */
@@ -270,8 +275,9 @@ class AppContainer(context: Context) {
             segments = database.segments(),
             clips = database.clips(),
             speech = database.speech(),
-            api = HttpUploadApi(),
+            api = backend,
             link = { links.link.value },
+            uploadSinceEpochMs = { links.uploadSinceEpochMs },
             ids = ids,
         )
     }
@@ -281,11 +287,12 @@ class AppContainer(context: Context) {
         if (links.isLinked) uploadScheduler.schedule()
     }
 
-    /** The server refused the token: stop trying and ask the user to reconnect. */
-    fun onLinkRejected() {
-        Log.w(TAG, "account_link_rejected")
-        links.clear(rejected = true)
-        uploadScheduler.cancel()
+    /** The server refused [link]: stop and ask the user to reconnect (if it is still current). */
+    fun onLinkRejected(link: ServerLink) {
+        if (links.clearIfCurrent(link)) {
+            Log.w(TAG, "account_link_rejected")
+            uploadScheduler.cancel()
+        }
     }
 
     /** One presenter output for the app screen and the notification. */
@@ -308,6 +315,8 @@ class AppContainer(context: Context) {
     /** Restores the journal and makes any open session visible without a running service. */
     fun restoreOnProcessStart() {
         controller.restore()
+        // Keystore work off the main thread; the settings screen shows it once loaded.
+        appScope.launch { links.ensureLoaded() }
         appScope.launch { sessions.observe(controller.state) }
         // Retention (ADR-0013) and speech-analysis scheduling (ADR-0015) run at start and
         // whenever a session completes.

@@ -39,6 +39,7 @@ import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.settings.NextChange
+import com.apercallc.aidailymemory.ui.settings.AccountActions
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -118,8 +119,14 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
             onRhythmChange = viewModel::updateRhythm,
             onRetentionChange = viewModel::updateRetention,
             account = account,
-            onConnect = viewModel::connect,
-            onDisconnect = viewModel::disconnect,
+            accountActions = remember(viewModel) {
+                AccountActions(
+                    connect = viewModel::connect,
+                    edit = viewModel::clearConnectError,
+                    disconnect = viewModel::disconnect,
+                    retryUploads = viewModel::retryUploads,
+                )
+            },
             modifier = modifier,
         )
     }

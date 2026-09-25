@@ -48,7 +48,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.apercallc.aidailymemory.R
-import com.apercallc.aidailymemory.net.LinkInput
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.schedule.QuietWindow
@@ -60,6 +59,14 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import java.time.format.TextStyle
 import java.util.UUID
+
+/** Events from the account section, grouped so the screen signature stays readable. */
+data class AccountActions(
+    val connect: (url: String, token: String, includeBacklog: Boolean) -> Unit = { _, _, _ -> },
+    val edit: () -> Unit = {},
+    val disconnect: () -> Unit = {},
+    val retryUploads: () -> Unit = {},
+)
 
 /** Stateless: renders the rhythm and retention, reports edits as whole new values. */
 @Composable
@@ -73,8 +80,7 @@ fun RhythmSettingsScreen(
     onRetentionChange: (AudioRetention) -> Unit,
     modifier: Modifier = Modifier,
     account: AccountUi? = null,
-    onConnect: (String, String) -> LinkInput = { _, _ -> LinkInput.InvalidUrl },
-    onDisconnect: () -> Unit = {},
+    accountActions: AccountActions = AccountActions(),
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(
@@ -91,7 +97,13 @@ fun RhythmSettingsScreen(
         AudioSection(retention, bytesPerHour, onRetentionChange)
         account?.let {
             HorizontalDivider()
-            AccountSection(it, onConnect, onDisconnect)
+            AccountSection(
+                account = it,
+                onConnect = accountActions.connect,
+                onEdit = accountActions.edit,
+                onDisconnect = accountActions.disconnect,
+                onRetryUploads = accountActions.retryUploads,
+            )
         }
     }
 }

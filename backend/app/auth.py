@@ -31,6 +31,14 @@ _BEARER: Final = "bearer "
 
 
 @dataclass(frozen=True)
+class IssuedToken:
+    """The plaintext is shown once; the id is how it is listed and revoked later."""
+
+    token_id: uuid.UUID
+    token: str
+
+
+@dataclass(frozen=True)
 class Principal:
     user_id: uuid.UUID
     token_id: uuid.UUID
@@ -53,26 +61,26 @@ async def issue_token(
     name: str,
     scopes: tuple[Scope, ...] | None = None,
     expires_at: datetime | None = None,
-) -> str:
-    """Stores the hash and returns the plaintext token. The caller commits."""
+) -> IssuedToken:
+    """Stores the hash and returns the plaintext token with its id. The caller commits."""
     if scopes is None:
         scopes = DEVICE_SCOPES if kind == "device" else API_KEY_SCOPES
     elif not scopes:
         # An explicit empty tuple must never fall back to the (wider) defaults.
         raise ValueError("a token needs at least one scope")
     token = new_token()
-    session.add(
-        AccessToken(
-            user_id=user_id,
-            token_hash=hash_token(token),
-            kind=kind,
-            scopes=list(scopes),
-            name=name,
-            expires_at=expires_at,
-        ),
+    row = AccessToken(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        token_hash=hash_token(token),
+        kind=kind,
+        scopes=list(scopes),
+        name=name,
+        expires_at=expires_at,
     )
+    session.add(row)
     await session.flush()
-    return token
+    return IssuedToken(row.id, token)
 
 
 def _unauthorized() -> HTTPException:
