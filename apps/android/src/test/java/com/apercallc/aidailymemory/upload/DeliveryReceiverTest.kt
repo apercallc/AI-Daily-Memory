@@ -63,9 +63,10 @@ class DeliveryReceiverTest {
     private val prefs = context.getSharedPreferences("delivery-test", Context.MODE_PRIVATE)
     private var link: ServerLink? = ServerLink("https://api.example", "adm_" + "d".repeat(40))
     private val server = FakeServer()
+    private var transcriptKey: () -> com.google.crypto.tink.Aead = { aeadKey }
     private val cipher = TranscriptCipher {
         com.google.crypto.tink.aead.AeadConfig.register()
-        aeadKey
+        transcriptKey()
     }
     private val aeadKey by lazy {
         com.google.crypto.tink.aead.AeadConfig.register()
@@ -209,6 +210,23 @@ class DeliveryReceiverTest {
         receiver().run()
 
         assertEquals(2, server.registered.size)
+    }
+
+    @Test
+    fun `an unavailable transcript key stops the run without acknowledging anything`() = runTest {
+        val (segment, ids) = uploadedSegment(clips = 1)
+        deliver(ids[0], payload(ids[0], segment.segmentId))
+        transcriptKey = { throw java.security.GeneralSecurityException("keystore down") }
+
+        val run = receiver().run()
+
+        assertEquals(UploadStop.SERVER, run.stoppedBy)
+        assertEquals(0, run.stored)
+        assertTrue(server.acked.isEmpty())
+        assertEquals(1, server.waiting.size)
+
+        transcriptKey = { aeadKey }
+        assertEquals(1, receiver().run().stored)
     }
 
     @Test

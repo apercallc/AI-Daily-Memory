@@ -116,6 +116,10 @@ class DeliveryReceiver(
         } catch (e: IOException) {
             Log.w(TAG, "delivery_network_error")
             return@withContext DeliveryRun(stored, unreadable, UploadStop.OFFLINE)
+        } catch (e: GeneralSecurityException) {
+            // Device or transcript key unavailable: nothing unstored is acknowledged; retry later.
+            logFailure(TAG, "delivery_keys_unavailable", e)
+            return@withContext DeliveryRun(stored, unreadable, UploadStop.SERVER)
         } finally {
             acknowledgeSegments()
         }
