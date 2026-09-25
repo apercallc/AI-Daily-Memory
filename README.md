@@ -12,6 +12,10 @@ The repository is now scaffolded for Android-first development.
 
 See [TODO.md](TODO.md) for the executable delivery plan and [docs/quality/QUALITY_GATES.md](docs/quality/QUALITY_GATES.md) for release-quality standards.
 
+Architecture companions: [edge-case catalog](docs/architecture/EDGE_CASES.md),
+[performance & scale plan](docs/architecture/PERFORMANCE_AND_SCALE.md), and the
+[architecture review](docs/architecture/REVIEW-2026-09.md).
+
 ### Prerequisites
 
 - JDK 17

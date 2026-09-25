@@ -64,15 +64,15 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [x] Material 3 Compose shell
 - [x] Edge-to-edge app shell
 - [x] Responsive status / action layout scaffold
-- [ ] Define semantic color tokens for recording, paused, warning, error, success
+- [x] Define semantic color tokens for recording, paused, warning, error (fixed, not dynamic: `StatusColors`)
 - [ ] Add typography scale and spacing tokens
-- [ ] Support light/dark mode
-- [ ] Support dynamic color where appropriate
+- [x] Support light/dark mode
+- [x] Support dynamic color where appropriate (chrome only; capture state uses fixed tokens)
 - [ ] Meet WCAG/Android accessibility expectations
 - [ ] 48dp minimum touch targets
-- [ ] Content descriptions for non-text controls
+- [ ] Content descriptions for non-text controls (status card: merged semantics + polite live region done; indicator dot is decorative next to text)
 - [ ] TalkBack test critical flows
-- [ ] Support font scaling to at least 200%
+- [ ] Support font scaling to at least 200% (main screen scrolls instead of clipping; verify on device)
 - [ ] Add screenshot/golden testing only if it provides maintainable value
 
 # Phase 0 — Capture reliability
@@ -110,15 +110,17 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Separate user commands from capture-engine signals (watch may only send commands)
 - [ ] Wire state machine to Android service
 - [ ] Persist state transitions (append-only journal keyed by revision) before dependent side effects
-- [ ] Recover persisted session state after process death
+- [x] Decide recovery events for a persisted state after process death/reboot (`StartupRecovery`)
+- [ ] Recover persisted session state after process death (service wiring)
 - [ ] After reboot: never auto-start; post "tap to resume" notification and record the gap (ADR-0010)
 - [ ] Add state-machine property/fuzz tests if transition count expands materially
 
 ## Local persistence, identity, time
 
 - [ ] Room with exported schema and migration tests from the first entity
-- [ ] UUIDv7 generator for client-created IDs (ADR-0006)
-- [ ] Record occurred_at (UTC), timezone, UTC offset, local_date, elapsedRealtime + boot id on every captured record (ADR-0006)
+- [x] UUIDv7 generator for client-created IDs (ADR-0006) — monotonic, clock-skew safe
+- [x] Capture-time model: occurred_at (UTC), timezone, UTC offset, local_date, elapsedRealtime + boot id (`CaptureTime`)
+- [ ] Stamp every captured record with `CaptureTime` in the recorder service
 - [ ] Decide Quick Note model: marked window inside an active session vs. short standalone session (open product decision)
 
 ## Audio capture
@@ -132,9 +134,11 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Handle microphone loss / audio route changes
 - [ ] Handle incoming/outgoing calls
 - [ ] Handle another app taking microphone focus
-- [ ] Detect audio gaps
-- [ ] Detect corrupt or zero-byte segments
-- [ ] Detect sustained digital silence (blocked mic) and report it as an interruption
+- [x] Detect audio gaps — classification logic (`GapDetector`)
+- [ ] Feed sealed-segment timings from the recorder into `GapDetector`
+- [x] Detect corrupt or zero-byte segments at seal (`SegmentLifecycle` → QUARANTINED)
+- [x] Detect sustained digital silence (blocked mic) — `DigitalSilenceDetector`
+- [ ] Report detector output as `Interrupted(MICROPHONE_UNAVAILABLE)` from the recorder
 - [ ] Never mark uncaptured time as successfully recorded
 
 ## Local security
@@ -145,17 +149,17 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Define key rotation / invalidation behavior
 - [x] Disable Android backup of sensitive app data (allowBackup=false + exclude-all extraction rules)
 - [ ] Verify no sensitive files are exported via backup/debug tooling
-- [ ] Delete local audio only after explicit server acknowledgement + recovery policy
+- [x] Delete local audio only after explicit server acknowledgement + recovery window (enforced in `SegmentLifecycle`)
 - [ ] Secure-delete semantics documented honestly; do not promise physical flash erasure
 
 ## Storage pressure
 
 - [ ] Track free disk space
-- [ ] Define warning threshold
-- [ ] Define hard-stop threshold
+- [x] Define warning threshold (`StoragePolicy`, provisional values)
+- [x] Define hard-stop threshold (`StoragePolicy`, provisional values)
 - [ ] Surface storage problems before recording fails
 - [ ] Test device-low-storage conditions
-- [ ] Bound local pending-upload storage
+- [x] Bound local pending-upload storage (warn over budget; never delete unacknowledged audio)
 
 ## Capture health
 
@@ -166,7 +170,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Available storage health
 - [ ] Interruption indicator
 - [ ] Battery/thermal telemetry in debug/internal builds
-- [ ] Never show "Recording" unless capture is actually healthy
+- [x] Never show "Recording" unless capture is actually healthy (`CaptureHealthEvaluator` + `CaptureStatusPresenter`)
 
 ## Endurance / device matrix
 
@@ -206,15 +210,16 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Define API versioning policy (/v1)
 - [ ] Generate OpenAPI document in CI
 - [ ] Validate breaking API changes
-- [ ] Add request IDs / correlation IDs
-- [ ] Add structured redacted logging
+- [x] Add request IDs / correlation IDs (validated inbound `X-Request-ID`)
+- [x] Add structured redacted logging (JSON; field-name redaction; no exception messages or query strings)
+- [x] Shared error envelope; validation errors never echo input
 - [ ] User-scoped schema from the first migration: user_id on every user-owned table, cascading FKs (ADR-0009)
 - [ ] Backend is the only DB client; Supabase Data API disabled, RLS deny-all backstop (ADR-0009)
 - [ ] Separate DB roles: migration owner, app (DML only), read-only
 - [ ] Add auth once multi-user testing starts
 - [ ] Add per-user authorization checks
 - [ ] Add rate limiting before public exposure
-- [ ] Add payload/body size limits
+- [x] Add payload/body size limits (declared and streamed; 413)
 - [ ] Add request timeouts
 
 ## Upload protocol

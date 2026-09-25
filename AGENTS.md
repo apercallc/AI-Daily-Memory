@@ -47,7 +47,7 @@ self-service data export. Three more rules follow from that:
 | `backend` | FastAPI + Pydantic, Python 3.13, uv-managed. |
 | `interfaces/mcp`, `interfaces/cli` | Future access layers. Must go through the Memory Query Service, never the DB directly. |
 | `docs/adr` | Architecture Decision Records. Read before changing an architectural decision. |
-| `docs/architecture/` | Architecture reviews and their findings/open decisions. |
+| `docs/architecture/` | Architecture review, edge-case catalog (`EDGE_CASES.md`), performance & scale plan. Update the catalog when you handle a new edge case. |
 | `docs/quality/QUALITY_GATES.md` | Release-quality standards. |
 | `docs/performance/` | Performance evidence process. |
 | `TODO.md` | The executable delivery plan with phase exit gates. **Work comes from here.** |
@@ -112,6 +112,9 @@ build failure, not a suggestion.
 - Small interfaces at real boundaries — not speculative abstractions. Provider SDK
   calls (transcription, AI) live behind one seam, never spread across the codebase.
 - Immutable data by default (`val`, `data class`, read-only collections).
+- Put decision logic in `core/recording` as pure, tested code (reducers, policies,
+  presenters). Android classes wire and render; they don't decide. `core/recording`
+  compiles with `allWarningsAsErrors`.
 - Error handling: **no silent failure.** No catch-all exception swallowing. Failures
   surface to capture health, logs, or the operator — never vanish.
 - Package root is `com.apercallc.aidailymemory`. Match the existing module layout
@@ -152,8 +155,13 @@ build failure, not a suggestion.
 ## Python / backend standards
 
 - `mypy --strict` is the floor — every line of new code type-checks.
-- Ruff rules `E,F,I,B,UP,SIM,S` (note `S` — bandit-style security checks are on).
-  Line length 100.
+- Ruff rules `E,F,I,B,UP,SIM,S,BLE,ASYNC,C4,N,PERF,PT,RET,RUF` (`S` = bandit-style
+  security checks; `BLE` = no blind `except Exception` unless it logs or re-raises).
+  Line length 100. mypy strict runs on `app` **and** `tests`.
+- Errors use the shared envelope in `app/errors.py`; never return ad-hoc error dicts.
+  Validation errors report field locations, never the rejected values.
+- Log through `logging.getLogger("app....")` with structured `extra=` fields; the JSON
+  formatter redacts sensitive field names and never logs exception messages.
 - FastAPI: request/response models are Pydantic; never return raw dicts from the
   DB; never trust client-supplied IDs without ownership checks.
 - Idempotency: every processing stage has an idempotency key; retries use bounded
