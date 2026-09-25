@@ -37,11 +37,14 @@ venv/
 *.key
 secrets/
 
-# Sensitive product data — never commit
-recordings/
-audio/
-transcripts/
-exports/
+# Sensitive product data — never commit.
+# Directory rules are root-anchored on purpose: unanchored `audio/` or `exports/` would also
+# silently ignore source packages such as `.../aidailymemory/audio/` or `backend/app/exports/`.
+# The extension rules below are the repo-wide guard for audio files.
+/recordings/
+/audio/
+/transcripts/
+/exports/
 *.wav
 *.m4a
 *.aac
@@ -53,5 +56,6 @@ exports/
 *.db
 *.sqlite
 *.sqlite3
-logs/
-tmp/
+/logs/
+/tmp/
+*.log

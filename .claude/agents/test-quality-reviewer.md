@@ -32,8 +32,8 @@ number. Review changed files unless asked otherwise. Do not fix unless asked.
 ## Verification
 
 ```bash
-gradle :core:recording:check        # JaCoCo 90% line+branch gate
-gradle :apps:android:testDebugUnitTest :apps:wear:testDebugUnitTest
+./gradlew :core:recording:check        # JaCoCo 90% line+branch gate
+./gradlew :apps:android:testDebugUnitTest :apps:wear:testDebugUnitTest
 cd backend && uv run pytest
 ```
 

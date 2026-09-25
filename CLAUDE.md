@@ -29,7 +29,7 @@ Located in `.claude/skills/`:
 ## Working rules for Claude in this repo
 
 - **Never report work done without stating which quality gates ran.** Minimum:
-  `gradle qualityCheck`; backend changes also need the `uv run` checks from AGENTS.md.
+  `./gradlew qualityCheck`; backend changes also need the `uv run` checks from AGENTS.md.
 - **Commercial goals are rules (AGENTS.md items 3–5):** server-authoritative
   entitlements for every paid surface; API keys hashed/scoped/rate-limited/revocable;
   self-service export and deletion as user rights. TODO.md Phase 10 is the roadmap.

@@ -12,21 +12,21 @@ work done without stating exactly which gates ran and which were skipped.
 ## What to run
 
 ```bash
-# Android modules (use system gradle — no wrapper yet)
-gradle qualityCheck
+# Android modules (committed wrapper, Gradle 9.7.1)
+./gradlew qualityCheck
 
 # Backend (only when backend/ changed)
 cd backend
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy app
+uv run mypy app tests
 uv run pytest
 uv run pip-audit
 ```
 
 `qualityCheck` covers: `:core:recording:check` (unit tests + JaCoCo ≥90% line & branch),
-`:apps:android` and `:apps:wear` unit tests, and Android Lint for all three modules.
+`:apps:android` and `:apps:wear` unit tests, and Android Lint for both app modules.
 Lint runs `abortOnError=true` + `warningsAsErrors=true`, so a warning is a failure.
 
 ## Decision guide
@@ -38,14 +38,15 @@ Lint runs `abortOnError=true` + `warningsAsErrors=true`, so a warning is a failu
   that it was skipped and why.
 - **Coverage fails** → write missing tests for the uncovered behavior; don't delete
   code to game the percentage.
-- **Wrapper missing** → system Gradle 9.6 is expected today (`gradle`, not `./gradlew`).
-  Bootstrapping the wrapper is a tracked TODO; don't improvise a workaround.
+- **Environment can't build Android** (no SDK, or Google Maven blocked) → say so, run
+  what can run (`core:recording` is pure JVM), and report `qualityCheck` as NOT RUN.
+  Never report it as passing.
 
 ## Report format
 
 ```
 Quality gate: PASS|FAIL
-- gradle qualityCheck — <result>
+- ./gradlew qualityCheck — <result>
 - backend ruff/mypy/pytest/pip-audit — <result or "skipped: no backend changes">
 Follow-ups: <any findings, or none>
 ```

@@ -37,9 +37,9 @@ severity; do not fix unless explicitly asked.
 Run what the change touches (report output honestly):
 
 ```bash
-gradle :apps:android:testDebugUnitTest :apps:android:lintDebug
-gradle :apps:wear:testDebugUnitTest :apps:wear:lintDebug
-gradle :core:recording:check
+./gradlew :apps:android:testDebugUnitTest :apps:android:lintDebug
+./gradlew :apps:wear:testDebugUnitTest :apps:wear:lintDebug
+./gradlew :core:recording:check
 ```
 
 Lint is `warningsAsErrors = true` — every warning is a finding.

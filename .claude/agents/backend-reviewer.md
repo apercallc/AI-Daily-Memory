@@ -38,7 +38,7 @@ Report findings ranked by severity; do not fix unless explicitly asked.
 ```bash
 cd backend
 uv run ruff check . && uv run ruff format --check .
-uv run mypy app
+uv run mypy app tests
 uv run pytest          # cov-fail-under=90, branch coverage
 uv run pip-audit
 ```

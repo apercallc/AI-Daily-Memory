@@ -32,12 +32,11 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager "platforms;android-37.0"
 
+      # Uses the committed wrapper (validated by setup-gradle) so CI runs the same Gradle as local.
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.7.1"
 
       - name: Full Android quality gate (tests, coverage, lint; incl. Wear OS)
-        run: gradle qualityCheck
+        run: ./gradlew qualityCheck
 
   backend:
     name: Backend quality
@@ -55,8 +54,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install
-        run: uv sync --extra dev
+      - name: Install (fails if uv.lock is out of date)
+        run: uv sync --locked --extra dev
 
       - name: Ruff lint
         run: uv run ruff check .
@@ -65,7 +64,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run mypy app
+        run: uv run mypy app tests
 
       - name: Unit tests and coverage
         run: uv run pytest
