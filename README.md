@@ -49,10 +49,23 @@ uv run uvicorn app.main:app --reload
 uv run python -m app.worker
 ```
 
-Status: the Android app captures real audio offline (foreground service, encrypted segments,
-recovery, daily rhythm, sessions, charging-time speech analysis). The backend has the Phase 1
-upload protocol, user-scoped schema, token auth, and job queue. Transcription stays disabled
-until Gate B (provider, cost model, and consent review), so no audio reaches any provider yet.
+Status:
+
+- **Phone:** captures real audio offline (foreground service, encrypted segments, crash
+  recovery, sleep schedule and quiet times, sessions). While charging it finds the speech,
+  cuts it into clips, and, once an account is connected, uploads only those clips on Wi-Fi.
+  Transcripts come back sealed to the phone's own key and show on each session's transcript
+  screen. Audio is released for deletion only after its transcript is stored on the phone.
+- **Backend:** user-scoped PostgreSQL schema, hashed device tokens, the upload protocol
+  (presigned PUTs verified by size and SHA-256), a Postgres job queue, sealed delivery for
+  phone storage modes, and a retention sweep for temporary audio.
+- **Not yet:** transcription is disabled until Gate B (provider, cost model, consent review),
+  so nothing reaches a provider and uploads are refused with `processing_unavailable`.
+  Extraction, the daily report generation, recall, and MCP come in later phases (TODO.md).
+
+Connecting a phone for development: create an account and a device token with
+`uv run python -m app.admin create-account --device-name "My phone"`, then enter the server
+address and token under Settings → Account.
 
 
 ---
