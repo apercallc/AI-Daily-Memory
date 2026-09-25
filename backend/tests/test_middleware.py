@@ -5,15 +5,16 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from starlette.requests import ClientDisconnect
 from starlette.types import Message, Receive, Scope, Send
 
 from app.config import Settings
 from app.main import create_app
 from app.middleware import PayloadTooLargeError, RequestContextMiddleware
-from app.observability import request_id_var
+from app.observability import JsonFormatter, request_id_var
 
 LIMIT = 64
 
@@ -34,6 +35,10 @@ def app() -> FastAPI:
     @application.get("/boom")
     async def boom() -> None:
         raise RuntimeError("secret transcript text")
+
+    @application.get("/sets-own-request-id")
+    async def sets_own_request_id() -> JSONResponse:
+        return JSONResponse({}, headers={"X-Request-ID": "downstream"})
 
     @application.get("/broken-stream")
     async def broken_stream() -> StreamingResponse:
@@ -74,16 +79,49 @@ def test_replaces_unsafe_client_request_ids(client: TestClient, bad: str) -> Non
     assert len(response.headers["x-request-id"]) == 32
 
 
-def test_request_id_does_not_leak_between_requests(client: TestClient) -> None:
-    client.get("/v1/health", headers={"X-Request-ID": "first"})
+def test_request_id_header_is_never_duplicated(client: TestClient) -> None:
+    response = client.get("/sets-own-request-id")
 
-    assert request_id_var.get() is None
+    assert response.headers.get_list("x-request-id") == [response.headers["x-request-id"]]
+    assert response.headers["x-request-id"] != "downstream"
+
+
+def test_request_id_is_scoped_to_one_request_on_a_shared_event_loop() -> None:
+    seen: list[str | None] = []
+
+    async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
+        seen.append(request_id_var.get())
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        return None
+
+    async def two_requests() -> None:
+        middleware = RequestContextMiddleware(downstream, max_body_bytes=LIMIT)
+        for rid in (b"first", b"second"):
+            scope: Scope = {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [(b"x-request-id", rid)],
+            }
+            await middleware(scope, receive, send)
+            seen.append(request_id_var.get())
+
+    asyncio.run(two_requests())
+
+    assert seen == ["first", None, "second", None]
 
 
 def test_rejects_declared_oversized_body_before_reading_it(client: TestClient) -> None:
     response = client.post("/echo", content=b"x" * (LIMIT + 1))
 
     assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
     assert response.json()["error"]["request_id"] == response.headers["x-request-id"]
 
 
@@ -95,6 +133,7 @@ def test_rejects_streamed_body_without_content_length(client: TestClient) -> Non
     response = client.post("/echo", content=body())
 
     assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
 
 
 def test_body_at_exact_limit_is_accepted(client: TestClient) -> None:
@@ -118,11 +157,14 @@ def test_unhandled_error_returns_envelope_and_logs_without_message(
 
     assert response.status_code == 500
     body = response.json()["error"]
-    assert body["code"] == "internal_server_error"
+    assert body["code"] == "internal_error"
     assert "secret" not in response.text
     assert body["request_id"] == response.headers["x-request-id"]
     error_logs = [r for r in caplog.records if r.getMessage() == "unhandled_error"]
     assert len(error_logs) == 1
+    formatted = JsonFormatter().format(error_logs[0])
+    assert "secret transcript text" not in formatted
+    assert json.loads(formatted)["exc_type"] == "RuntimeError"
     access = [r for r in caplog.records if r.getMessage() == "request"][-1]
     assert access.__dict__["status"] == 500
 
@@ -212,6 +254,35 @@ def test_oversized_body_after_response_started_is_reraised() -> None:
     middleware = RequestContextMiddleware(eager, max_body_bytes=LIMIT)
     with pytest.raises(PayloadTooLargeError):
         asyncio.run(middleware(scope, receive, send))
+
+
+@pytest.mark.parametrize("disconnect", [asyncio.CancelledError, ClientDisconnect])
+def test_client_disconnect_is_logged_as_499_not_500(
+    disconnect: type[BaseException], caplog: pytest.LogCaptureFixture
+) -> None:
+    async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
+        raise disconnect
+
+    async def receive() -> Message:
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        return None
+
+    scope: Scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+    app_logger = logging.getLogger("app")
+    app_logger.addHandler(caplog.handler)
+    try:
+        with pytest.raises(disconnect):
+            asyncio.run(
+                RequestContextMiddleware(downstream, max_body_bytes=LIMIT)(scope, receive, send)
+            )
+    finally:
+        app_logger.removeHandler(caplog.handler)
+
+    access = [r for r in caplog.records if r.getMessage() == "request"][-1]
+    assert access.__dict__["status"] == 499
+    assert not [r for r in caplog.records if r.getMessage() == "unhandled_error"]
 
 
 def test_non_http_scopes_pass_through_untouched() -> None:

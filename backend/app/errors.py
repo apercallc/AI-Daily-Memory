@@ -7,7 +7,6 @@ bodies here can contain transcript text or other private content.
 """
 
 from collections.abc import Mapping
-from http import HTTPStatus
 from typing import cast
 
 from fastapi import FastAPI, Request
@@ -35,16 +34,35 @@ class ErrorResponse(BaseModel):
     error: ErrorBody
 
 
+# Part of the public API contract: clients branch on `code`, so it must not change with the
+# Python version (3.13 renamed several HTTPStatus phrases, e.g. 413 and 422).
+_STANDARD_ERRORS: dict[int, tuple[str, str]] = {
+    400: ("bad_request", "Bad request."),
+    401: ("unauthorized", "Authentication required."),
+    403: ("forbidden", "Not allowed."),
+    404: ("not_found", "Not found."),
+    405: ("method_not_allowed", "Method not allowed."),
+    409: ("conflict", "Conflict."),
+    413: ("payload_too_large", "Request body too large."),
+    415: ("unsupported_media_type", "Unsupported media type."),
+    422: ("unprocessable_entity", "Request could not be processed."),
+    429: ("too_many_requests", "Too many requests."),
+    500: ("internal_error", "Internal error."),
+    503: ("service_unavailable", "Service unavailable."),
+}
+
+
 def error_code(status_code: int) -> str:
-    try:
-        return HTTPStatus(status_code).phrase.lower().replace(" ", "_").replace("-", "_")
-    except ValueError:
-        return "error"
+    return _STANDARD_ERRORS.get(status_code, (f"http_{status_code}", ""))[0]
+
+
+def default_message(status_code: int) -> str:
+    return _STANDARD_ERRORS.get(status_code, ("", "Request failed."))[1]
 
 
 def error_response(
     status_code: int,
-    message: str,
+    message: str | None = None,
     *,
     code: str | None = None,
     fields: list[FieldError] | None = None,
@@ -53,7 +71,7 @@ def error_response(
     body = ErrorResponse(
         error=ErrorBody(
             code=code or error_code(status_code),
-            message=message,
+            message=message or default_message(status_code),
             request_id=request_id_var.get(),
             fields=fields,
         ),
@@ -81,7 +99,7 @@ async def _validation_exception(request: Request, exc: Exception) -> JSONRespons
         for err in exc.errors()
     ]
     return error_response(
-        HTTPStatus.UNPROCESSABLE_ENTITY,
+        422,
         "Request validation failed.",
         code="validation_error",
         fields=fields,

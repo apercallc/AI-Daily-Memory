@@ -2,10 +2,14 @@ import json
 import logging
 import sys
 
+import pytest
+
 from app.observability import (
     REDACTED,
     JsonFormatter,
     configure_logging,
+    is_sensitive_key,
+    redact,
     request_id_var,
 )
 
@@ -46,6 +50,58 @@ def test_sensitive_fields_are_redacted_by_name() -> None:
         assert out[key] == REDACTED, key
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "accessToken",
+        "transcription",
+        "credentials",
+        "private_key",
+        "privateKey",
+        "bearer",
+        "set-cookie",
+        "query",
+        "X-Api-Key",
+        "apiKey",
+        "userPassword",
+        "TRANSCRIPT_TEXT",
+    ],
+)
+def test_sensitive_key_variants_are_detected(key: str) -> None:
+    assert is_sensitive_key(key)
+
+
+def test_nested_values_under_safe_keys_are_redacted() -> None:
+    out = _format(
+        _record(payload={"transcript": "words", "meta": [{"prompt": "p", "n": 1}], "ok": 2})
+    )
+
+    assert out["payload"] == {
+        "transcript": REDACTED,
+        "meta": [{"prompt": REDACTED, "n": 1}],
+        "ok": 2,
+    }
+
+
+def test_pathologically_deep_values_are_cut_off() -> None:
+    deep: object = "leaf"
+    for _ in range(10):
+        deep = {"level": deep}
+
+    assert "leaf" not in json.dumps(redact(deep))
+
+
+def test_message_arguments_are_never_interpolated() -> None:
+    record = logging.makeLogRecord(
+        {"name": "app.test", "levelname": "INFO", "msg": "got %s", "args": ("private words",)}
+    )
+
+    out = _format(record)
+
+    assert out["msg"] == "got %s"
+    assert "private words" not in json.dumps(out)
+
+
 def test_similar_but_safe_fields_are_kept() -> None:
     out = _format(_record(context="timeline", duration_ms=12.5, status=200, tokenizer="bpe"))
 
@@ -78,8 +134,11 @@ def test_exceptions_log_type_and_frames_but_never_the_message() -> None:
     assert "said something" not in json.dumps(out)
 
 
-def test_non_json_values_are_stringified() -> None:
-    assert _format(_record(when={1, 2}))["when"] in ("{1, 2}", "{2, 1}")
+def test_sets_become_lists_and_unknown_objects_are_stringified() -> None:
+    out = _format(_record(ids={1}, when=object()))
+
+    assert out["ids"] == [1]
+    assert str(out["when"]).startswith("<object object")
 
 
 def test_configure_logging_is_idempotent() -> None:
@@ -90,3 +149,6 @@ def test_configure_logging_is_idempotent() -> None:
     assert len(ours) == 1
     assert logger.level == logging.WARNING
     assert logger.propagate is False
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    assert [h.get_name() for h in uvicorn_error.handlers] == ["app-json"]
+    assert logging.getLogger("uvicorn.access").disabled is True

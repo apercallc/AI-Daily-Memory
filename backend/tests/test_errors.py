@@ -78,7 +78,12 @@ def test_malformed_json_is_a_validation_error(client: TestClient) -> None:
 
 @pytest.mark.parametrize(
     ("status", "code"),
-    [(404, "not_found"), (429, "too_many_requests"), (599, "error")],
+    [
+        (404, "not_found"),
+        (413, "payload_too_large"),
+        (422, "unprocessable_entity"),
+        (599, "http_599"),
+    ],
 )
 def test_error_codes_are_stable_snake_case(status: int, code: str) -> None:
     assert error_code(status) == code

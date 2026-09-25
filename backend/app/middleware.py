@@ -4,6 +4,7 @@ Implemented as raw ASGI rather than `BaseHTTPMiddleware`: no per-request task or
 buffering, streaming stays intact, and context variables propagate to the endpoint.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -12,6 +13,7 @@ from http import HTTPStatus
 from typing import Final
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import ClientDisconnect
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.errors import error_response
@@ -20,6 +22,9 @@ from app.observability import request_id_var
 logger = logging.getLogger("app.request")
 
 REQUEST_ID_HEADER: Final = "x-request-id"
+_REQUEST_ID_HEADER_BYTES: Final = REQUEST_ID_HEADER.encode()
+# nginx convention for "client went away before we answered"; never a server error.
+CLIENT_CLOSED_REQUEST: Final = 499
 # Client-supplied IDs are echoed into logs, so accept only a safe, bounded charset.
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -56,8 +61,13 @@ class RequestContextMiddleware:
             if message["type"] == "http.response.start":
                 response_started = True
                 status_code = message["status"]
-                headers = list(message.get("headers", []))
-                headers.append((REQUEST_ID_HEADER.encode(), request_id.encode()))
+                # Replace, never duplicate, a request ID set further down the stack.
+                headers = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != _REQUEST_ID_HEADER_BYTES
+                ]
+                headers.append((_REQUEST_ID_HEADER_BYTES, request_id.encode()))
                 message = {**message, "headers": headers}
             await send(message)
 
@@ -68,6 +78,11 @@ class RequestContextMiddleware:
                 await _send_error(scope, send_with_request_id, limit_status)
                 return
             await self.app(scope, self._limited(receive), send_with_request_id)
+        except (asyncio.CancelledError, ClientDisconnect):
+            # The client disconnected. Nothing to send; record it honestly, not as a 500.
+            if not response_started:
+                status_code = CLIENT_CLOSED_REQUEST
+            raise
         except PayloadTooLargeError:
             if response_started:
                 raise
@@ -123,7 +138,7 @@ class RequestContextMiddleware:
 
 def _request_id(scope: Scope) -> str:
     for name, value in scope["headers"]:
-        if name == REQUEST_ID_HEADER.encode():
+        if name == _REQUEST_ID_HEADER_BYTES:
             candidate = bytes(value).decode("latin-1")
             if _VALID_REQUEST_ID.match(candidate):
                 return candidate
@@ -132,7 +147,7 @@ def _request_id(scope: Scope) -> str:
 
 
 async def _send_error(scope: Scope, send: Send, status: HTTPStatus) -> None:
-    response = error_response(status.value, status.phrase)
+    response = error_response(status.value)
 
     async def no_body() -> Message:  # pragma: no cover - JSONResponse never reads the body
         return {"type": "http.disconnect"}
