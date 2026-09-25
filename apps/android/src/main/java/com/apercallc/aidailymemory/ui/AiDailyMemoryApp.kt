@@ -1,6 +1,13 @@
 package com.apercallc.aidailymemory.ui
 
-import android.util.Log
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -16,159 +24,291 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apercallc.aidailymemory.R
-import com.apercallc.aidailymemory.recording.CaptureProblem
-import com.apercallc.aidailymemory.recording.CaptureSignal
-import com.apercallc.aidailymemory.recording.RecordingCommand
-import com.apercallc.aidailymemory.recording.RecordingEvent
-import com.apercallc.aidailymemory.recording.RecordingState
-import com.apercallc.aidailymemory.recording.RecordingStateMachine
-import com.apercallc.aidailymemory.recording.SessionId
-import com.apercallc.aidailymemory.recording.Transition
-import com.apercallc.aidailymemory.recording.health.CaptureHealth
-import com.apercallc.aidailymemory.recording.id.UuidV7Generator
+import com.apercallc.aidailymemory.capture.CaptureOverview
+import com.apercallc.aidailymemory.platform.Permissions
+import com.apercallc.aidailymemory.recording.marker.MarkerKind
+import com.apercallc.aidailymemory.recording.permission.CapturePreconditionInputs
+import com.apercallc.aidailymemory.recording.permission.CapturePreconditions
+import com.apercallc.aidailymemory.recording.permission.PermissionFlow
+import com.apercallc.aidailymemory.recording.permission.PermissionStep
+import com.apercallc.aidailymemory.recording.permission.StartBlocker
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
-import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.presentation.Headline
 import com.apercallc.aidailymemory.recording.presentation.PrimaryAction
+import com.apercallc.aidailymemory.recording.storage.StorageHealth
+import com.apercallc.aidailymemory.recording.storage.StorageLevel
+import com.apercallc.aidailymemory.service.RecordingService
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
+import androidx.core.os.UserManagerCompat
 
-private const val TAG = "AiDailyMemoryApp"
+/** What the permission dialog is currently asking for. */
+private sealed interface StartDialog {
+    data class Educate(val permission: String, @StringRes val title: Int, @StringRes val body: Int) :
+        StartDialog
+    data object OpenSettings : StartDialog
+    data class Blocked(val blocker: StartBlocker) : StartDialog
+}
 
 /**
- * Phase 0 shell. State lives here only until the recorder service owns it
- * (TODO.md "Wire state machine to Android service"). Engine signals are simulated.
+ * Stateful entry point: wires the ViewModel, the permission flow, and platform settings to the
+ * stateless [CaptureScreen].
  */
 @Composable
-fun AiDailyMemoryApp() {
-    var state by remember { mutableStateOf(RecordingState.Initial) }
-    val ids = remember { UuidV7Generator() }
+fun AiDailyMemoryApp(viewModel: CaptureViewModel, permissions: Permissions) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val snackbar = remember { SnackbarHostState() }
+    var dialog by remember { mutableStateOf<StartDialog?>(null) }
+    var batteryRestricted by remember { mutableStateOf(false) }
 
-    fun dispatch(vararg events: RecordingEvent) {
-        for (event in events) {
-            val result = RecordingStateMachine.reduce(state, event)
-            if (result is Transition.Rejected) {
-                // No silent failure: the service will surface this in capture health.
-                Log.w(TAG, "Rejected ${result.event} in ${result.state.status}")
-                return
-            }
-            state = result.state
-        }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val power = context.getSystemService(PowerManager::class.java)
+        batteryRestricted = !power.isIgnoringBatteryOptimizations(context.packageName)
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { message -> snackbar.showSnackbar(resources.getString(message)) }
+    }
+
+    fun tryStart() {
+        val host = activity ?: return
+        dialog = nextStartStep(host, permissions, viewModel.storageSnapshot)
+        if (dialog == null) viewModel.send(RecordingService.ACTION_START)
+    }
+
+    val requestPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        // Continue to the next requirement (e.g. notifications after the microphone). A denial
+        // stops here; the next Start tap explains again or points to Settings.
+        if (granted) tryStart()
     }
 
     CaptureScreen(
-        model = CaptureStatusPresenter.present(state, CaptureHealth.Unknown),
+        model = state.model,
+        overview = state.overview,
+        batteryRestricted = batteryRestricted,
+        snackbar = snackbar,
         onPrimaryAction = { action ->
             when (action) {
-                PrimaryAction.START -> {
-                    val sessionId = SessionId(ids.next().toString())
-                    dispatch(RecordingCommand.Start(sessionId), CaptureSignal.Started(sessionId))
-                }
-                PrimaryAction.PAUSE -> dispatch(RecordingCommand.Pause)
-                PrimaryAction.RESUME -> state.sessionId?.let { sessionId ->
-                    dispatch(RecordingCommand.Resume, CaptureSignal.Started(sessionId))
-                }
+                PrimaryAction.START -> tryStart()
+                PrimaryAction.PAUSE -> viewModel.send(RecordingService.ACTION_PAUSE)
+                PrimaryAction.RESUME -> viewModel.send(RecordingService.ACTION_RESUME)
                 PrimaryAction.NONE -> Unit
             }
         },
-        onStop = {
-            state.sessionId?.let { sessionId ->
-                dispatch(RecordingCommand.Stop, CaptureSignal.Stopped(sessionId))
-            }
+        onRetry = { viewModel.send(RecordingService.ACTION_RESUME) },
+        onStop = { viewModel.send(RecordingService.ACTION_STOP) },
+        onMark = viewModel::mark,
+        onBatterySettings = {
+            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        },
+    )
+
+    dialog?.let { current ->
+        StartDialogContent(
+            dialog = current,
+            onDismiss = { dialog = null },
+            onConfirm = {
+                dialog = null
+                when (current) {
+                    is StartDialog.Educate -> {
+                        permissions.markRequested(current.permission)
+                        requestPermission.launch(current.permission)
+                    }
+                    StartDialog.OpenSettings -> context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null),
+                        ),
+                    )
+                    is StartDialog.Blocked -> Unit
+                }
+            },
+        )
+    }
+}
+
+/** The first thing standing between the user and a recording, or null if nothing does. */
+private fun nextStartStep(
+    activity: Activity,
+    permissions: Permissions,
+    storage: StorageHealth?,
+): StartDialog? {
+    val microphone = permissions.microphone(activity)
+    val notifications = permissions.notifications(activity)
+    val blockers = CapturePreconditions.blockers(
+        CapturePreconditionInputs(
+            userUnlocked = UserManagerCompat.isUserUnlocked(activity),
+            microphone = microphone,
+            notifications = notifications,
+            storage = storage ?: StorageHealth(StorageLevel.UNKNOWN, null, pendingOverBudget = false),
+        ),
+    )
+    return when (val blocker = blockers.firstOrNull()) {
+        null -> null
+        StartBlocker.MICROPHONE_PERMISSION -> permissionDialog(
+            PermissionFlow.next(microphone),
+            android.Manifest.permission.RECORD_AUDIO,
+            R.string.permission_mic_title,
+            R.string.permission_mic_body,
+        )
+        StartBlocker.NOTIFICATION_PERMISSION -> permissionDialog(
+            PermissionFlow.next(notifications),
+            checkNotNull(Permissions.NOTIFICATIONS),
+            R.string.permission_notifications_title,
+            R.string.permission_notifications_body,
+        )
+        StartBlocker.DEVICE_LOCKED, StartBlocker.STORAGE_FULL -> StartDialog.Blocked(blocker)
+    }
+}
+
+private fun permissionDialog(
+    step: PermissionStep,
+    permission: String,
+    @StringRes title: Int,
+    @StringRes body: Int,
+): StartDialog? = when (step) {
+    PermissionStep.GRANTED -> null
+    PermissionStep.EDUCATE_THEN_REQUEST -> StartDialog.Educate(permission, title, body)
+    PermissionStep.OPEN_SETTINGS -> StartDialog.OpenSettings
+}
+
+@Composable
+private fun StartDialogContent(dialog: StartDialog, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val (title, body, confirm) = when (dialog) {
+        is StartDialog.Educate -> Triple(dialog.title, dialog.body, R.string.action_continue)
+        StartDialog.OpenSettings -> Triple(
+            R.string.permission_settings_title,
+            R.string.permission_settings_body,
+            R.string.action_open_settings,
+        )
+        is StartDialog.Blocked -> Triple(
+            R.string.status_start_failed,
+            CaptureStrings.blocker(dialog.blocker),
+            R.string.action_ok,
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(title)) },
+        text = { Text(stringResource(body)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(confirm)) } },
+        dismissButton = if (dialog is StartDialog.Blocked) {
+            null
+        } else {
+            { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_not_now)) } }
         },
     )
 }
 
-/** Stateless: renders [model] and reports user intents upward. */
+/** Stateless: renders the capture state and reports user intents upward. */
 @Composable
 fun CaptureScreen(
     model: CaptureStatusModel,
+    overview: CaptureOverview?,
+    batteryRestricted: Boolean,
+    snackbar: SnackbarHostState,
     onPrimaryAction: (PrimaryAction) -> Unit,
+    onRetry: () -> Unit,
     onStop: () -> Unit,
+    onMark: (MarkerKind) -> Unit,
+    onBatterySettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(modifier = modifier.fillMaxSize()) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
         Column(
             modifier = Modifier
+                .padding(padding)
                 .safeDrawingPadding()
                 // Scrolls instead of clipping at 200% font scale.
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(horizontal = spacing.xxl, vertical = spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.xl),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.semantics { heading() },
             )
-
             Text(
                 text = stringResource(R.string.tagline),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            CaptureStatusCard(model = model)
+            CaptureStatusCard(model = model, overview = overview)
 
             if (model.primaryAction != PrimaryAction.NONE) {
                 PrimaryActionButton(model = model, onClick = onPrimaryAction)
             }
+            if (model.canRetry) {
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
+                    onClick = onRetry,
+                ) { Text(stringResource(R.string.action_retry)) }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
             ) {
                 OutlinedButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
                     enabled = model.canMark,
-                    onClick = { /* Phase 0: persist a highlight marker. */ },
-                ) {
-                    Text(stringResource(R.string.action_highlight))
-                }
-
+                    onClick = { onMark(MarkerKind.HIGHLIGHT) },
+                ) { Text(stringResource(R.string.action_highlight)) }
                 OutlinedButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
                     enabled = model.canMark,
-                    onClick = { /* Phase 0: Quick Note model is an open decision. */ },
-                ) {
-                    Text(stringResource(R.string.action_quick_note))
-                }
+                    onClick = { onMark(MarkerKind.QUICK_NOTE) },
+                ) { Text(stringResource(R.string.action_quick_note)) }
             }
 
             if (model.canStop) {
-                OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onStop) {
-                    Text(stringResource(R.string.action_end_session))
-                }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
+                    onClick = onStop,
+                ) { Text(stringResource(R.string.action_end_session)) }
             }
 
-            Text(
-                text = stringResource(R.string.scaffold_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (batteryRestricted) BatteryCard(onBatterySettings)
         }
     }
 }
@@ -187,7 +327,7 @@ private fun PrimaryActionButton(model: CaptureStatusModel, onClick: (PrimaryActi
         ButtonDefaults.buttonColors()
     }
     Button(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget),
         colors = colors,
         onClick = { onClick(model.primaryAction) },
     ) {
@@ -204,11 +344,12 @@ private fun PrimaryActionButton(model: CaptureStatusModel, onClick: (PrimaryActi
 }
 
 @Composable
-private fun CaptureStatusCard(model: CaptureStatusModel) {
+private fun CaptureStatusCard(model: CaptureStatusModel, overview: CaptureOverview?) {
     val status = AiDailyMemoryTheme.statusColors
+    val spacing = AiDailyMemoryTheme.spacing
 
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
@@ -216,68 +357,100 @@ private fun CaptureStatusCard(model: CaptureStatusModel) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(spacing.xl)
                 // Read as one unit, and announce changes: recording state must never be
                 // silent for TalkBack users.
                 .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
             ) {
                 // Decorative: the headline text carries the meaning, so color is never the
                 // only signal.
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(spacing.statusDot)
                         .background(color = status.container(model.tone), shape = CircleShape),
                 )
                 Text(
-                    text = stringResource(headlineText(model.headline)),
+                    text = stringResource(CaptureStrings.headline(model.headline)),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
                 )
             }
-
             Text(
-                text = stringResource(detailText(model)),
+                text = stringResource(CaptureStrings.detail(model)),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            overview?.let { CaptureStats(it) }
         }
     }
 }
 
-@StringRes
-private fun headlineText(headline: Headline): Int = when (headline) {
-    Headline.READY -> R.string.status_ready
-    Headline.START_FAILED -> R.string.status_start_failed
-    Headline.STARTING -> R.string.status_starting
-    Headline.RECORDING -> R.string.status_recording
-    Headline.NOT_CAPTURING -> R.string.status_not_capturing
-    Headline.PAUSED -> R.string.status_paused
-    Headline.RESUMING -> R.string.status_resuming
-    Headline.INTERRUPTED -> R.string.status_interrupted
-    Headline.RECOVERING -> R.string.status_recovering
-    Headline.STOPPING -> R.string.status_stopping
-    Headline.COMPLETED -> R.string.status_completed
-}
-
-@StringRes
-private fun detailText(model: CaptureStatusModel): Int = model.problem?.let(::problemText)
-    ?: when (model.headline) {
-        Headline.READY, Headline.COMPLETED, Headline.START_FAILED -> R.string.detail_idle
-        else -> R.string.detail_active
+@Composable
+private fun CaptureStats(overview: CaptureOverview) {
+    val summary = overview.summary
+    if (summary.capturedMs > 0) {
+        Stat(R.string.stat_captured, durationText(summary.capturedMs))
     }
-
-@StringRes
-private fun problemText(problem: CaptureProblem): Int = when (problem) {
-    CaptureProblem.PERMISSION_DENIED -> R.string.problem_permission_denied
-    CaptureProblem.MICROPHONE_UNAVAILABLE -> R.string.problem_microphone_unavailable
-    CaptureProblem.PHONE_CALL -> R.string.problem_phone_call
-    CaptureProblem.FOREGROUND_START_NOT_ALLOWED -> R.string.problem_foreground_start_not_allowed
-    CaptureProblem.STORAGE_LOW -> R.string.problem_storage_low
-    CaptureProblem.PROCESS_RESTARTED -> R.string.problem_process_restarted
-    CaptureProblem.DEVICE_REBOOTED -> R.string.problem_device_rebooted
-    CaptureProblem.UNKNOWN -> R.string.problem_unknown
+    if (summary.pendingUploadMs > 0) {
+        Stat(R.string.stat_pending, durationText(summary.pendingUploadMs))
+    }
+    Stat(
+        R.string.stat_storage_left,
+        overview.storage.recordingMinutesLeft?.let { durationText(it * MS_PER_MINUTE) }
+            ?: stringResource(R.string.stat_storage_unknown),
+    )
 }
+
+@Composable
+private fun Stat(@StringRes label: Int, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            text = stringResource(label),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun durationText(ms: Long): String {
+    val minutes = ms / MS_PER_MINUTE
+    return when {
+        minutes < 1 -> stringResource(R.string.duration_under_minute)
+        minutes < MINUTES_PER_HOUR -> stringResource(R.string.duration_minutes, minutes)
+        else -> stringResource(
+            R.string.duration_hours_minutes,
+            minutes / MINUTES_PER_HOUR,
+            minutes % MINUTES_PER_HOUR,
+        )
+    }
+}
+
+@Composable
+private fun BatteryCard(onBatterySettings: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Card(shape = RoundedCornerShape(spacing.cardCorner)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.battery_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(text = stringResource(R.string.battery_body))
+            TextButton(
+                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                onClick = onBatterySettings,
+            ) { Text(stringResource(R.string.action_battery_settings)) }
+        }
+    }
+}
+
+private const val MS_PER_MINUTE = 60_000L
+private const val MINUTES_PER_HOUR = 60L

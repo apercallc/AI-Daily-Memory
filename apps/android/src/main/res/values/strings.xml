@@ -2,7 +2,6 @@
 <resources>
     <string name="app_name">AI Daily Memory</string>
     <string name="tagline">Capture what matters. Keep the evidence. Recall it later.</string>
-    <string name="scaffold_notice">Phase 0 scaffold: controls exercise the recording domain only. No audio is captured yet.</string>
 
     <string name="status_ready">Ready</string>
     <string name="status_start_failed">Couldn\'t start recording</string>
@@ -16,22 +15,73 @@
     <string name="status_stopping">Saving…</string>
     <string name="status_completed">Session saved</string>
 
-    <string name="detail_idle">Ready to start a local recording session.</string>
-    <string name="detail_active">Capture health details will appear here once the recorder service is wired.</string>
+    <string name="detail_idle">Audio is recorded on this phone, encrypted, and never leaves it without your say.</string>
+    <string name="detail_active">Audio is being saved on this phone in encrypted one-minute segments.</string>
+    <string name="detail_paused">The microphone is off. Nothing is being recorded.</string>
 
     <string name="problem_permission_denied">Microphone permission is off. Allow it in Settings to record.</string>
     <string name="problem_microphone_unavailable">Another app or the system is using the microphone.</string>
-    <string name="problem_phone_call">Interrupted by a phone call.</string>
+    <string name="problem_phone_call">Paused for a phone call. Recording continues when the call ends.</string>
     <string name="problem_foreground_start_not_allowed">Open the app to start recording. Android doesn\'t allow starting from the background.</string>
     <string name="problem_storage_low">Storage is almost full. Free up space to keep recording.</string>
-    <string name="problem_process_restarted">The app was closed by the system while recording.</string>
-    <string name="problem_device_rebooted">Your phone restarted while recording.</string>
+    <string name="problem_encryption_unavailable">This phone\'s secure key storage isn\'t working, so audio can\'t be saved safely. Nothing unencrypted was recorded.</string>
+    <string name="problem_process_restarted">The app was closed by the system while recording. Nothing was recorded after that.</string>
+    <string name="problem_device_rebooted">Your phone restarted while recording. Nothing was recorded after that.</string>
     <string name="problem_unknown">Recording stopped unexpectedly.</string>
+
+    <string name="issue_capture_stalled">No audio has been saved recently. Recording may have stopped.</string>
+    <string name="issue_microphone_blocked">The microphone is delivering only silence. It may be blocked.</string>
+    <string name="issue_capture_interrupted">Recording is interrupted.</string>
+    <string name="issue_storage_critical">Storage is full. Recording will stop to protect saved audio.</string>
+    <string name="issue_storage_low">Storage is getting low.</string>
+    <string name="issue_storage_unknown">Free storage couldn\'t be checked.</string>
+    <string name="issue_upload_backlog">A lot of audio is waiting to upload. It is only on this phone.</string>
+    <string name="issue_watch_disconnected">Watch disconnected. Recording on the phone is unaffected.</string>
+
+    <string name="blocker_device_locked">Unlock your phone to start recording.</string>
+    <string name="blocker_microphone">Microphone access is needed to record.</string>
+    <string name="blocker_notifications">Notifications are needed so the recording indicator is always visible.</string>
+    <string name="blocker_storage_full">Storage is full. Free up space to start recording.</string>
 
     <string name="action_start">Start My Day</string>
     <string name="action_pause">Pause</string>
     <string name="action_resume">Resume</string>
+    <string name="action_retry">Resume recording</string>
     <string name="action_highlight">Highlight</string>
     <string name="action_quick_note">Quick Note</string>
     <string name="action_end_session">End Session</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_not_now">Not now</string>
+    <string name="action_open_settings">Open settings</string>
+    <string name="action_ok">OK</string>
+    <string name="action_battery_settings">Battery settings</string>
+
+    <string name="stat_captured">Saved audio</string>
+    <string name="stat_pending">Only on this phone</string>
+    <string name="stat_storage_left">Storage left</string>
+    <string name="stat_storage_unknown">Unknown</string>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="duration_hours_minutes">%1$d h %2$d min</string>
+    <string name="duration_under_minute">Under 1 min</string>
+
+    <string name="permission_mic_title">Allow microphone</string>
+    <string name="permission_mic_body">AI Daily Memory records your day so you can recall decisions and promises later. Audio stays encrypted on this phone. You can pause or stop from the notification at any time.</string>
+    <string name="permission_notifications_title">Allow notifications</string>
+    <string name="permission_notifications_body">While recording, a notification always shows that the microphone is on, with Pause and Stop. Recording never happens without it.</string>
+    <string name="permission_settings_title">Permission needed</string>
+    <string name="permission_settings_body">Android won\'t ask again. Open Settings, choose Permissions, and allow it there.</string>
+
+    <string name="battery_title">Battery restrictions</string>
+    <string name="battery_body">Some phones stop apps running in the background. Recording runs as a foreground service, which is usually allowed. If you ever see \"Recording interrupted\", allowing unrestricted battery use can help.</string>
+
+    <string name="marker_highlighted">Highlighted the last 30 seconds</string>
+    <string name="marker_quick_note">Listening for your note (1 minute)</string>
+    <string name="marker_duplicate">Already marked</string>
+    <string name="marker_not_capturing">Nothing is being recorded right now</string>
+    <string name="command_rejected">That action isn\'t available right now</string>
+
+    <string name="channel_status_name">Recording status</string>
+    <string name="channel_status_description">Shows while the microphone session is active. Required so recording is never hidden.</string>
+    <string name="channel_alerts_name">Recording problems</string>
+    <string name="channel_alerts_description">Tells you when recording stopped unexpectedly and needs you.</string>
 </resources>

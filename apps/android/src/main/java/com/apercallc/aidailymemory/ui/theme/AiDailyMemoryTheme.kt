@@ -33,9 +33,11 @@ fun AiDailyMemoryTheme(
 
     CompositionLocalProvider(
         LocalStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors,
+        LocalSpacing provides Spacing(),
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
+            typography = AppTypography,
             content = content,
         )
     }
@@ -47,4 +49,9 @@ object AiDailyMemoryTheme {
         @Composable
         @ReadOnlyComposable
         get() = LocalStatusColors.current
+
+    val spacing: Spacing
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalSpacing.current
 }

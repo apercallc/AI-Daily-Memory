@@ -44,6 +44,12 @@ interface SegmentDao {
     @Query("SELECT COALESCE(MAX(sequence) + 1, 0) FROM audio_segment WHERE session_id = :sessionId")
     suspend fun nextSequence(sessionId: String): Int
 
+    @Query(
+        "SELECT COALESCE(SUM(byte_size), 0) FROM audio_segment " +
+            "WHERE state IN ('SEALED', 'UPLOADED')",
+    )
+    suspend fun pendingBytes(): Long
+
     /** Bytes the device still holds that the server has not acknowledged. */
     @Query(
         "SELECT COALESCE(SUM(byte_size), 0) FROM audio_segment " +
