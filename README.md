@@ -367,12 +367,14 @@ Implemented as a pure reducer in `core/recording`:
 | STARTING | `Started` | RECORDING |
 | STARTING | `StartFailed(problem)` | IDLE (problem kept) |
 | RECORDING | `Pause` | PAUSED |
-| PAUSED | `Resume` | RECORDING |
+| PAUSED | `Resume` | RESUMING (mic reopening; not capturing yet) |
+| RESUMING | `Started` | RECORDING |
+| RESUMING | `Interrupted(problem)` | INTERRUPTED (session kept) |
 | RECORDING, RECOVERING | `Interrupted(problem)` | INTERRUPTED |
 | INTERRUPTED | `RecoveryStarted` | RECOVERING |
 | RECOVERING | `Recovered` | RECORDING |
-| INTERRUPTED, RECOVERING | `Pause` | PAUSED (a privacy pause beats auto-recovery) |
-| STARTING, RECORDING, PAUSED, INTERRUPTED, RECOVERING | `Stop` | STOPPING |
+| RESUMING, INTERRUPTED, RECOVERING | `Pause` | PAUSED (a privacy pause beats auto-recovery) |
+| STARTING, RECORDING, PAUSED, RESUMING, INTERRUPTED, RECOVERING | `Stop` | STOPPING |
 | STOPPING | `Stopped` | COMPLETED |
 | COMPLETED | `Reset` | IDLE |
 
@@ -381,6 +383,8 @@ checks every status × event pair against this table.
 
 Contract:
 
+- **RECORDING is only ever entered on the engine's `Started` signal** (audio is flowing),
+  never directly from a user command. That is what makes "Recording" on screen honest.
 - **Commands** (`Start`, `Pause`, `Resume`, `Stop`, `Reset`) are user intents from the
   phone UI, notification, or watch. **Signals** (`Started`, `StartFailed`, `Interrupted`,
   `RecoveryStarted`, `Recovered`, `Stopped`) come only from the capture engine.

@@ -160,8 +160,10 @@ build failure, not a suggestion.
   Line length 100. mypy strict runs on `app` **and** `tests`.
 - Errors use the shared envelope in `app/errors.py`; never return ad-hoc error dicts.
   Validation errors report field locations, never the rejected values.
-- Log through `logging.getLogger("app....")` with structured `extra=` fields; the JSON
-  formatter redacts sensitive field names and never logs exception messages.
+- Log through `logging.getLogger("app....")` with a constant event name as the message
+  and data in `extra=`. The JSON formatter logs the template only (never `%s` args),
+  redacts sensitive field names (nested too), and logs exceptions as type + frame
+  locations only.
 - FastAPI: request/response models are Pydantic; never return raw dicts from the
   DB; never trust client-supplied IDs without ownership checks.
 - Idempotency: every processing stage has an idempotency key; retries use bounded

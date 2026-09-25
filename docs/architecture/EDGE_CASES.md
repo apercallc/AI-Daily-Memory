@@ -10,6 +10,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 
 | Edge case | Behavior | Where | Status |
 | --- | --- | --- | --- |
+| Resume after process death or reboot while paused (service gone) | PAUSED → RESUMING; RECORDING only after the engine's `Started`; failure → INTERRUPTED with the session kept | reducer | ✅ |
 | Duplicate command (watch retry, double tap) | `Ignored`, acknowledged with current state | `RecordingStateMachine` | ✅ |
 | Command invalid in current state | `Rejected`, state unchanged, logged; never crashes the service | `RecordingStateMachine` | ✅ |
 | Late engine callback from a previous session | `Rejected` (signals are session-scoped) | `RecordingStateMachine` | ✅ |
@@ -17,7 +18,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Start fails (permission, mic busy, background start blocked) | `StartFailed(problem)` → IDLE with a visible reason | reducer + presenter | ✅ (logic) |
 | Mic lost mid-recording (call, other app, route change) | `Interrupted(problem)` → RECOVERING → RECORDING, or back to INTERRUPTED | reducer | ✅ (logic) |
 | User pauses during recovery | Pause wins; capture never auto-resumes after a privacy pause | reducer | ✅ |
-| Mic silently blocked (delivers zeros) | Sustained exact-zero run → `MICROPHONE_BLOCKED` critical | `DigitalSilenceDetector`, health | ✅ (logic) |
+| Mic silently blocked (delivers zeros) | Sustained exact-zero run (per channel, so stereo is not tripped early) → `MICROPHONE_BLOCKED` critical | `DigitalSilenceDetector`, health | ✅ (logic) |
 | "Recording" but nothing being saved (stuck encoder, dead thread) | No sealed segment within segment length + grace → `NOT_CAPTURING` headline | `CaptureHealthEvaluator`, presenter | ✅ |
 | Resume right after a long pause | Stall timer runs from whichever is newer: entering RECORDING or the last seal | health evaluator | ✅ |
 | Process death while recording | On start: `Interrupted(PROCESS_RESTARTED)`, gap visible, no auto-restart | `StartupRecovery` | ✅ (logic) |
@@ -58,6 +59,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Server checksum differs from local | `CHECKSUM_MISMATCH`, local copy kept, re-upload | `SegmentLifecycle` | ✅ |
 | Same idempotency key with different bytes | Hard, operator-visible error | ADR-0006 | 📐 |
 | Wall clock moves backwards during the recovery window | Window only gets longer, which is safe | `SegmentLifecycle` | ✅ |
+| Corrupt persisted segment (ACKNOWLEDGED without ack time) | Refused at load (`AudioSegment` invariant) | `AudioSegment.init` | ✅ |
 | User deletes a segment | Allowed in every state except WRITING (a user right) | `SegmentLifecycle` | ✅ |
 | Signed URL expires mid-upload | Request a new URL; the retry is idempotent | Phase 1 | 📐 |
 | Offline for days | Queue bounded by `maxPendingBytes`; capture continues until the hard stop | `StoragePolicy` | ✅ (logic) |
@@ -73,7 +75,13 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Unhandled exception | 500 envelope with request ID; log has type and frames, never the message | middleware, `observability.py` | ✅ |
 | Exception after streaming has started | Re-raised (the connection is broken); logged | middleware | ✅ |
 | Spoofed or malicious `X-Request-ID` (log injection) | Replaced unless `[A-Za-z0-9._-]{1,64}` | middleware | ✅ |
-| Credentials or transcript fields in logs | Redacted by field name; query strings never logged | `observability.py` | ✅ |
+| Credentials or transcript fields in logs | Redacted by normalized field words (camelCase, dashes), including nested values; query strings never logged | `observability.py` | ✅ |
+| Content passed as `%s` log args | Never interpolated: the message template is logged, not the args | `observability.py` | ✅ |
+| Literals in traceback source lines | Frames logged as `file:line in func`, without source text | `observability.py` | ✅ |
+| Uvicorn's own logs (access log with query strings; "Exception in ASGI application") | Access log disabled (ours replaces it); error logger routed through the redacting formatter | `configure_logging` | ✅ |
+| Downstream already set `X-Request-ID` | Replaced, never duplicated | middleware | ✅ |
+| Client disconnects mid-request | Logged as 499, not a 500; nothing sent | middleware | ✅ |
+| Error codes drifting between Python versions | Fixed status→code table (public contract) | `errors.py` | ✅ |
 | 401 / 405 protocol headers | Preserved (`WWW-Authenticate`, `Allow`) | `errors.py` | ✅ |
 | API docs exposure | Off outside development and test | `create_app` | ✅ |
 | Cross-user access | Authorization in the query service; cross-user tests for every resource | ADR-0009 | 📐 |
