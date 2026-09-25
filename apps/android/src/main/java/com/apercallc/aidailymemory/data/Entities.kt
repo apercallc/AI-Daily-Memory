@@ -223,23 +223,40 @@ data class TranscriptEntity(
     @ColumnInfo(name = "received_at_epoch_ms") val receivedAtEpochMs: Long,
 )
 
+/**
+ * One transcript line. The words and speaker label are sealed with a Keystore-backed key
+ * (TranscriptCipher) before they reach this database, like the audio they came from
+ * (SECURITY.md "Local audio at rest"); only timing stays in the clear.
+ */
 @Entity(tableName = "transcript_span", primaryKeys = ["upload_id", "idx"])
 data class TranscriptSpanEntity(
     @ColumnInfo(name = "upload_id") val uploadId: String,
     val idx: Int,
     @ColumnInfo(name = "start_ms") val startMs: Long,
     @ColumnInfo(name = "end_ms") val endMs: Long,
-    val text: String,
-    val speaker: String?,
+    /** AEAD of {"text", "speaker"}, bound to upload id + index. */
+    val sealed: ByteArray,
     val confidence: Double?,
-)
+) {
+    override fun equals(other: Any?): Boolean =
+        other is TranscriptSpanEntity && other.uploadId == uploadId && other.idx == idx &&
+            other.startMs == startMs && other.endMs == endMs && other.sealed.contentEquals(sealed) &&
+            other.confidence == confidence
 
-/** One transcript line placed on the wall clock, for the session transcript screen. */
+    override fun hashCode(): Int = uploadId.hashCode() * 31 + idx
+}
+
+/** One sealed transcript line placed on the wall clock, before it is opened for display. */
 data class TranscriptLine(
     val uploadId: String,
     val idx: Int,
     val startEpochMs: Long,
     val zoneId: String,
-    val text: String,
-    val speaker: String?,
-)
+    val sealed: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is TranscriptLine && other.uploadId == uploadId && other.idx == idx &&
+            other.startEpochMs == startEpochMs && other.zoneId == zoneId && other.sealed.contentEquals(sealed)
+
+    override fun hashCode(): Int = uploadId.hashCode() * 31 + idx
+}

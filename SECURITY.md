@@ -40,10 +40,17 @@ Report security issues privately to the repository owner/organization maintainer
   invalidated (e.g. data cleared, Keystore reset), unacknowledged local segments become
   unreadable. The app never silently generates a new key over them.
 - Segments live in `noBackupFilesDir`; backup and device transfer exclude all app data.
-- The local capture database (`capture.db`) holds metadata only: session and segment ids,
-  timestamps, checksums, lifecycle states, and marker windows. It holds no audio and no
-  transcript text, and relies on Android file-based encryption (credential-encrypted
-  storage). If it ever stores content (Phase 2+), it needs app-level encryption first.
+- The local capture database (`capture.db`) holds no audio. Its metadata (session and
+  segment ids, timestamps, checksums, lifecycle states, marker windows, speech regions,
+  clip upload state, transcript line timings) relies on Android file-based encryption
+  (credential-encrypted storage). Delivered transcript content is sealed at rest with
+  app-level encryption: every line's words and speaker label are encrypted by
+  `TranscriptCipher` (AES-256-GCM under a Keystore-wrapped key separate from the audio
+  and link keys). The associated data binds each line to its upload id and line index,
+  so lines cannot be swapped between clips or reordered. Only timing is stored in the
+  clear. A line that fails to decrypt (lost key, tampering) is left out of the
+  transcript and logged as `transcript_line_unreadable`; it is never shown as garbled
+  text.
 - Logs name events and exception types only, never exception messages: platform messages
   carry file paths and segment ids, and UUIDv7 ids encode recording times.
 - **Deletion is logical deletion plus key hygiene, not physical erasure.** Deleting a

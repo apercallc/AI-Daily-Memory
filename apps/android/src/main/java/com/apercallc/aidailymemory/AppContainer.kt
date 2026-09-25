@@ -32,6 +32,7 @@ import com.apercallc.aidailymemory.schedule.RhythmRunner
 import com.apercallc.aidailymemory.schedule.SessionRegistry
 import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.data.CaptureDatabase
+import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.platform.StorageMonitor
@@ -67,6 +68,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Manual dependency wiring, one instance per process. Deliberately plain: a DI framework is
@@ -279,6 +281,7 @@ class AppContainer(context: Context) {
             onLinked = uploadScheduler::schedule,
             onUnlinked = uploadScheduler::cancel,
             onRevokePending = uploadScheduler::scheduleRevoke,
+            registerKey = { link -> runBlocking { deliveryReceiver.ensureRegistered(link) } },
         )
     }
 
@@ -309,8 +312,17 @@ class AppContainer(context: Context) {
             key = { deviceKey },
             prefs = app.getSharedPreferences(LinkStore.FILE_NAME, Context.MODE_PRIVATE),
             transcripts = database.transcripts(),
+            cipher = transcriptCipher,
             store = segments,
         )
+    }
+
+    /** Transcript words are sealed at rest under their own Keystore-wrapped key. */
+    val transcriptCipher: TranscriptCipher by lazy {
+        val aead by lazy {
+            LinkStore.keystoreAead(app, "transcript_keyset", "transcript_keys", "android-keystore://aidm_transcript_master_key")
+        }
+        TranscriptCipher { aead }
     }
 
     /** New speech analysis may have produced clips; upload them on the next good window. */

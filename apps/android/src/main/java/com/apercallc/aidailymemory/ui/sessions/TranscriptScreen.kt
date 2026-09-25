@@ -16,7 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
-import com.apercallc.aidailymemory.data.TranscriptLine
+import com.apercallc.aidailymemory.data.TranscriptText
 import com.apercallc.aidailymemory.ui.TimeText
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.DateTimeException
@@ -29,7 +29,7 @@ import java.time.ZoneId
  * provider gave them; attributing "me" comes with ADR-0016.
  */
 @Composable
-fun TranscriptScreen(lines: List<TranscriptLine>?, modifier: Modifier = Modifier) {
+fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
@@ -42,7 +42,7 @@ fun TranscriptScreen(lines: List<TranscriptLine>?, modifier: Modifier = Modifier
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            else -> items(lines, key = { "${it.uploadId}:${it.idx}" }) { line ->
+            else -> items(lines, key = { it.key }) { line ->
                 val time = times(Instant.ofEpochMilli(line.startEpochMs).atZone(zoneOf(line.zoneId)))
                 val speaker = line.speaker?.let { stringResource(R.string.transcript_speaker, it) }
                 val spoken = listOfNotNull(time, speaker, line.text).joinToString(", ")

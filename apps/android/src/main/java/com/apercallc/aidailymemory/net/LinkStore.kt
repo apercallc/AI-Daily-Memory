@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 
 /** Where the link stands, for the settings screen. */
 enum class LinkProblem {
@@ -71,7 +74,8 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         if (loaded) return
         loaded = true
         if (prefs.getBoolean(KEY_REJECTED, false)) _problem.value = LinkProblem.REJECTED
-        _revokePending.value = prefs.contains(KEY_REVOKE_TOKEN)
+        _revokePending.value = readRevokes().length() > 0
+        _revokeManual.value = prefs.getBoolean(KEY_REVOKE_MANUAL, false)
         val url = prefs.getString(KEY_URL, null) ?: return
         val sealed = prefs.getString(KEY_TOKEN, null) ?: return
         try {
@@ -102,6 +106,9 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         loaded = true
         _link.value = link
         _problem.value = LinkProblem.NONE
+        // A fresh, working link: the old-token notice has done its job.
+        prefs.edit { remove(KEY_REVOKE_MANUAL) }
+        _revokeManual.value = false
     }
 
     /** Forgets the token (Disconnect). */
@@ -110,45 +117,77 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
 
     /**
      * Disconnect: forgets the link for uploads but keeps the token, still sealed, only until
-     * the server has revoked it. If it can't be sealed, it is simply forgotten.
+     * the server has revoked it. Several can wait at once. If one can't be sealed, the user is
+     * told to have it revoked on the server ([revokeManual]).
      */
     @Synchronized
     fun clearKeepingForRevoke(link: ServerLink) {
         try {
             val sealed = aead().encrypt(link.token.toByteArray(Charsets.UTF_8), REVOKE_AD)
-            prefs.edit {
-                putString(KEY_REVOKE_URL, link.baseUrl)
-                putString(KEY_REVOKE_TOKEN, Base64.encodeToString(sealed, Base64.NO_WRAP))
-            }
-            _revokePending.value = true
+            val entry = JSONObject()
+                .put("id", java.util.UUID.randomUUID().toString())
+                .put("url", link.baseUrl)
+                .put("token", Base64.encodeToString(sealed, Base64.NO_WRAP))
+            writeRevokes(readRevokes().put(entry))
         } catch (e: GeneralSecurityException) {
             logFailure(TAG, "revoke_keep_failed", e, warning = true)
+            markRevokeManual()
         }
         forget(LinkProblem.NONE)
     }
 
-    /** The token still waiting for its server-side revoke, if any. */
+    /** Tokens still waiting for their server-side revoke, by entry id. */
     @Synchronized
-    fun pendingRevoke(): ServerLink? {
-        val url = prefs.getString(KEY_REVOKE_URL, null) ?: return null
-        val sealed = prefs.getString(KEY_REVOKE_TOKEN, null) ?: return null
-        return try {
-            ServerLink(url, aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), REVOKE_AD).toString(Charsets.UTF_8))
-        } catch (e: GeneralSecurityException) {
-            // Can't be read any more, so it can't be used either: nothing left to revoke from here.
-            logFailure(TAG, "revoke_unreadable", e, warning = true)
-            revokeDone()
-            null
+    fun pendingRevokes(): Map<String, ServerLink> {
+        val entries = readRevokes()
+        val pending = mutableMapOf<String, ServerLink>()
+        for (i in 0 until entries.length()) {
+            val entry = entries.getJSONObject(i)
+            val id = entry.getString("id")
+            try {
+                val token = aead().decrypt(Base64.decode(entry.getString("token"), Base64.NO_WRAP), REVOKE_AD)
+                pending[id] = ServerLink(entry.getString("url"), token.toString(Charsets.UTF_8))
+            } catch (e: GeneralSecurityException) {
+                // Unreadable here, but possibly still valid on the server: tell the user.
+                logFailure(TAG, "revoke_unreadable", e, warning = true)
+                revokeDone(id)
+                markRevokeManual()
+            }
         }
+        return pending
     }
 
     @Synchronized
-    fun revokeDone() {
-        prefs.edit {
-            remove(KEY_REVOKE_URL)
-            remove(KEY_REVOKE_TOKEN)
+    fun revokeDone(id: String) {
+        val entries = readRevokes()
+        val kept = JSONArray()
+        for (i in 0 until entries.length()) {
+            val entry = entries.getJSONObject(i)
+            if (entry.getString("id") != id) kept.put(entry)
         }
-        _revokePending.value = false
+        writeRevokes(kept)
+    }
+
+    private val _revokeManual = MutableStateFlow(false)
+
+    /** A token this phone could not revoke itself: the user should have it revoked server-side. */
+    val revokeManual: StateFlow<Boolean> = _revokeManual.asStateFlow()
+
+    private fun markRevokeManual() {
+        prefs.edit { putBoolean(KEY_REVOKE_MANUAL, true) }
+        _revokeManual.value = true
+    }
+
+    private fun readRevokes(): JSONArray = try {
+        JSONArray(prefs.getString(KEY_REVOKES, "[]"))
+    } catch (e: JSONException) {
+        logFailure(TAG, "revokes_invalid", e, warning = true)
+        JSONArray()
+    }
+
+    private fun writeRevokes(entries: JSONArray) {
+        prefs.edit { putString(KEY_REVOKES, entries.toString()) }
+        _revokePending.value = entries.length() > 0
     }
 
     /**
@@ -181,8 +220,8 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         private const val KEY_TOKEN = "token_sealed"
         private const val KEY_SINCE = "upload_since_epoch_ms"
         private const val KEY_REJECTED = "rejected"
-        private const val KEY_REVOKE_URL = "revoke_base_url"
-        private const val KEY_REVOKE_TOKEN = "revoke_token_sealed"
+        private const val KEY_REVOKES = "pending_revokes"
+        private const val KEY_REVOKE_MANUAL = "revoke_manual"
         private val REVOKE_AD = "aidm:server-token:revoke:v1".toByteArray(Charsets.UTF_8)
         private val AD = "aidm:server-token:v1".toByteArray(Charsets.UTF_8)
         private const val KEYSET = "link_keyset"
@@ -194,13 +233,16 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
          * that surface as the unchecked ProviderException are converted, so callers only
          * handle GeneralSecurityException.
          */
-        fun keystoreAead(context: Context): Aead {
+        fun keystoreAead(context: Context): Aead = keystoreAead(context, KEYSET, KEYSET_PREFS, MASTER_KEY_URI)
+
+        /** A separate Keystore-wrapped AES-256-GCM key per purpose. */
+        fun keystoreAead(context: Context, keyset: String, prefs: String, masterKeyUri: String): Aead {
             try {
                 AeadConfig.register()
                 val manager = AndroidKeysetManager.Builder()
-                    .withSharedPref(context.applicationContext, KEYSET, KEYSET_PREFS)
+                    .withSharedPref(context.applicationContext, keyset, prefs)
                     .withKeyTemplate(KeyTemplates.get("AES256_GCM"))
-                    .withMasterKeyUri(MASTER_KEY_URI)
+                    .withMasterKeyUri(masterKeyUri)
                     .build()
                 if (!manager.isUsingKeystore) throw GeneralSecurityException("Android Keystore unavailable")
                 val aead = manager.keysetHandle.getPrimitive(RegistryConfiguration.get(), Aead::class.java)

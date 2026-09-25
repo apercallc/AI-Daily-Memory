@@ -11,6 +11,7 @@ import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.ClipPlanEntity
 import com.apercallc.aidailymemory.data.ClipUploadEntity
 import com.apercallc.aidailymemory.data.SegmentEntity
+import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.net.ApiException
 import com.apercallc.aidailymemory.net.ClipRequest
 import com.apercallc.aidailymemory.net.DeliveryApi
@@ -62,6 +63,18 @@ class DeliveryReceiverTest {
     private val prefs = context.getSharedPreferences("delivery-test", Context.MODE_PRIVATE)
     private var link: ServerLink? = ServerLink("https://api.example", "adm_" + "d".repeat(40))
     private val server = FakeServer()
+    private val cipher = TranscriptCipher {
+        com.google.crypto.tink.aead.AeadConfig.register()
+        aeadKey
+    }
+    private val aeadKey by lazy {
+        com.google.crypto.tink.aead.AeadConfig.register()
+        KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
+            .getPrimitive(RegistryConfiguration.get(), com.google.crypto.tink.Aead::class.java)
+    }
+
+    private suspend fun lines(sessionId: String) =
+        db.transcripts().observeSession(sessionId).first().mapNotNull(cipher::open)
 
     /** Holds sealed deliveries until acknowledged, like backend/app/api/deliveries.py. */
     private class FakeServer : DeliveryApi {
@@ -112,6 +125,7 @@ class DeliveryReceiverTest {
         key = { DeviceKey(handle) },
         prefs = prefs,
         transcripts = db.transcripts(),
+        cipher = cipher,
         store = store,
         now = { 1_000L },
         io = Dispatchers.Unconfined,
@@ -161,11 +175,11 @@ class DeliveryReceiverTest {
         return store.markUploaded(segment) to ids
     }
 
-    private fun payload(uploadId: String, segmentId: String, version: Int = 1): ByteArray = JSONObject()
+    private suspend fun payload(uploadId: String, segmentId: String, version: Int = 1, offsetMs: Long? = null): ByteArray = JSONObject()
         .put("v", version)
         .put("upload_id", uploadId)
         .put("segment_id", segmentId)
-        .put("offset_ms", 64)
+        .put("offset_ms", offsetMs ?: db.clips().byId(uploadId)?.offsetMs ?: 0)
         .put("captured_at", "2026-09-25T14:03:00+02:00")
         .put("provider", "fake")
         .put("model", "fake-1")
@@ -215,12 +229,15 @@ class DeliveryReceiverTest {
 
         assertEquals(SegmentState.ACKNOWLEDGED.name, db.segments().get(segment.segmentId)?.state)
         assertEquals(0, db.transcripts().awaitingCount())
-        val lines = db.transcripts().observeSession(segment.sessionId).first()
+        val lines = lines(segment.sessionId)
         assertEquals(4, lines.size)
         assertEquals("Let's ship Friday.", lines.first().text)
         assertEquals("A", lines.first().speaker)
         assertNull(lines.first { it.text == "I'll send the deck." }.speaker)
-        assertEquals(segment.start.occurredAtEpochMs + 64, lines.first().startEpochMs)
+        assertEquals(segment.start.occurredAtEpochMs, lines.first().startEpochMs) // first clip at offset 0
+        // Stored sealed: the words are not in the database in the clear.
+        val raw = db.transcripts().observeSession(segment.sessionId).first()
+        assertTrue(raw.none { String(it.sealed, Charsets.ISO_8859_1).contains("Friday") })
     }
 
     @Test
@@ -232,7 +249,7 @@ class DeliveryReceiverTest {
 
         receiver().run()
 
-        assertEquals(2, db.transcripts().observeSession(segment.sessionId).first().size)
+        assertEquals(2, lines(segment.sessionId).size)
     }
 
     @Test
@@ -269,18 +286,61 @@ class DeliveryReceiverTest {
     }
 
     @Test
-    fun `a clip the server gave up on or no longer knows is queued again, others wait`() = runTest {
-        val (_, ids) = uploadedSegment(clips = 3)
+    fun `failed clips are queued again, unknown ones are shown, others wait`() = runTest {
+        val (segment, ids) = uploadedSegment(clips = 4)
         statuses[ids[0]] = "failed"
         statuses[ids[1]] = null
-        statuses[ids[2]] = "received"
+        statuses[ids[2]] = "delivered"
+        statuses[ids[3]] = "received"
 
         receiver().run()
 
-        val clips = db.clips().forSegment(db.clips().awaiting(10).first().segmentId)
-        assertEquals(listOf(ClipUploader.PENDING, ClipUploader.PENDING, ClipUploader.RECEIVED), clips.map { it.state })
-        assertTrue(clips.take(2).none { it.clipId in ids }) // new upload ids
-        assertEquals(ids[2], clips[2].clipId)
+        val clips = db.clips().forSegment(segment.segmentId)
+        assertEquals(ClipUploader.PENDING, clips[0].state)
+        assertTrue(clips[0].clipId != ids[0]) // new upload id
+        assertEquals(listOf("FAILED" to "unknown_to_server", "FAILED" to "delivered_elsewhere"), clips.subList(1, 3).map { it.state to it.lastError })
+        assertEquals(ClipUploader.RECEIVED, clips[3].state)
+    }
+
+    @Test
+    fun `requeueing stops after the retry budget and is shown instead`() = runTest {
+        val (segment, ids) = uploadedSegment(clips = 1)
+        db.clips().update(db.clips().byId(ids[0])!!.copy(attempts = ClipUploader.MAX_ATTEMPTS - 1))
+        statuses[ids[0]] = "failed"
+
+        receiver().run()
+
+        val clip = db.clips().forSegment(segment.segmentId).single()
+        assertEquals(ClipUploader.FAILED, clip.state)
+        assertEquals("server_gave_up", clip.lastError)
+    }
+
+    @Test
+    fun `a payload whose placement disagrees with the local clip is not stored`() = runTest {
+        val (segment, ids) = uploadedSegment(clips = 1)
+        deliver(ids[0], payload(ids[0], segment.segmentId, offsetMs = 999))
+
+        assertEquals(DeliveryRun(0, 1, null), receiver().run())
+        assertTrue(server.acked.isEmpty())
+    }
+
+    @Test
+    fun `a payload with a missing field is rejected, not a crash`() = runTest {
+        val (_, ids) = uploadedSegment(clips = 1)
+        deliver(ids[0], JSONObject().put("v", 1).put("upload_id", ids[0]).put("spans", JSONArray()).toString().toByteArray())
+
+        assertEquals(DeliveryRun(0, 1, null), receiver().run())
+    }
+
+    @Test
+    fun `registration problems stop uploads with the right reason`() = runTest {
+        val registered = link!!
+        assertNull(receiver().registrationStop(registered))
+        prefs.edit().clear().commit()
+        server.fail = { throw ApiException(409, "device_key_mismatch") }
+        assertEquals(UploadStop.UNAUTHORIZED, receiver().registrationStop(registered))
+        server.fail = { throw IOException("offline") }
+        assertEquals(UploadStop.OFFLINE, receiver().registrationStop(registered))
     }
 
     @Test

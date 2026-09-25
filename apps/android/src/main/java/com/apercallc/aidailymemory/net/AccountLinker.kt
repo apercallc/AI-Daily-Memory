@@ -22,6 +22,8 @@ class AccountLinker(
     private val onUnlinked: () -> Unit,
     /** The server revoke didn't go through: arrange a retry when online. */
     private val onRevokePending: () -> Unit = {},
+    /** Registers this phone's device key for a just-verified link (ADR-0014); throws on failure. */
+    private val registerKey: (ServerLink) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     fun connect(url: String, token: String, includeBacklog: Boolean): ConnectError? {
@@ -30,10 +32,15 @@ class AccountLinker(
             LinkInput.InvalidToken -> return ConnectError.INVALID_TOKEN
             is LinkInput.Valid -> input.link
         }
+        // Any disconnected token still waiting for its revoke goes first.
+        retryPendingRevoke()
         try {
             api.me(link)
+            // Close the window in which someone else holding this token could register a key.
+            registerKey(link)
         } catch (e: ApiException) {
-            return if (e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN) {
+            val refused = e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN
+            return if (refused || e.code == "device_key_mismatch") {
                 ConnectError.REJECTED
             } else {
                 ConnectError.UNREACHABLE
@@ -41,6 +48,9 @@ class AccountLinker(
         } catch (e: IOException) {
             logFailure(TAG, "account_check_failed", e, warning = true)
             return ConnectError.UNREACHABLE
+        } catch (e: GeneralSecurityException) {
+            logFailure(TAG, "device_key_unavailable", e)
+            return ConnectError.SAVE_FAILED
         }
         try {
             links.save(link, now(), includeBacklog)
@@ -65,20 +75,25 @@ class AccountLinker(
      * now, already invalid, or nothing to do. False means try again when online.
      */
     fun retryPendingRevoke(): Boolean {
-        val pending = links.pendingRevoke() ?: return true
-        return try {
-            api.revokeCurrent(pending)
-            links.revokeDone()
-            true
-        } catch (e: ApiException) {
-            // Already revoked or expired: the goal is met.
-            val gone = e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN
-            if (gone) links.revokeDone() else logFailure(TAG, "account_revoke_failed", e, warning = true)
-            gone
-        } catch (e: IOException) {
-            logFailure(TAG, "account_revoke_failed", e, warning = true)
-            false
+        var allDone = true
+        for ((id, pending) in links.pendingRevokes()) {
+            try {
+                api.revokeCurrent(pending)
+                links.revokeDone(id)
+            } catch (e: ApiException) {
+                // Already revoked or expired: the goal is met.
+                if (e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN) {
+                    links.revokeDone(id)
+                } else {
+                    logFailure(TAG, "account_revoke_failed", e, warning = true)
+                    allDone = false
+                }
+            } catch (e: IOException) {
+                logFailure(TAG, "account_revoke_failed", e, warning = true)
+                allDone = false
+            }
         }
+        return allDone
     }
 
     private companion object {

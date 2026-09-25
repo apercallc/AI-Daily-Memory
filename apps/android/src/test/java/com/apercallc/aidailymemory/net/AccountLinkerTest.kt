@@ -51,12 +51,15 @@ class AccountLinkerTest {
 
     private var revokeRetries = 0
 
+    private var register: (ServerLink) -> Unit = {}
+
     private fun linker(store: LinkStore = links) = AccountLinker(
         store,
         api,
         onLinked = { linked++ },
         onUnlinked = { unlinked++ },
         onRevokePending = { revokeRetries++ },
+        registerKey = { register(it) },
         now = { 42L },
     )
 
@@ -166,6 +169,38 @@ class AccountLinkerTest {
         linker().disconnect()
 
         assertTrue(links.revokePending.value)
+    }
+
+    @Test
+    fun `several disconnected tokens wait and are all revoked, before connecting again`() {
+        api.onRevoke = { throw IOException("offline") }
+        linker().connect(url, token, false)
+        linker().disconnect()
+        linker().connect(url, "adm_" + "M".repeat(43), false)
+        linker().disconnect()
+        assertEquals(2, links.pendingRevokes().size)
+
+        api.onRevoke = {}
+        linker().connect(url, "adm_" + "N".repeat(43), false)
+
+        assertTrue(links.pendingRevokes().isEmpty())
+        assertFalse(links.revokePending.value)
+    }
+
+    @Test
+    fun `the device key is registered while connecting, and a mismatch refuses the link`() {
+        val registered = mutableListOf<ServerLink>()
+        register = { registered += it }
+        assertNull(linker().connect(url, token, false))
+        assertEquals(listOf(ServerLink(url, token)), registered)
+
+        links.clear()
+        register = { throw ApiException(409, "device_key_mismatch") }
+        assertEquals(ConnectError.REJECTED, linker().connect(url, token, false))
+        assertNull(links.link.value)
+
+        register = { throw GeneralSecurityException("no keystore") }
+        assertEquals(ConnectError.SAVE_FAILED, linker().connect(url, token, false))
     }
 
     @Test

@@ -238,6 +238,20 @@ interface ClipDao {
     )
     suspend fun awaiting(limit: Int): List<ClipUploadEntity>
 
+    /** The server already had this clip under [newId] (it lost our old id): use its id. */
+    @Query(
+        "UPDATE clip_upload SET clip_id = :newId, state = 'RECEIVED', last_error = NULL " +
+            "WHERE clip_id = :oldId",
+    )
+    suspend fun adopt(oldId: String, newId: String)
+
+    /** Stop trying: shown to the user, who can retry. The audio stays on the phone. */
+    @Query("UPDATE clip_upload SET state = 'FAILED', last_error = :reason WHERE clip_id = :clipId")
+    suspend fun giveUp(clipId: String, reason: String)
+
+    @Query("SELECT * FROM clip_upload WHERE clip_id = :clipId")
+    suspend fun byId(clipId: String): ClipUploadEntity?
+
     /** The server no longer has this clip's upload: upload it again under a new id. */
     @Query(
         "UPDATE clip_upload SET clip_id = :newId, state = 'PENDING', attempts = attempts + 1, " +
@@ -280,12 +294,19 @@ interface ClipDao {
     )
     suspend fun pendingCount(sinceEpochMs: Long): Int
 
-    /** Clips that gave up plus segments that couldn't be read: shown to the user. */
+    /**
+     * What the user should know about: clips that gave up, segments that couldn't be read, and
+     * clips waiting that the current link's consent excludes (planned under an earlier one).
+     */
     @Query(
-        "SELECT (SELECT COUNT(*) FROM clip_upload WHERE state = 'FAILED') + " +
-            "(SELECT COUNT(*) FROM clip_plan WHERE outcome = 'UNREADABLE')",
+        """
+        SELECT (SELECT COUNT(*) FROM clip_upload WHERE state = 'FAILED')
+            + (SELECT COUNT(*) FROM clip_plan WHERE outcome = 'UNREADABLE')
+            + (SELECT COUNT(*) FROM clip_upload c JOIN audio_segment s ON s.segment_id = c.segment_id
+                WHERE c.state = 'PENDING' AND s.start_occurred_at_epoch_ms < :sinceEpochMs)
+        """,
     )
-    fun observeProblems(): Flow<Int>
+    fun observeProblems(sinceEpochMs: Long): Flow<Int>
 
     /** The user asked to try again: failed clips restart, unreadable segments are re-planned. */
     @Transaction
@@ -349,7 +370,7 @@ interface TranscriptDao {
         """
         SELECT x.upload_id AS uploadId, x.idx AS idx,
             (s.start_occurred_at_epoch_ms + t.offset_ms + x.start_ms) AS startEpochMs,
-            s.start_timezone AS zoneId, x.text AS text, x.speaker AS speaker
+            s.start_timezone AS zoneId, x.sealed AS sealed
         FROM transcript_span x
         JOIN transcript t ON t.upload_id = x.upload_id
         JOIN audio_segment s ON s.segment_id = t.segment_id

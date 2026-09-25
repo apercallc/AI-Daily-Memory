@@ -8,11 +8,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
+import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.upload.NextUpload
 import com.apercallc.aidailymemory.recording.upload.UploadPolicy
 import com.apercallc.aidailymemory.recording.upload.UploadStop
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -91,27 +91,16 @@ class UploadJobService : JobService() {
             val next = try {
                 container.links.ensureLoaded()
                 container.accountLinker.retryPendingRevoke()
-                // Phone storage modes need the key registered before any upload (ADR-0014).
-                container.links.link.value?.let { link ->
-                    try {
-                        container.deliveryReceiver.ensureRegistered(link)
-                    } catch (e: IOException) {
-                        // The uploads that need it retry; the delivery run reports the stop.
-                        logFailure(TAG, "device_key_register_failed", e, warning = true)
-                    }
+                // No upload before this phone's key is registered for this token (ADR-0014):
+                // otherwise the server would seal the batch to whatever key the token has.
+                val registration = container.links.link.value?.let { link ->
+                    container.deliveryReceiver.registrationStop(link)
                 }
-                val upload = container.clipUploader.run()
-                // Collect whatever the server has finished, even if uploading stopped early.
-                val delivery = container.deliveryReceiver.run()
-                val stop = listOfNotNull(upload.stoppedBy, delivery.stoppedBy)
-                    .firstOrNull { it == UploadStop.UNAUTHORIZED } ?: upload.stoppedBy ?: delivery.stoppedBy
-                UploadPolicy.next(
-                    received = upload.received,
-                    remaining = upload.remaining,
-                    stoppedBy = stop,
-                    crashed = false,
-                    awaiting = container.database.transcripts().awaitingCount(),
-                )
+                if (registration != null) {
+                    UploadPolicy.next(0, 0, registration, crashed = false)
+                } else {
+                    runUploads(container)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -136,6 +125,21 @@ class UploadJobService : JobService() {
             }
         }
         return true
+    }
+
+    private suspend fun runUploads(container: AppContainer): NextUpload {
+        val upload = container.clipUploader.run()
+        // Collect whatever the server has finished, even if uploading stopped early.
+        val delivery = container.deliveryReceiver.run()
+        val stop = listOfNotNull(upload.stoppedBy, delivery.stoppedBy)
+            .firstOrNull { it == UploadStop.UNAUTHORIZED } ?: upload.stoppedBy ?: delivery.stoppedBy
+        return UploadPolicy.next(
+            received = upload.received,
+            remaining = upload.remaining,
+            stoppedBy = stop,
+            crashed = false,
+            awaiting = container.database.transcripts().awaitingCount(),
+        )
     }
 
     override fun onStopJob(params: JobParameters): Boolean {

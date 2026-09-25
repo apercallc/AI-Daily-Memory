@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.core.content.edit
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.data.ClipDao
+import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.data.TranscriptDao
 import com.apercallc.aidailymemory.data.TranscriptEntity
 import com.apercallc.aidailymemory.data.TranscriptSpanEntity
@@ -48,6 +49,7 @@ class DeliveryReceiver(
     private val key: () -> DeviceKey,
     private val prefs: SharedPreferences,
     private val transcripts: TranscriptDao,
+    private val cipher: TranscriptCipher,
     private val store: SegmentStore,
     private val now: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -59,6 +61,22 @@ class DeliveryReceiver(
         if (prefs.getString(KEY_REGISTERED, null) == fingerprint) return@withContext
         api.registerKey(server, publicKey)
         prefs.edit { putString(KEY_REGISTERED, fingerprint) }
+    }
+
+    /**
+     * Registers the key; null when registered, otherwise why uploading must not start:
+     * a refused token or a mismatched key means reconnect, anything else means back off.
+     */
+    suspend fun registrationStop(server: ServerLink): UploadStop? = try {
+        ensureRegistered(server)
+        null
+    } catch (e: ApiException) {
+        stopFor(e)
+    } catch (e: IOException) {
+        UploadStop.OFFLINE
+    } catch (e: GeneralSecurityException) {
+        logFailure(TAG, "device_key_unavailable", e)
+        UploadStop.SERVER
     }
 
     suspend fun run(maxPages: Int = MAX_PAGES): DeliveryRun = withContext(io) {
@@ -74,6 +92,7 @@ class DeliveryReceiver(
                 val opened = page.mapNotNull { delivery ->
                     val payload = try {
                         TranscriptPayload.parse(deviceKey.open(delivery.ciphertext, delivery.uploadId), delivery.uploadId)
+                            .also { requireMatchesLocalClip(it) }
                     } catch (e: GeneralSecurityException) {
                         logFailure(TAG, "delivery_unopenable", e, warning = true)
                         null
@@ -85,7 +104,7 @@ class DeliveryReceiver(
                         unreadable++
                         return@mapNotNull null
                     }
-                    transcripts.store(payload.transcript(now()), payload.spans)
+                    transcripts.store(payload.transcript(now()), payload.sealedSpans(cipher))
                     delivery.deliveryId
                 }
                 if (opened.isNotEmpty()) api.acknowledge(server, opened)
@@ -121,14 +140,28 @@ class DeliveryReceiver(
         for (clip in clips.awaiting(RECHECK_BATCH)) {
             currentCoroutineContext().ensureActive()
             when (uploads.status(server, clip.clipId)) {
-                null, "failed", "delivered" -> {
-                    // "delivered" without a local transcript can only mean it went to a copy of
-                    // this app that no longer exists: upload again rather than lose it.
-                    Log.w(TAG, "clip_requeued_after_server_loss")
+                // Failed or expired on the server: upload again from the kept audio, a bounded
+                // number of times, then show it instead of cycling forever.
+                "failed" -> if (clip.attempts + 1 >= ClipUploader.MAX_ATTEMPTS) {
+                    clips.giveUp(clip.clipId, "server_gave_up")
+                } else {
+                    Log.w(TAG, "clip_requeued_after_server_failure")
                     clips.requeue(clip.clipId, ids.next().toString())
                 }
+                // Unknown to this account (another link, or long purged), or collected by an
+                // install that no longer exists: nothing automatic is safe. Show it.
+                null -> clips.giveUp(clip.clipId, "unknown_to_server")
+                "delivered" -> clips.giveUp(clip.clipId, "delivered_elsewhere")
                 else -> Unit // still being processed
             }
+        }
+    }
+
+    /** Placement comes from this phone's own clip row, never only from the server. */
+    private suspend fun requireMatchesLocalClip(payload: TranscriptPayload) {
+        val clip = clips.byId(payload.uploadId) ?: throw IllegalArgumentException("no local clip")
+        require(clip.segmentId == payload.segmentId && clip.offsetMs == payload.offsetMs) {
+            "payload placement differs from the local clip"
         }
     }
 
@@ -166,6 +199,16 @@ class DeliveryReceiver(
     }
 }
 
+/** One validated line before it is sealed for storage. */
+internal data class PlainSpan(
+    val idx: Int,
+    val startMs: Long,
+    val endMs: Long,
+    val text: String,
+    val speaker: String?,
+    val confidence: Double?,
+)
+
 /** A delivered transcript, validated before it becomes evidence. */
 internal data class TranscriptPayload(
     val uploadId: String,
@@ -174,22 +217,35 @@ internal data class TranscriptPayload(
     val provider: String,
     val model: String,
     val language: String?,
-    val spans: List<TranscriptSpanEntity>,
+    val spans: List<PlainSpan>,
 ) {
     fun transcript(receivedAtEpochMs: Long) =
         TranscriptEntity(uploadId, segmentId, offsetMs, provider, model, language, receivedAtEpochMs)
+
+    fun sealedSpans(cipher: TranscriptCipher): List<TranscriptSpanEntity> = spans.map {
+        TranscriptSpanEntity(
+            uploadId = uploadId,
+            idx = it.idx,
+            startMs = it.startMs,
+            endMs = it.endMs,
+            sealed = cipher.seal(uploadId, it.idx, it.text, it.speaker),
+            confidence = it.confidence,
+        )
+    }
 
     companion object {
         private const val VERSION = 1
         private const val MAX_TEXT = 20_000
 
         /** @throws IllegalArgumentException for anything malformed, of another version, or for another upload. */
-        fun parse(bytes: ByteArray, expectedUploadId: String): TranscriptPayload {
-            val json = try {
-                JSONObject(String(bytes, Charsets.UTF_8))
-            } catch (e: JSONException) {
-                throw IllegalArgumentException("not json", e)
-            }
+        fun parse(bytes: ByteArray, expectedUploadId: String): TranscriptPayload = try {
+            parseJson(JSONObject(String(bytes, Charsets.UTF_8)), expectedUploadId)
+        } catch (e: JSONException) {
+            // Missing or mistyped fields: malformed evidence, like any other.
+            throw IllegalArgumentException("malformed payload", e)
+        }
+
+        private fun parseJson(json: JSONObject, expectedUploadId: String): TranscriptPayload {
             require(json.optInt("v") == VERSION) { "unsupported payload version" }
             val uploadId = json.optString("upload_id")
             require(uploadId == expectedUploadId) { "payload for another upload" }
@@ -203,8 +259,7 @@ internal data class TranscriptPayload(
                 require(start in previousStart..end) { "spans out of order" }
                 require(text.length <= MAX_TEXT) { "span too long" }
                 previousStart = start
-                TranscriptSpanEntity(
-                    uploadId = uploadId,
+                PlainSpan(
                     idx = i,
                     startMs = start,
                     endMs = end,

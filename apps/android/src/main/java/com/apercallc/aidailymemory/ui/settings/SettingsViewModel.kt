@@ -16,10 +16,12 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,6 +29,7 @@ import kotlinx.coroutines.withContext
 /** The next thing the schedule will do, for the "Next: …" line. */
 data class NextChange(val action: RhythmAction, val at: ZonedDateTime, val quietLabel: String?)
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val settings = container.settings
 
@@ -59,18 +62,26 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val connectError = MutableStateFlow<ConnectError?>(null)
 
     val account: StateFlow<AccountUi> = combine(
-        combine(container.links.link, container.links.problem, container.links.revokePending, ::Triple),
+        combine(
+            container.links.link,
+            container.links.problem,
+            combine(container.links.revokePending, container.links.revokeManual, ::Pair),
+            ::Triple,
+        ),
         connecting,
         connectError,
-        container.database.clips().observeProblems(),
-    ) { (link, problem, revokePending), busy, error, problems ->
+        container.links.link.flatMapLatest {
+            container.database.clips().observeProblems(container.links.uploadSinceEpochMs)
+        },
+    ) { (link, problem, revoke), busy, error, problems ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
             problem = problem,
             connecting = busy,
             error = error,
             uploadProblems = problems,
-            revokePending = revokePending,
+            revokePending = revoke.first,
+            revokeManual = revoke.second,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 

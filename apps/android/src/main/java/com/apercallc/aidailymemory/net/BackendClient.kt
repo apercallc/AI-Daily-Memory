@@ -49,7 +49,8 @@ data class ClipRequest(
 
 data class UploadTarget(val url: String, val headers: Map<String, String>)
 
-data class UploadState(val state: String, val target: UploadTarget?)
+/** [uploadId] is the id the server keeps the clip under (it can differ for a re-created clip). */
+data class UploadState(val state: String, val target: UploadTarget?, val uploadId: String? = null)
 
 /** The calling device's account (backend/app/api/account.py). */
 interface AccountApi {
@@ -229,7 +230,7 @@ class HttpUploadApi(
                 headers = headers?.keys()?.asSequence()?.associateWith { headers.optString(it) }.orEmpty(),
             )
         }
-        return UploadState(state, target)
+        return UploadState(state, target, json.optString("upload_id").ifEmpty { null })
     }
 }
 

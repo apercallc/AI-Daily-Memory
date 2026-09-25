@@ -48,6 +48,8 @@ data class AccountUi(
     val uploadProblems: Int = 0,
     /** A disconnected token the server hasn't revoked yet. */
     val revokePending: Boolean = false,
+    /** A disconnected token this phone can't revoke itself (it has to be done server-side). */
+    val revokeManual: Boolean = false,
 )
 
 /**
@@ -71,6 +73,7 @@ fun AccountSection(
             modifier = Modifier.semantics { heading() },
         )
         if (account.revokePending) Status(stringResource(R.string.account_revoke_pending), isError = false)
+        if (account.revokeManual) Status(stringResource(R.string.account_revoke_manual), isError = true)
         if (account.host != null) {
             Connected(account, onDisconnect, onRetryUploads)
         } else {

@@ -136,9 +136,8 @@ def require(scope: Scope) -> Callable[..., Awaitable[Principal]]:
 
 async def revoke_token(session: AsyncSession, user_id: uuid.UUID, token_id: uuid.UUID) -> bool:
     """Revokes one of the user's own tokens and everything bound to it: its device key and any
-    transcripts sealed to that key (they could only have been opened with it). Clips waiting
-    on that key are marked failed so the phone, once reconnected, uploads them again. Returns
-    False if the token isn't theirs or is already revoked."""
+    transcripts sealed to that key (they could only have been opened with it). Returns False
+    if the token isn't theirs or is already revoked."""
     now = datetime.now(UTC)
     result = await session.execute(
         update(AccessToken)
@@ -161,12 +160,13 @@ async def revoke_token(session: AsyncSession, user_id: uuid.UUID, token_id: uuid
     ).all()
     if keys:
         await session.execute(delete(SealedDelivery).where(SealedDelivery.device_key_id.in_(keys)))
+        # Only clips whose sealed copy was just deleted change here (their audio is already
+        # gone). Pending and received clips still have audio in the bucket: their transcribe
+        # job fails on the revoked key and the dead-letter hook or the retention sweep deletes
+        # the audio; an upload that never completes is swept as abandoned.
         await session.execute(
             update(AudioUpload)
-            .where(
-                AudioUpload.device_key_id.in_(keys),
-                AudioUpload.state.in_(("pending", "received", "transcribed")),
-            )
+            .where(AudioUpload.device_key_id.in_(keys), AudioUpload.state == "transcribed")
             .values(state="failed", failure_code="device_key_revoked"),
         )
     return True

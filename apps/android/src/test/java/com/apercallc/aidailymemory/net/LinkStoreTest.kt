@@ -118,6 +118,35 @@ class LinkStoreTest {
     }
 
     @Test
+    fun `disconnected tokens wait sealed for their revoke and survive a restart`() {
+        val aead = newAead()
+        val store = LinkStore(prefs) { aead }
+        store.save(link, 0, false)
+
+        store.clearKeepingForRevoke(link)
+
+        assertFalse(prefs.all.values.any { it.toString().contains(token) })
+        val reopened = reopened(aead)
+        assertTrue(reopened.revokePending.value)
+        val (id, pending) = reopened.pendingRevokes().entries.single()
+        assertEquals(link, pending)
+        reopened.revokeDone(id)
+        assertFalse(reopened.revokePending.value)
+    }
+
+    @Test
+    fun `a pending revoke that can no longer be read asks the user to revoke it server-side`() {
+        LinkStore(prefs) { newAead() }.clearKeepingForRevoke(link)
+
+        val other = reopened(newAead())
+
+        assertTrue(other.pendingRevokes().isEmpty())
+        assertTrue(other.revokeManual.value)
+        other.save(link, 0, false)
+        assertFalse(other.revokeManual.value)
+    }
+
+    @Test
     fun `keystore provider failures become checked security failures`() {
         val failing = object : Aead {
             override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray =

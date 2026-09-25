@@ -219,13 +219,14 @@ class TranscribeHandler:
         ciphertext: bytes,
     ) -> None:
         async with self.sessions() as session, session.begin():
-            upload = await session.get(AudioUpload, upload_id, with_for_update=True)
-            if upload is None or upload.state == "transcribed":
-                return
-            # The token (and so its key) may have been revoked while the provider worked.
+            # Key before upload: the same order revoke_token takes its locks, so the two can't
+            # deadlock. The token (and so its key) may have been revoked meanwhile.
             key = await session.get(DeviceKey, device_key_id, with_for_update=True)
             if key is None or key.revoked_at is not None:
                 raise JobError("device_key_revoked", retryable=False)
+            upload = await session.get(AudioUpload, upload_id, with_for_update=True)
+            if upload is None or upload.state == "transcribed":
+                return
             session.add(
                 SealedDelivery(
                     user_id=user_id,

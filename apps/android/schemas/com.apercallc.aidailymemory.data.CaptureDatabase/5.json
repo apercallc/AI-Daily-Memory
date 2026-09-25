@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 5,
-    "identityHash": "d56d8b714ba541a0ec93923929634eb2",
+    "identityHash": "1f2df951e9e290e115ad692739663d09",
     "entities": [
       {
         "tableName": "recording_transition",
@@ -679,7 +679,7 @@
       },
       {
         "tableName": "transcript_span",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`upload_id` TEXT NOT NULL, `idx` INTEGER NOT NULL, `start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, `text` TEXT NOT NULL, `speaker` TEXT, `confidence` REAL, PRIMARY KEY(`upload_id`, `idx`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`upload_id` TEXT NOT NULL, `idx` INTEGER NOT NULL, `start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, `sealed` BLOB NOT NULL, `confidence` REAL, PRIMARY KEY(`upload_id`, `idx`))",
         "fields": [
           {
             "fieldPath": "uploadId",
@@ -706,15 +706,10 @@
             "notNull": true
           },
           {
-            "fieldPath": "text",
-            "columnName": "text",
-            "affinity": "TEXT",
+            "fieldPath": "sealed",
+            "columnName": "sealed",
+            "affinity": "BLOB",
             "notNull": true
-          },
-          {
-            "fieldPath": "speaker",
-            "columnName": "speaker",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "confidence",
@@ -733,7 +728,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd56d8b714ba541a0ec93923929634eb2')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1f2df951e9e290e115ad692739663d09')"
     ]
   }
 }

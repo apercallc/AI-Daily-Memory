@@ -6,7 +6,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.R
-import com.apercallc.aidailymemory.data.TranscriptLine
+import com.apercallc.aidailymemory.data.TranscriptText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
@@ -78,9 +81,11 @@ class SessionsViewModel(
         }
     }
 
-    /** A session's delivered transcript, oldest line first (ADR-0014). */
-    fun transcript(sessionId: String): Flow<List<TranscriptLine>> =
+    /** A session's delivered transcript, oldest line first, opened off the main thread. */
+    fun transcript(sessionId: String): Flow<List<TranscriptText>> =
         container.database.transcripts().observeSession(sessionId)
+            .map { lines -> lines.mapNotNull(container.transcriptCipher::open) }
+            .flowOn(Dispatchers.IO)
 
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)

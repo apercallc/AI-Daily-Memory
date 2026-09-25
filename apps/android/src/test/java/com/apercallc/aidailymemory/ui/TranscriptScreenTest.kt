@@ -3,7 +3,7 @@ package com.apercallc.aidailymemory.ui
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import com.apercallc.aidailymemory.data.TranscriptLine
+import com.apercallc.aidailymemory.data.TranscriptText
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.ZonedDateTime
@@ -26,8 +26,8 @@ class TranscriptScreenTest {
             AiDailyMemoryTheme {
                 TranscriptScreen(
                     lines = listOf(
-                        TranscriptLine("u1", 0, said, "Europe/Paris", "Let's ship on Friday.", "A"),
-                        TranscriptLine("u1", 1, said + 60_000, "Europe/Paris", "Sounds good.", null),
+                        TranscriptText("u1:0", said, "Europe/Paris", "Let's ship on Friday.", "A"),
+                        TranscriptText("u1:1", said + 60_000, "Europe/Paris", "Sounds good.", null),
                     ),
                 )
             }

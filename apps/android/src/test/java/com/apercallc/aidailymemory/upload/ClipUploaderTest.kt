@@ -169,6 +169,18 @@ class ClipUploaderTest {
     }
 
     @Test
+    fun `a clip the server kept under an earlier id is followed to that id`() = runTest {
+        val segment = analyzed(0L to 500L)
+        api.onCreate = { UploadState("received", null, uploadId = "01890000-0000-7000-8000-00000000beef") }
+
+        uploader().run()
+
+        val clip = db.clips().forSegment(segment.segmentId).single()
+        assertEquals("01890000-0000-7000-8000-00000000beef", clip.clipId)
+        assertEquals(ClipUploader.RECEIVED, clip.state)
+    }
+
+    @Test
     fun `a clip the server already has is marked received without uploading again`() = runTest {
         val segment = analyzed(0L to 500L)
         api.onCreate = { UploadState("received", null) }
@@ -259,11 +271,11 @@ class ClipUploaderTest {
 
         assertEquals(ClipUploader.UNREADABLE, db.clips().planFor(broken.segmentId)?.outcome)
         assertEquals(SegmentState.UPLOADED.name, stateOf(fine))
-        assertEquals(1, db.clips().observeProblems().first())
+        assertEquals(1, db.clips().observeProblems(0).first())
 
         db.clips().retryProblems()
         assertEquals(null, db.clips().planFor(broken.segmentId))
-        assertEquals(0, db.clips().observeProblems().first())
+        assertEquals(0, db.clips().observeProblems(0).first())
     }
 
     @Test
@@ -380,7 +392,7 @@ class ClipUploaderTest {
         assertEquals(ClipUploader.FAILED, clip.state)
         assertEquals("audio_unreadable", clip.lastError)
         assertTrue(api.puts.isEmpty())
-        assertEquals(1, db.clips().observeProblems().first())
+        assertEquals(1, db.clips().observeProblems(0).first())
     }
 
     @Test

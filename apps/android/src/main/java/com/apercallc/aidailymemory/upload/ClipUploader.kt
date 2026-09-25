@@ -156,7 +156,14 @@ class ClipUploader(
             }
             when (state.state) {
                 in DONE_STATES -> {
-                    clips.update(clip.copy(state = RECEIVED, lastError = null))
+                    val serverId = state.uploadId
+                    if (serverId != null && serverId != clip.clipId) {
+                        // The server already had this clip under the id we lost: follow it, so
+                        // the transcript (sealed for that id) matches this row.
+                        clips.adopt(clip.clipId, serverId)
+                    } else {
+                        clips.update(clip.copy(state = RECEIVED, lastError = null))
+                    }
                     Outcome.Received
                 }
                 // Processing failed for good on the server (or the transcript expired before

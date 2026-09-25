@@ -531,3 +531,30 @@ async def test_a_key_that_cannot_be_sealed_to_dead_letters_without_retrying(
     with db.connect() as connection:
         job = connection.execute(text("SELECT state, last_error_code FROM processing_jobs")).one()
     assert tuple(job) == ("dead", "sealing_failed")
+
+
+@pytest.mark.anyio
+async def test_revoking_a_token_never_strands_audio_in_the_bucket(
+    client: TestClient,
+    phone: Account,
+    store: FakeObjectStore,
+    database: Database,
+    db: Engine,
+) -> None:
+    register(client, phone, X25519PrivateKey.generate())
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=phone.headers)
+    upload_id = uuid.UUID(str(body["upload_id"]))
+    key = audio_key(phone.user_id, upload_id)
+    store.put(key, AUDIO)
+    client.post(f"/v1/uploads/{upload_id}/complete", headers=phone.headers)
+
+    assert client.delete("/v1/tokens/current", headers=phone.headers).status_code == 204
+    handler = TranscribeHandler(database.sessions, store, FakeProvider())
+    await Worker(database, {"transcribe": handler}, worker_id="w").run_once()
+
+    assert key in store.deleted
+    assert key not in store.objects
+    with db.connect() as connection:
+        row = connection.execute(text("SELECT state, failure_code FROM audio_uploads")).one()
+    assert tuple(row) == ("failed", "device_key_revoked")

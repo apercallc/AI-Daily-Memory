@@ -125,6 +125,15 @@ class AccountSectionTest {
     }
 
     @Test
+    fun `a token the phone could not revoke itself is flagged`() {
+        show(AccountUi(revokeManual = true))
+
+        compose.onNodeWithText(
+            "An old connection couldn't be revoked from this phone. Ask for its device token to be revoked on the server.",
+        ).assertExists()
+    }
+
+    @Test
     fun `host display never shows paths or credentials`() {
         assertEquals("api.example", hostOf("https://api.example/v1?x=1"))
         assertEquals("not a url", hostOf("not a url"))

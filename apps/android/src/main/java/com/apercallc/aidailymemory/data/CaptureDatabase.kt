@@ -143,7 +143,7 @@ abstract class CaptureDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `transcript_span` (" +
                         "`upload_id` TEXT NOT NULL, `idx` INTEGER NOT NULL, " +
                         "`start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, " +
-                        "`text` TEXT NOT NULL, `speaker` TEXT, `confidence` REAL, " +
+                        "`sealed` BLOB NOT NULL, `confidence` REAL, " +
                         "PRIMARY KEY(`upload_id`, `idx`))",
                 )
             }
