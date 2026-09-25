@@ -1,9 +1,11 @@
 """Migrations are the schema's source of truth; the models must match them exactly, and every
 migration must be reversible (TODO quality bar: forward + rollback)."""
 
+import re
+
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import CheckConstraint, Engine, create_engine, inspect
 
 from app.db.models import Base
 from tests.conftest import downgrade_migrations, reset_schema, run_migrations
@@ -11,9 +13,31 @@ from tests.conftest import downgrade_migrations, reset_schema, run_migrations
 
 def test_models_match_the_migrated_schema(migrated: Engine) -> None:
     with migrated.connect() as connection:
-        diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+        context = MigrationContext.configure(
+            connection,
+            opts={"compare_server_default": True, "compare_type": True},
+        )
+        diff = compare_metadata(context, Base.metadata)
 
     assert diff == []
+
+
+def test_check_constraints_match_the_models(migrated: Engine) -> None:
+    """compare_metadata ignores CHECK constraints: a changed state list without a migration
+    would pass it and then fail inserts in production."""
+    inspector = inspect(migrated)
+    for table in Base.metadata.sorted_tables:
+        expected = {
+            str(c.name): " ".join(str(c.sqltext).split())
+            for c in table.constraints
+            if isinstance(c, CheckConstraint)
+        }
+        actual = {str(c["name"]): c["sqltext"] for c in inspector.get_check_constraints(table.name)}
+        assert set(actual) == set(expected), table.name
+        for name, sql in expected.items():
+            normalized = actual[name]
+            for literal in re.findall(r"'([^']*)'", sql):
+                assert f"'{literal}'" in normalized, (table.name, name, literal)
 
 
 def test_migrations_downgrade_to_empty_and_upgrade_again(database_url: str) -> None:

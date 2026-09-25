@@ -17,7 +17,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
+from app.db import Database, get_session
 from app.db.models import AccessToken
 
 TOKEN_PREFIX: Final = "adm_"  # noqa: S105 - a public prefix, not a secret
@@ -55,13 +55,18 @@ async def issue_token(
     expires_at: datetime | None = None,
 ) -> str:
     """Stores the hash and returns the plaintext token. The caller commits."""
+    if scopes is None:
+        scopes = DEVICE_SCOPES if kind == "device" else API_KEY_SCOPES
+    elif not scopes:
+        # An explicit empty tuple must never fall back to the (wider) defaults.
+        raise ValueError("a token needs at least one scope")
     token = new_token()
     session.add(
         AccessToken(
             user_id=user_id,
             token_hash=hash_token(token),
             kind=kind,
-            scopes=list(scopes or (DEVICE_SCOPES if kind == "device" else API_KEY_SCOPES)),
+            scopes=list(scopes),
             name=name,
             expires_at=expires_at,
         ),
@@ -108,10 +113,14 @@ def require(scope: Scope) -> Callable[..., Awaitable[Principal]]:
         if scope not in row.scopes:
             raise HTTPException(status_code=403, detail="Token lacks the required scope.")
         if row.last_used_at is None or now - row.last_used_at >= _LAST_USED_RESOLUTION:
-            await session.execute(
-                update(AccessToken).where(AccessToken.id == row.id).values(last_used_at=now),
-            )
-            await session.commit()
+            # Its own short transaction: committing the request's session here would end
+            # the handler's unit of work too.
+            database: Database = request.app.state.database
+            async with database.sessions() as usage:
+                await usage.execute(
+                    update(AccessToken).where(AccessToken.id == row.id).values(last_used_at=now),
+                )
+                await usage.commit()
         return Principal(user_id=row.user_id, token_id=row.id, scopes=frozenset(row.scopes))
 
     return dependency

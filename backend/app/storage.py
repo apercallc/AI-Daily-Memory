@@ -18,13 +18,24 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from botocore.session import get_session
 
+from app.config import Settings
+
 # Exactly one user's prefix: `users/<uuid>/`. Anything broader could delete other users' data.
-_USER_PREFIX = re.compile(r"^users/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/$")
+_USER_PREFIX = re.compile(r"users/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/")
 _MISSING_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
 
 class ObjectMissingError(Exception):
     """The object isn't in the store (deleted, expired by lifecycle, or never uploaded)."""
+
+
+class DeleteIncompleteError(Exception):
+    """Some objects under a prefix could not be deleted; the caller must retry."""
+
+    def __init__(self, failed: int, codes: frozenset[str]) -> None:
+        super().__init__(f"{failed} objects not deleted")
+        self.failed = failed
+        self.codes = codes
 
 
 @dataclass(frozen=True)
@@ -167,9 +178,11 @@ class S3ObjectStore:
 
     async def delete_prefix(self, prefix: str) -> int:
         """Deletes every object under [prefix] (account deletion). Returns the count."""
-        if not _USER_PREFIX.match(prefix):
+        if not _USER_PREFIX.fullmatch(prefix):
             raise ValueError("refusing to delete outside a single user's prefix")
         deleted = 0
+        failed = 0
+        codes: set[str] = set()
         token: str | None = None
         while True:
             params: dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
@@ -178,16 +191,35 @@ class S3ObjectStore:
             page = await asyncio.to_thread(self.client.list_objects_v2, **params)
             keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
             if keys:
-                await asyncio.to_thread(
+                result = await asyncio.to_thread(
                     self.client.delete_objects,
                     Bucket=self.bucket,
                     Delete={"Objects": keys, "Quiet": True},
                 )
-                deleted += len(keys)
+                # DeleteObjects answers 200 even when keys fail; the list is the only signal.
+                errors = result.get("Errors", [])
+                failed += len(errors)
+                codes |= {str(e.get("Code", "unknown")) for e in errors}
+                deleted += len(keys) - len(errors)
             if not page.get("IsTruncated"):
+                if failed:
+                    raise DeleteIncompleteError(failed, frozenset(codes))
                 return deleted
             token = page.get("NextContinuationToken")
 
 
 def _is_missing(error: ClientError) -> bool:
     return error.response.get("Error", {}).get("Code") in _MISSING_CODES
+
+
+def object_store_from(settings: Settings) -> ObjectStore | None:
+    """The configured store, or None when storage isn't set up (uploads then return 503)."""
+    if not (settings.s3_bucket and settings.s3_access_key_id and settings.s3_secret_access_key):
+        return None
+    return S3ObjectStore(
+        endpoint_url=settings.s3_endpoint_url,
+        region=settings.s3_region,
+        bucket=settings.s3_bucket,
+        access_key_id=settings.s3_access_key_id.get_secret_value(),
+        secret_access_key=settings.s3_secret_access_key.get_secret_value(),
+    )

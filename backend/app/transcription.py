@@ -12,7 +12,7 @@ from typing import Protocol
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import AudioUpload, Transcript, TranscriptSegment
+from app.db.models import AudioUpload, Transcript, TranscriptSegment, User
 from app.jobs import ClaimedJob
 from app.storage import ObjectMissingError, ObjectStore
 
@@ -86,11 +86,14 @@ class TranscribeHandler:
         provider: TranscriptionProvider,
         *,
         timeout_seconds: float = 300.0,
+        read_timeout_seconds: float = 60.0,
     ) -> None:
+        # Both budgets together stay well inside the job lease (jobs.DEFAULT_LEASE).
         self.sessions = sessions
         self.store = store
         self.provider = provider
         self.timeout_seconds = timeout_seconds
+        self.read_timeout_seconds = read_timeout_seconds
 
     async def __call__(self, job: ClaimedJob) -> None:
         async with self.sessions() as session:
@@ -99,12 +102,24 @@ class TranscribeHandler:
                 raise JobError("upload_missing", retryable=False)
             key, state = upload.object_key, upload.state
             codec, rate, duration = upload.codec, upload.sample_rate_hz, upload.duration_ms
+            mode = await session.scalar(select(User.storage_mode).where(User.id == job.user_id))
+
+        if state not in ("received", "transcribed"):
+            raise JobError(f"upload_{state}", retryable=False)
+        # Only full cloud memory keeps transcripts on the server today. The other modes need
+        # the transient hold + phone bundle (ADR-0014), which doesn't exist yet: refuse rather
+        # than silently keep what the user was promised we wouldn't.
+        if state != "transcribed" and mode != "full_cloud":
+            raise JobError("storage_mode_unsupported", retryable=False)
 
         if state != "transcribed":
             try:
-                audio = await self.store.read(key)
+                async with asyncio.timeout(self.read_timeout_seconds):
+                    audio = await self.store.read(key)
             except ObjectMissingError as e:
                 raise JobError("audio_missing", retryable=False) from e
+            except TimeoutError as e:
+                raise JobError("store_timeout", retryable=True) from e
             try:
                 async with asyncio.timeout(self.timeout_seconds):
                     result = await self.provider.transcribe(audio, codec=codec, sample_rate_hz=rate)
@@ -134,16 +149,10 @@ class TranscribeHandler:
                     Transcript.upload_id == upload_id,
                 ),
             )
-            await session.execute(
-                update(Transcript)
-                .where(Transcript.upload_id == upload_id, Transcript.active)
-                .values(active=False),
-            )
             transcript = Transcript(
                 user_id=user_id,
                 upload_id=upload_id,
                 revision=int(revision or 0) + 1,
-                active=True,
                 provider=self.provider.name,
                 model=self.provider.model,
                 language=result.language,
@@ -162,4 +171,24 @@ class TranscribeHandler:
                 )
                 for span in result.spans
             )
+            upload.active_transcript_id = transcript.id
             upload.state = "transcribed"
+
+    async def on_dead(self, job: ClaimedJob, error_code: str) -> None:
+        """The job won't run again: record why on the upload and delete its audio now, so a
+        failed clip never lingers in the bucket (ADR-0003). Deletion failures are left to
+        the retention sweep."""
+        async with self.sessions() as session:
+            key = await session.scalar(
+                update(AudioUpload)
+                .where(
+                    AudioUpload.id == job.subject_id,
+                    AudioUpload.user_id == job.user_id,
+                    AudioUpload.state == "received",
+                )
+                .values(state="failed", failure_code=error_code)
+                .returning(AudioUpload.object_key),
+            )
+            await session.commit()
+        if key is not None:
+            await self.store.delete(key)

@@ -161,12 +161,81 @@ async def test_deleting_a_user_deletes_their_jobs(database: Database, db: Engine
         assert connection.execute(text("SELECT count(*) FROM processing_jobs")).scalar() == 0
 
 
-def test_backoff_grows_is_capped_and_is_jittered_deterministically() -> None:
+def test_backoff_grows_is_capped_after_jitter_and_is_deterministic() -> None:
     job = uuid.UUID(int=12345)
 
     first, second, huge = backoff(job, 1), backoff(job, 2), backoff(job, 40)
 
     assert timedelta(seconds=30) <= first <= timedelta(seconds=37.5)
     assert second == first * 2
-    assert huge <= BACKOFF_CAP * 1.25
+    assert huge == BACKOFF_CAP
     assert backoff(job, 1) == first
+
+
+async def test_skip_locked_hands_concurrent_workers_different_jobs(
+    database: Database,
+    db: Engine,
+) -> None:
+    user = make_account(db).user_id
+    first = await queue_one(database, user)
+    await queue_one(database, user)
+    with db.connect() as holder:
+        # Another worker is mid-claim on the oldest job: its row is locked.
+        holder.execute(text("BEGIN"))
+        locked: uuid.UUID = holder.execute(
+            text("SELECT id FROM processing_jobs WHERE subject_id = :s FOR UPDATE"),
+            {"s": first},
+        ).scalar_one()
+
+        async with database.sessions() as session:
+            job = await claim(session, kinds=("transcribe",), worker="w2", now=NOW)
+
+        holder.execute(text("ROLLBACK"))
+    assert job is not None
+    assert job.id != locked
+
+
+async def test_a_restarted_worker_with_the_same_id_is_still_fenced(
+    database: Database,
+    db: Engine,
+) -> None:
+    await queue_one(database, make_account(db).user_id)
+
+    async with database.sessions() as session:
+        stale = await claim(session, kinds=("transcribe",), worker="host:1", now=NOW)
+        assert stale is not None
+        fresh = await claim(
+            session,
+            kinds=("transcribe",),
+            worker="host:1",
+            now=NOW + timedelta(hours=1),
+        )
+        assert fresh is not None
+
+        assert not await complete(session, stale)
+        assert await complete(session, fresh)
+
+
+async def test_the_database_clock_is_used_when_no_time_is_given(
+    database: Database,
+    db: Engine,
+) -> None:
+    user = make_account(db).user_id
+    async with database.sessions() as session:
+        await enqueue(
+            session,
+            user_id=user,
+            kind="transcribe",
+            subject_id=uuid.uuid4(),
+            idempotency_key="k",
+        )
+        await session.commit()
+        job = await claim(session, kinds=("transcribe",), worker="w")
+        assert job is not None
+        await fail(session, job, error_code="x", retryable=True)
+
+    with db.connect() as connection:
+        wait: timedelta = connection.execute(
+            text("SELECT run_after - now() FROM processing_jobs"),
+        ).scalar_one()
+    assert timedelta(seconds=25) < wait <= backoff(job.id, 1)

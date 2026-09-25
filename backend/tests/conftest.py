@@ -156,7 +156,7 @@ class FakeObjectStore:
     ) -> PresignedPut:
         return PresignedPut(
             url=f"https://store.test/{key}?sig=fake",
-            headers={"Content-Length": str(byte_size)},
+            headers={"Content-Length": str(byte_size), "x-amz-checksum-sha256": sha256},
             expires_at=datetime.now(UTC) + timedelta(seconds=expires_in),
         )
 

@@ -7,11 +7,11 @@ the models and the migrations drift apart.
 
 import uuid
 from datetime import datetime
+from typing import Literal, get_args
 
 from sqlalchemy import (
     ARRAY,
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -23,7 +23,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -37,8 +36,10 @@ NAMING = {
     "pk": "pk_%(table_name)s",
 }
 
-STORAGE_MODES = ("phone_only", "reports_cloud", "full_cloud")
-UPLOAD_STATES = ("pending", "received", "transcribed", "failed")
+StorageMode = Literal["phone_only", "reports_cloud", "full_cloud"]
+UploadState = Literal["pending", "received", "transcribed", "failed"]
+STORAGE_MODES: tuple[str, ...] = get_args(StorageMode)
+UPLOAD_STATES: tuple[str, ...] = get_args(UploadState)
 JOB_STATES = ("queued", "running", "succeeded", "dead")
 TOKEN_KINDS = ("device", "api")
 
@@ -101,6 +102,8 @@ class AudioUpload(Base):
         CheckConstraint(_in("state", UPLOAD_STATES), name="state"),
         CheckConstraint("offset_ms >= 0 AND duration_ms > 0 AND byte_size > 0", name="sizes"),
         UniqueConstraint("user_id", "segment_id", "offset_ms"),
+        # The daily quota sums a user's recent uploads.
+        Index("ix_audio_uploads_user_id_created_at", "user_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -119,6 +122,13 @@ class AudioUpload(Base):
     object_key: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = _created()
     received_at: Mapped[datetime | None]
+    # Why processing ended in `failed` (operator-visible, never content).
+    failure_code: Mapped[str | None] = mapped_column(String(64))
+    # The transcript revision in use. Kept here, not as a flag on the evidence rows, so
+    # re-transcription never updates a transcript (ADR-0004: evidence is immutable).
+    active_transcript_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("transcripts.id", ondelete="SET NULL", use_alter=True),
+    )
 
 
 class ProcessingJob(Base):
@@ -148,19 +158,11 @@ class ProcessingJob(Base):
 
 
 class Transcript(Base):
-    """Evidence (ADR-0004): never edited. Re-transcription adds a revision; exactly one
-    revision per upload is active (partial unique index)."""
+    """Evidence (ADR-0004): inserted once, never updated. Re-transcription adds a revision;
+    the upload's `active_transcript_id` says which one is in use."""
 
     __tablename__ = "transcripts"
-    __table_args__ = (
-        UniqueConstraint("upload_id", "revision"),
-        Index(
-            "uq_transcripts_one_active",
-            "upload_id",
-            unique=True,
-            postgresql_where=text("active"),
-        ),
-    )
+    __table_args__ = (UniqueConstraint("upload_id", "revision"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = _user_fk()
@@ -168,7 +170,6 @@ class Transcript(Base):
         ForeignKey("audio_uploads.id", ondelete="CASCADE"),
     )
     revision: Mapped[int] = mapped_column(Integer)
-    active: Mapped[bool] = mapped_column(Boolean)
     provider: Mapped[str] = mapped_column(String(40))
     model: Mapped[str] = mapped_column(String(80))
     language: Mapped[str | None] = mapped_column(String(16))

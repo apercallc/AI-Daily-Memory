@@ -103,6 +103,9 @@ async def test_issue_and_revoke_through_the_service(db: Engine, database_url: st
             scopes = await session.scalar(text("SELECT scopes FROM access_tokens"))
             assert scopes == ["memory:read"]  # API keys start read-only
 
+            with pytest.raises(ValueError, match="at least one scope"):
+                await issue_token(session, user_id, kind="api", name="none", scopes=())
+
             assert await revoke_token(session, uuid.uuid4(), token_id) is False
             assert await revoke_token(session, user_id, token_id) is True
             assert await revoke_token(session, user_id, token_id) is False

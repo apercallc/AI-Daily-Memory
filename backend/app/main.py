@@ -10,20 +10,7 @@ from app.db import Database
 from app.errors import ErrorResponse, install_error_handlers
 from app.middleware import RequestContextMiddleware
 from app.observability import configure_logging
-from app.storage import ObjectStore, S3ObjectStore
-
-
-def object_store_from(settings: Settings) -> ObjectStore | None:
-    """The configured store, or None when storage isn't set up (uploads then return 503)."""
-    if not (settings.s3_bucket and settings.s3_access_key_id and settings.s3_secret_access_key):
-        return None
-    return S3ObjectStore(
-        endpoint_url=settings.s3_endpoint_url,
-        region=settings.s3_region,
-        bucket=settings.s3_bucket,
-        access_key_id=settings.s3_access_key_id.get_secret_value(),
-        secret_access_key=settings.s3_secret_access_key.get_secret_value(),
-    )
+from app.storage import ObjectStore, object_store_from
 
 
 def create_app(
@@ -31,8 +18,12 @@ def create_app(
     *,
     database: Database | None = None,
     object_store: ObjectStore | None = None,
+    processing_enabled: bool | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    # Uploads are accepted only when something will process them (Gate B, ADR-0003).
+    if processing_enabled is None:
+        processing_enabled = settings.transcription_provider != "disabled"
     configure_logging(settings.log_level)
 
     @asynccontextmanager
@@ -63,6 +54,7 @@ def create_app(
         },
     )
     application.state.settings = settings
+    application.state.processing_enabled = processing_enabled
     install_error_handlers(application)
     application.add_middleware(
         RequestContextMiddleware,

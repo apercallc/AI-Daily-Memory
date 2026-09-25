@@ -191,6 +191,26 @@ data rights.
 | Transcript text in logs or crash reports | Forbidden by the logging rules. Providers are zero-retention and no-training |
 | Other people's voices | No voiceprints, ever. They're anonymous per conversation, and names are text labels |
 
+## 10. Upload and processing (Phase 1 backend)
+
+| Edge case | Behavior now |
+| --- | --- |
+| Uploads while no transcription provider is enabled (Gate B) | Refused with 503 `processing_unavailable`; audio stays on the phone |
+| Same upload id retried | Same answer; a still-pending upload gets a fresh presigned URL |
+| Same upload id, different bytes or capture time | 409 `idempotency_conflict`, logged |
+| Same clip re-created under a new id (phone lost the old id) | A pending original is replaced; a received one is reported under its id |
+| Presigned URL expired | Creating again re-issues it |
+| Bytes don't match size or SHA-256 | Object deleted; 409 `upload_integrity_failed`; the phone uploads again |
+| Store doesn't report checksums | 503 `integrity_unverifiable`, object kept, operator alerted; no re-upload loop |
+| Concurrent creates racing the daily quota | Serialized per user with an advisory lock |
+| Worker dies mid-job | Lease expires and another worker reclaims; repeated deaths dead-letter |
+| Worker restarted with the same id | Fenced by attempt number, not just worker id |
+| Worker clocks disagree | Leases and backoff use the database clock |
+| Transcription dead-lettered | Upload marked `failed` with a reason; audio deleted |
+| Upload never completed, or unprocessed for 7 days | Retention sweep deletes the audio, then marks `failed` |
+| Account deletion with partial S3 failures | `DeleteIncompleteError`; never reported as deleted |
+| Users not in full cloud memory | Never transcribed into server storage (bundle path pending, ADR-0014) |
+
 ## Open
 
 - ✅ Quick Note model: a marker window inside the active session (ADR-0011).

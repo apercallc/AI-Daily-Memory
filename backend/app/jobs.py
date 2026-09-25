@@ -3,8 +3,11 @@
 - Enqueue is idempotent by key: the same stage for the same subject is one job, ever.
 - Claim uses `FOR UPDATE SKIP LOCKED` and a lease; a worker that dies leaves a job whose lease
   expires and is claimed again.
-- Completion and failure are fenced by the lease owner, so a worker that lost its lease can't
-  overwrite the new owner's outcome.
+- Completion and failure are fenced by the lease owner *and* the attempt number, so a worker
+  that lost its lease (or a restarted process reusing the same id) can't overwrite the new
+  owner's outcome.
+- Time comes from the database clock by default, so lease expiry and backoff don't depend on
+  each worker's clock. Tests pass an explicit `now`.
 - Retries back off exponentially with a cap; after `max_attempts` a job is `dead` with an
   operator-visible error code. Nothing retries forever and nothing fails silently.
 """
@@ -16,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-from sqlalchemy import ColumnElement, Result, and_, or_, select, update
+from sqlalchemy import ColumnElement, Result, and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +30,8 @@ logger = logging.getLogger("app.jobs")
 BACKOFF_BASE: Final = timedelta(seconds=30)
 BACKOFF_CAP: Final = timedelta(hours=1)
 DEFAULT_LEASE: Final = timedelta(minutes=10)
+
+Clock = datetime | ColumnElement[datetime]
 
 
 @dataclass(frozen=True)
@@ -42,10 +47,15 @@ class ClaimedJob:
 
 def backoff(job_id: uuid.UUID, attempt: int) -> timedelta:
     """Exponential backoff with deterministic jitter (0-25%, derived from the job id): jobs
-    that failed together don't retry in lockstep, and tests stay reproducible."""
+    that failed together don't retry in lockstep, and tests stay reproducible. The cap
+    applies after jitter."""
     base = min(BACKOFF_BASE * (1 << min(max(attempt - 1, 0), 16)), BACKOFF_CAP)
     jitter = (zlib.crc32(job_id.bytes) % 1000) / 4000
-    return base + base * jitter
+    return min(base + base * jitter, BACKOFF_CAP)
+
+
+def _clock(now: datetime | None) -> Clock:
+    return now if now is not None else func.now()
 
 
 async def enqueue(
@@ -77,13 +87,14 @@ async def claim(
     *,
     kinds: tuple[str, ...],
     worker: str,
-    now: datetime,
+    now: datetime | None = None,
     lease: timedelta = DEFAULT_LEASE,
 ) -> ClaimedJob | None:
     """Claims the oldest runnable job of [kinds] and commits the claim."""
+    clock = _clock(now)
     runnable = or_(
-        and_(ProcessingJob.state == "queued", ProcessingJob.run_after <= now),
-        and_(ProcessingJob.state == "running", ProcessingJob.lease_expires_at < now),
+        and_(ProcessingJob.state == "queued", ProcessingJob.run_after <= clock),
+        and_(ProcessingJob.state == "running", ProcessingJob.lease_expires_at < clock),
     )
     candidate = (
         select(ProcessingJob.id)
@@ -100,7 +111,7 @@ async def claim(
             .values(
                 state="running",
                 lease_owner=worker,
-                lease_expires_at=now + lease,
+                lease_expires_at=clock + lease,
                 attempts=ProcessingJob.attempts + 1,
             )
             .returning(
@@ -131,6 +142,7 @@ def _owned(job: ClaimedJob) -> list[ColumnElement[bool]]:
         ProcessingJob.id == job.id,
         ProcessingJob.state == "running",
         ProcessingJob.lease_owner == job.lease_owner,
+        ProcessingJob.attempts == job.attempts,
     ]
 
 
@@ -151,7 +163,7 @@ async def fail(
     *,
     error_code: str,
     retryable: bool,
-    now: datetime,
+    now: datetime | None = None,
 ) -> str:
     """Schedules a retry or dead-letters the job. Returns the new state ("lost" if fenced)."""
     if retryable and job.attempts < job.max_attempts:
@@ -160,7 +172,7 @@ async def fail(
             .where(*_owned(job))
             .values(
                 state="queued",
-                run_after=now + backoff(job.id, job.attempts),
+                run_after=_clock(now) + backoff(job.id, job.attempts),
                 lease_owner=None,
                 lease_expires_at=None,
                 last_error_code=error_code,
@@ -185,6 +197,6 @@ async def _dead(
     )
     return await session.execute(
         update(ProcessingJob)
-        .where(ProcessingJob.id == job.id, ProcessingJob.lease_owner == job.lease_owner)
+        .where(*_owned(job))
         .values(state="dead", lease_owner=None, lease_expires_at=None, last_error_code=error_code),
     )

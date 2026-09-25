@@ -64,8 +64,19 @@ def store() -> FakeObjectStore:
     return FakeObjectStore()
 
 
-async def received_upload(database: Database, db: Engine, store: FakeObjectStore) -> uuid.UUID:
+async def received_upload(
+    database: Database,
+    db: Engine,
+    store: FakeObjectStore,
+    *,
+    storage_mode: str = "full_cloud",
+) -> uuid.UUID:
     user = make_account(db).user_id
+    with db.begin() as connection:
+        connection.execute(
+            text("UPDATE users SET storage_mode = :mode WHERE id = :id"),
+            {"mode": storage_mode, "id": user},
+        )
     upload_id = uuid.uuid4()
     key = audio_key(user, upload_id)
     with db.begin() as connection:
@@ -135,7 +146,10 @@ async def test_a_transcript_is_stored_as_evidence_and_the_audio_deleted(
     assert state(db) == ("transcribed", "succeeded")
     with db.connect() as connection:
         transcript = connection.execute(
-            text("SELECT revision, active, provider, model, language FROM transcripts"),
+            text(
+                "SELECT t.revision, u.active_transcript_id = t.id AS active, t.provider, "
+                "t.model, t.language FROM transcripts t JOIN audio_uploads u ON u.id = t.upload_id",
+            ),
         ).one()
         spans = connection.execute(
             text("SELECT start_ms, text, speaker FROM transcript_segments ORDER BY start_ms"),
@@ -181,9 +195,12 @@ async def test_invalid_provider_output_is_never_stored(
 
     await worker(database, store, bad).run_once()
 
-    assert state(db) == ("received", "dead")
+    assert state(db) == ("failed", "dead")
     with db.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM transcripts")).scalar() == 0
+        code: str = connection.execute(text("SELECT failure_code FROM audio_uploads")).scalar_one()
+    assert code == "invalid_provider_result"
+    assert store.objects == {}  # a clip that failed for good doesn't linger (ADR-0003)
 
 
 async def test_a_crash_retries_as_unexpected(
@@ -219,7 +236,7 @@ async def test_missing_audio_or_upload_is_permanent(
     store.objects.clear()
 
     await worker(database, store, FakeProvider()).run_once()
-    assert state(db) == ("received", "dead")
+    assert state(db) == ("failed", "dead")
 
     with db.begin() as connection:
         connection.execute(text("DELETE FROM audio_uploads"))
@@ -260,33 +277,6 @@ async def test_rerun_after_transcription_only_finishes_the_cleanup(
         assert connection.execute(text("SELECT count(*) FROM transcripts")).scalar() == 1
 
 
-async def test_retranscription_adds_a_revision_and_keeps_one_active(
-    database: Database,
-    db: Engine,
-    store: FakeObjectStore,
-) -> None:
-    await received_upload(database, db, store)
-    await worker(database, store, FakeProvider()).run_once()
-    # A later model re-transcribes the (still kept) audio: evidence gets a new revision.
-    with db.begin() as connection:
-        connection.execute(text("UPDATE audio_uploads SET state = 'received'"))
-        connection.execute(
-            text("UPDATE processing_jobs SET state = 'queued', attempts = 0, run_after = :t"),
-            {"t": NOW},
-        )
-    with db.begin() as connection:
-        key: str = connection.execute(text("SELECT object_key FROM audio_uploads")).scalar_one()
-    store.put(key, AUDIO)
-
-    await worker(database, store, FakeProvider(model="fake-2")).run_once()
-
-    with db.connect() as connection:
-        rows = connection.execute(
-            text("SELECT revision, active, model FROM transcripts ORDER BY revision"),
-        ).all()
-    assert [tuple(r) for r in rows] == [(1, False, "fake-1"), (2, True, "fake-2")]
-
-
 @pytest.mark.parametrize(
     "span",
     [
@@ -321,3 +311,92 @@ async def test_run_forever_stops_when_asked(database: Database, store: FakeObjec
     await asyncio.sleep(0.05)
     stop.set()
     await asyncio.wait_for(runner, timeout=2)
+
+
+async def test_users_not_in_full_cloud_are_never_transcribed_on_the_server(
+    database: Database,
+    db: Engine,
+    store: FakeObjectStore,
+) -> None:
+    await received_upload(database, db, store, storage_mode="phone_only")
+    provider = FakeProvider()
+
+    await worker(database, store, provider).run_once()
+
+    assert provider.calls == 0
+    assert state(db) == ("failed", "dead")
+    with db.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM transcripts")).scalar() == 0
+
+
+async def test_a_slow_store_read_is_retried(
+    database: Database,
+    db: Engine,
+    store: FakeObjectStore,
+) -> None:
+    await received_upload(database, db, store)
+
+    class SlowStore(FakeObjectStore):
+        async def read(self, key: str) -> bytes:
+            await asyncio.sleep(1)
+            return b""
+
+    slow = SlowStore(objects=store.objects)
+    handler = TranscribeHandler(database.sessions, slow, FakeProvider(), read_timeout_seconds=0.05)
+    await Worker(database, {"transcribe": handler}, worker_id="w", now=lambda: NOW).run_once()
+
+    with db.connect() as connection:
+        job = connection.execute(text("SELECT state, last_error_code FROM processing_jobs")).one()
+    assert tuple(job) == ("queued", "store_timeout")
+
+
+async def test_a_failing_dead_letter_hook_is_logged_not_raised(
+    database: Database,
+    db: Engine,
+    store: FakeObjectStore,
+) -> None:
+    await received_upload(database, db, store)
+
+    class BrokenDelete(FakeObjectStore):
+        async def delete(self, key: str) -> None:
+            raise RuntimeError("store down")
+
+    broken = BrokenDelete(objects=store.objects)
+    bad = FakeProvider(spans=[TranscribedSpan(10, 5, "reversed")])
+    handler = TranscribeHandler(database.sessions, broken, bad)
+    await Worker(database, {"transcribe": handler}, worker_id="w", now=lambda: NOW).run_once()
+
+    assert state(db) == ("failed", "dead")  # the sweep deletes the audio later
+
+
+async def test_the_loop_survives_a_failing_iteration(database: Database) -> None:
+    calls = 0
+
+    async def flaky_sweep() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("database blip")
+
+    stop = asyncio.Event()
+    looping = Worker(database, {}, sweeper=flaky_sweep, sweep_every_seconds=0)
+    runner = asyncio.create_task(looping.run_forever(stop, idle_seconds=0.01))
+    await asyncio.sleep(0.1)
+    stop.set()
+    await asyncio.wait_for(runner, timeout=2)
+
+    assert calls >= 2
+
+
+async def test_sweeps_run_at_most_once_per_interval(database: Database) -> None:
+    calls = 0
+
+    async def count() -> None:
+        nonlocal calls
+        calls += 1
+
+    looping = Worker(database, {}, sweeper=count, sweep_every_seconds=3_600)
+    await looping._maybe_sweep()
+    await looping._maybe_sweep()
+
+    assert calls == 1

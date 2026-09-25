@@ -247,7 +247,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Duplicate upload behavior
 - [x] Expired signed URL handling
 - [x] Quota checks
-- [ ] Temporary object lifecycle policy (app deletes after transcription; bucket lifecycle rule as backstop still to configure)
+- [x] Temporary object lifecycle policy: app deletes after transcription, on dead-letter, and via the retention sweep; bucket backstop rule documented (docs/operations/OBJECT_STORAGE.md)
+- [ ] Configure the backstop lifecycle rule on the production bucket; verify SHA-256 checksum support on R2/MinIO
 - [x] Object keys prefixed users/{user_id}/ for isolation and prefix deletion
 - [x] Same idempotency key with a different checksum is a hard, operator-visible error (ADR-0006)
 
@@ -310,7 +311,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 - [ ] Every acknowledged upload becomes a transcript or an explicit recoverable/terminal failure.
 - [ ] Duplicate retries produce no duplicate transcript evidence.
-- [ ] Temporary audio retention/deletion is tested.
+- [x] Temporary audio retention/deletion is tested.
 
 # Phase 2 — Daily timeline + structured memory
 

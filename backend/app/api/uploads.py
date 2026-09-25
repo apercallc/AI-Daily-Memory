@@ -6,23 +6,26 @@ client's upload id (ADR-0006), so any step can be retried after a network failur
     PUT  <presigned url>               -> object storage verifies size + SHA-256
     POST /v1/uploads/{id}/complete     -> verified, recorded, transcription queued
     GET  /v1/uploads/{id}              -> current state
+
+New uploads are refused (503 `processing_unavailable`) while no processing stage is enabled
+(Gate B): audio that can't be processed must not sit in the bucket (ADR-0003).
 """
 
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.config import Settings
 from app.db import get_session
-from app.db.models import AudioUpload
+from app.db.models import AudioUpload, UploadState
 from app.errors import ErrorResponse, error_response
 from app.jobs import enqueue
 from app.storage import ObjectStore, audio_key
@@ -31,7 +34,6 @@ logger = logging.getLogger("app.uploads")
 router = APIRouter(tags=["uploads"])
 
 TRANSCRIBE_JOB = "transcribe"
-UploadState = Literal["pending", "received", "transcribed", "failed"]
 _ERRORS: dict[int | str, dict[str, object]] = {
     status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 413, 429, 503)
 }
@@ -62,6 +64,7 @@ class UploadTarget(BaseModel):
 
 
 class UploadStatus(BaseModel):
+    # May differ from the id the client sent when the same clip already exists (see create).
     upload_id: uuid.UUID
     state: UploadState
     # Present only while the client still has to upload the bytes.
@@ -84,7 +87,13 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 Uploader = Annotated[Principal, Depends(require("upload:write"))]
 
 
-def _same(row: AudioUpload, body: UploadCreate) -> bool:
+def _state(row: AudioUpload) -> UploadState:
+    if row.state not in get_args(UploadState):
+        raise ValueError("unknown upload state")
+    return cast(UploadState, row.state)
+
+
+def _same_clip(row: AudioUpload, body: UploadCreate) -> bool:
     return (
         row.session_id == body.session_id
         and row.segment_id == body.segment_id
@@ -95,6 +104,7 @@ def _same(row: AudioUpload, body: UploadCreate) -> bool:
         and row.codec == body.codec
         and row.sample_rate_hz == body.sample_rate_hz
         and row.channel_count == body.channel_count
+        and row.captured_at == body.captured_at
     )
 
 
@@ -108,15 +118,19 @@ def _status(row: AudioUpload, store: ObjectStore, settings: Settings) -> UploadS
             expires_in=settings.upload_url_ttl_seconds,
         )
         target = UploadTarget(url=signed.url, headers=signed.headers, expires_at=signed.expires_at)
-    return UploadStatus(upload_id=row.id, state=row.state, upload=target)  # type: ignore[arg-type]
+    return UploadStatus(upload_id=row.id, state=_state(row), upload=target)
 
 
-@router.post(
-    "/uploads",
-    response_model=UploadStatus,
-    status_code=201,
-    responses=_ERRORS,
-)
+def _conflict(upload_id: uuid.UUID) -> Response:
+    logger.warning("upload_idempotency_conflict", extra={"upload_id": str(upload_id)})
+    return error_response(
+        409,
+        "Upload id already used with different content.",
+        code="idempotency_conflict",
+    )
+
+
+@router.post("/uploads", response_model=UploadStatus, status_code=201, responses=_ERRORS)
 async def create_upload(
     body: UploadCreate,
     request: Request,
@@ -126,15 +140,65 @@ async def create_upload(
 ) -> UploadStatus | Response:
     settings = _settings(request)
     store = _store(request)
+    if not request.app.state.processing_enabled:
+        return error_response(
+            503,
+            "Processing isn't available yet; keep the audio on the phone.",
+            code="processing_unavailable",
+        )
     if body.byte_size > settings.max_upload_bytes:
         return error_response(413, "Clip too large.", code="upload_too_large")
     if body.duration_ms > settings.max_upload_duration_ms:
         return error_response(413, "Clip too long.", code="upload_too_long")
 
+    for _ in range(2):  # a concurrent retry can win the insert once; the re-check settles it
+        try:
+            return await _create(body, session, principal, store, settings, response)
+        except IntegrityError:
+            await session.rollback()
+    raise HTTPException(status_code=409, detail="Upload is being created concurrently.")
+
+
+async def _create(
+    body: UploadCreate,
+    session: AsyncSession,
+    principal: Principal,
+    store: ObjectStore,
+    settings: Settings,
+    response: Response,
+) -> UploadStatus | Response:
     existing = await session.get(AudioUpload, body.upload_id)
     if existing is not None:
-        return _existing(existing, body, principal, store, settings, response)
+        # Another user's id and a changed payload look the same from outside.
+        if existing.user_id != principal.user_id or not _same_clip(existing, body):
+            return _conflict(body.upload_id)
+        response.status_code = 200
+        return _status(existing, store, settings)
 
+    # The same clip under a new id: the phone lost the id it used before.
+    earlier = await session.scalar(
+        select(AudioUpload).where(
+            AudioUpload.user_id == principal.user_id,
+            AudioUpload.segment_id == body.segment_id,
+            AudioUpload.offset_ms == body.offset_ms,
+        ),
+    )
+    if earlier is not None:
+        if not _same_clip(earlier, body):
+            return _conflict(body.upload_id)
+        if earlier.state != "pending":
+            # Already on the server: report it under the id that has it.
+            response.status_code = 200
+            return UploadStatus(upload_id=earlier.id, state=_state(earlier))
+        # Never verified: replace it with the phone's current id.
+        await store.delete(earlier.object_key)
+        await session.execute(delete(AudioUpload).where(AudioUpload.id == earlier.id))
+
+    # Serialize this user's creates so concurrent requests can't all pass the quota check.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:user))"),
+        {"user": str(principal.user_id)},
+    )
     since = datetime.now(UTC) - timedelta(days=1)
     used = await session.scalar(
         select(func.coalesce(func.sum(AudioUpload.byte_size), 0)).where(
@@ -143,6 +207,7 @@ async def create_upload(
         ),
     )
     if int(used or 0) + body.byte_size > settings.daily_upload_bytes_quota:
+        await session.rollback()
         return error_response(429, "Daily upload quota reached.", code="quota_exceeded")
 
     row = AudioUpload(
@@ -162,36 +227,7 @@ async def create_upload(
         object_key=audio_key(principal.user_id, body.upload_id),
     )
     session.add(row)
-    try:
-        await session.commit()
-    except IntegrityError:
-        # A concurrent retry won the insert, or the same clip arrived under another id.
-        await session.rollback()
-        raced = await session.get(AudioUpload, body.upload_id)
-        if raced is None:
-            logger.warning("upload_duplicate_clip", extra={"upload_id": str(body.upload_id)})
-            return error_response(409, "This clip was already uploaded.", code="duplicate_clip")
-        return _existing(raced, body, principal, store, settings, response)
-    return _status(row, store, settings)
-
-
-def _existing(
-    row: AudioUpload,
-    body: UploadCreate,
-    principal: Principal,
-    store: ObjectStore,
-    settings: Settings,
-    response: Response,
-) -> UploadStatus | Response:
-    # Another user's id and a changed payload look the same from outside: never say which.
-    if row.user_id != principal.user_id or not _same(row, body):
-        logger.warning("upload_idempotency_conflict", extra={"upload_id": str(body.upload_id)})
-        return error_response(
-            409,
-            "Upload id already used with different content.",
-            code="idempotency_conflict",
-        )
-    response.status_code = 200
+    await session.commit()
     return _status(row, store, settings)
 
 
@@ -212,14 +248,20 @@ async def complete_upload(
     store = _store(request)
     row = await _owned(session, upload_id, principal)
     if row.state != "pending":
-        return UploadStatus(upload_id=row.id, state=row.state)  # type: ignore[arg-type]
+        return UploadStatus(upload_id=row.id, state=_state(row))
 
     stored = await store.stat(row.object_key)
     if stored is None:
         return error_response(409, "Upload the clip before completing it.", code="upload_missing")
     if stored.sha256 is None:
-        # The store must verify checksums; without one we can't prove integrity (fail closed).
+        # Without the store's checksum we can't prove integrity. Fail closed, but keep the
+        # bytes and don't ask the phone to upload again: this is an operator problem.
         logger.error("upload_checksum_unavailable", extra={"upload_id": str(row.id)})
+        return error_response(
+            503,
+            "Upload can't be verified right now; try again later.",
+            code="integrity_unverifiable",
+        )
     if stored.size != row.byte_size or stored.sha256 != row.sha256:
         await store.delete(row.object_key)
         logger.warning("upload_integrity_failed", extra={"upload_id": str(row.id)})
@@ -229,11 +271,17 @@ async def complete_upload(
             code="upload_integrity_failed",
         )
 
-    await session.execute(
+    moved = await session.scalar(
         update(AudioUpload)
         .where(AudioUpload.id == row.id, AudioUpload.state == "pending")
-        .values(state="received", received_at=datetime.now(UTC)),
+        .values(state="received", received_at=datetime.now(UTC))
+        .returning(AudioUpload.id),
     )
+    if moved is None:
+        # Someone else moved it first (a concurrent complete): report what it is now.
+        await session.rollback()
+        await session.refresh(row)
+        return UploadStatus(upload_id=row.id, state=_state(row))
     await enqueue(
         session,
         user_id=row.user_id,

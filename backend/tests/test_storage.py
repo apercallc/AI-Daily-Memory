@@ -8,13 +8,14 @@ from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
 from app.config import Settings
-from app.main import object_store_from
 from app.storage import (
+    DeleteIncompleteError,
     ObjectMissingError,
     S3ObjectStore,
     audio_key,
     b64_to_hex,
     hex_to_b64,
+    object_store_from,
     user_prefix,
 )
 
@@ -124,11 +125,33 @@ async def test_delete_prefix_pages_through_everything(store: S3ObjectStore) -> N
         assert await store.delete_prefix(prefix) == 2
 
 
+async def test_delete_prefix_reports_keys_the_store_refused(store: S3ObjectStore) -> None:
+    prefix = f"users/{uuid.uuid4()}/"
+    with Stubber(store.client) as stub:
+        stub.add_response(
+            "list_objects_v2",
+            {"Contents": [{"Key": f"{prefix}1"}, {"Key": f"{prefix}2"}], "IsTruncated": False},
+            {"Bucket": "aidm-audio", "Prefix": prefix},
+        )
+        stub.add_response(
+            "delete_objects",
+            {"Errors": [{"Key": f"{prefix}2", "Code": "AccessDenied"}]},
+            None,
+        )
+
+        with pytest.raises(DeleteIncompleteError) as caught:
+            await store.delete_prefix(prefix)
+
+    assert caught.value.failed == 1
+    assert caught.value.codes == frozenset({"AccessDenied"})
+
+
 @pytest.mark.parametrize(
     "prefix",
     [
         "",
         "users/",
+        f"users/{uuid.uuid4()}/\n",
         "users//",
         "other/abc/",
         f"users/{uuid.uuid4()}",
