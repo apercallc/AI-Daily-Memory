@@ -126,6 +126,51 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Stale snapshot after reconnect | Lower `revision` discarded; revision restored from the journal after a restart | 📐 |
 | Phone app data cleared (journal lost) | Snapshot flagged `reset`, accepted unconditionally | 📐 |
 
+## 7. Daily rhythm and sessions (ADR-0012)
+
+| Edge case | Behavior | Where | Status |
+| --- | --- | --- | --- |
+| Quiet time starts while recording | Paused on time (in-service timer; the CPU is awake for audio) | `RhythmRunner`, service | ✅ |
+| Quiet time ends while the phone is asleep | Inexact alarm resumes it a few minutes late; late only ever means less recording | `AndroidRhythmAlarms` | ✅ logic / 📐 device check |
+| User pauses during quiet time | Becomes the user's pause; never auto-resumed | reducer | ✅ |
+| User resumes during quiet time | Honored; not re-paused (edge-triggered) | reducer, `RhythmPlanner` | ✅ |
+| A whole quiet window passes while nobody checked | No action (catch-up applies only the last change) | `RhythmPlanner.catchUpAction` | ✅ |
+| Overlapping quiet windows | One pause, one resume | `RhythmPlanner` | ✅ |
+| Waking straight into a quiet window | Stays paused until it ends | `RhythmTransition.actionFor` | ✅ |
+| Bedtime while recording | Session ends and the day closes; nothing runs overnight | `ScheduledStop` | ✅ |
+| Morning | Reminder with Start; never starts capture; skipped if already recording or >2 h late | `RhythmRunner` | ✅ |
+| Schedule tick that doesn't apply (idle, already paused) | Ignored, never shown as an error | reducer | ✅ |
+| Process death during a schedule pause | Restored as a schedule pause (journal cause) | `JournalCodec` | ✅ |
+| Clock set backwards, or time zone change | No replay of past actions; windows follow the new zone from now on | `RhythmRunner`, `RhythmReceiver` | ✅ |
+| DST gap/overlap inside a window | Window shifted by the gap, or skipped if it collapses | `DailyWindow` | ✅ |
+| Schedule edited so "now" is quiet | Paused immediately | `RhythmRunner.onRhythmChanged` | ✅ |
+| Stored schedule unreadable | No schedule (only ever less automation), raw value kept, user told | `SettingsStore` | ✅ |
+| 00:30 conversation / 05:30 early start | Previous day / new day (day turns at the sleep midpoint) | `MemoryDays` | ✅ |
+| Weekend with no sleep schedule | Day turns at 04:00, not stretched to Monday | `MemoryDays` | ✅ |
+| Night-shift sleep (08:00–16:00) | Day turns at its own midpoint | `MemoryDays` | ✅ |
+| Schedule changed after the fact | Past sessions keep their memory day | `session_info.memory_day` | ✅ |
+| Rename with newlines, bidi overrides, 61+ chars, or pasted no-break spaces | Rejected, or normalized | `SessionTitles` | ✅ |
+| Two sessions in one part of the day | "Afternoon", then "Afternoon 2" | `SessionTitles` | ✅ |
+| Unknown stored zone (older tz database) | Falls back to device zone instead of crashing the list | `SessionGroups` | ✅ |
+| Keep-audio chosen, storage fills | Capture stops; kept audio never purged | `StoragePolicy`, `SegmentLifecycle` | ✅ |
+| Report text contains Markdown/HTML/links | Escaped in the export | `app/reports/daily.py` | ✅ |
+| Report generated while audio is pending | Marked partial with the pending amount | report contract | ✅ |
+
+## 8. Found by the codebase scan (fixed, with regression tests)
+
+| Edge case | Behavior now |
+| --- | --- |
+| Mic "recovers" on a silent buffer and fails again | Only real signal confirms capture; the retry budget resets after a stable minute |
+| Journal unreadable at start | Restore completes with a visible problem instead of hanging every command |
+| Report consumer hits one error | Keeps running; stale reports from an earlier mic open are dropped |
+| Pause/Stop tapped with no service running | Handled without starting a foreground service (no crash path) |
+| "Resume" on an alert with no service | Goes through a non-exported activity so the mic starts in the foreground |
+| Retry pending while the phone sleeps | Short, timed partial wake lock |
+| Crash between the file rename and the SEALED row | Segment re-verified and kept, not orphaned |
+| Service destroyed while capturing | Reported as an interruption, not a stale "Recording" |
+| "Hide silent notifications" enabled | Indicator channel is default importance (silent sound), so it stays visible |
+| Duplicate Start tap | Ignored instead of a false "action not available" |
+
 ## Open
 
 - ✅ Quick Note model: a marker window inside the active session (ADR-0011).

@@ -172,6 +172,18 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Battery/thermal telemetry in debug/internal builds (`DebugTelemetry`)
 - [x] Never show "Recording" unless capture is actually healthy (`CaptureHealthEvaluator` + `CaptureStatusPresenter`)
 
+## Daily rhythm (ADR-0012)
+
+- [x] Sleep schedule and quiet-time model with transition planner (DST, midnight, overlaps, travel)
+- [x] Memory day turns at the sleep midpoint; fixed per session at start
+- [x] Schedule pause/resume/stop in the reducer; a user pause is never resumed by the schedule
+- [x] Precise in-service timer while recording; inexact alarms otherwise; catch-up after sleep/reboot/clock change
+- [x] Bedtime ends the day; morning reminder (never auto-starts capture)
+- [x] Sessions list by memory day with automatic titles and validated rename (Room v2 + migration)
+- [x] Settings UI: sleep schedule, quiet times, audio retention with storage estimates
+- [ ] Device-verify alarm lateness in Doze and pause precision while recording (docs/performance/)
+- [ ] Usability test the settings flow with real users (sleep + two quiet times in under a minute)
+
 ## Endurance / device matrix
 
 - [ ] 1-hour test
@@ -307,8 +319,12 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Store correction separately from evidence
 - [ ] Include confirmed corrections in future retrieval ranking
 
-## Daily summary
+## Daily summary / daily report
 
+- [x] Daily report contract v1 + JSON Schema (contracts/) + Markdown template (docs/product/daily-report-example.md)
+- [ ] Generate the report at bedtime (ReportTiming.dueAt) from structured memory + evidence
+- [ ] Deliver it at wake time (ReportTiming.deliverAt); "partial" while audio is pending
+- [ ] Report screen in the app; share as Markdown (Google Drive via the share sheet)
 - [ ] Build from structured memory + evidence
 - [ ] Avoid summary-of-summary drift
 - [ ] Link important items to source timestamps
@@ -414,6 +430,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] get_timeline
 - [ ] get_decisions
 - [ ] get_action_items
+- [ ] get_daily_report (returns contracts/daily-report.v1.schema.json)
 - [ ] get_commitments
 - [ ] get_highlights
 - [ ] Per-user authorization

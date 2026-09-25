@@ -1402,6 +1402,9 @@ Use Architecture Decision Records for decisions that are expensive to reverse.
 | [0008](docs/adr/0008-watch-control-protocol.md) | Watch protocol; watch shares the phone applicationId |
 | [0009](docs/adr/0009-backend-sole-database-client.md) | Backend is the only DB client; user scoping from day one |
 | [0010](docs/adr/0010-microphone-service-lifecycle.md) | Mic foreground-service lifecycle and background-start limits |
+| [0011](docs/adr/0011-quick-note-and-markers.md) | Quick Note and highlights are markers inside a session |
+| [0012](docs/adr/0012-daily-rhythm.md) | Daily rhythm: sleep schedule, quiet times, memory days, daily report |
+| [0013](docs/adr/0013-opt-in-local-audio-retention.md) | Transcripts by default; opt-in, local-only audio keeping |
 
 ---
 
