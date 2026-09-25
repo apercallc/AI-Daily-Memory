@@ -13,6 +13,7 @@ import java.io.IOException
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -23,6 +24,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /** Failure paths of [RecordingController] found by the codebase scan (regression tests). */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class ControllerResilienceTest {
     private val session = SessionId("s")

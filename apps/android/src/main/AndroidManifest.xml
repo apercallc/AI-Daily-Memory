@@ -50,6 +50,17 @@
             android:name=".service.CommandReceiver"
             android:exported="false" />
 
+        <!-- Daily rhythm alarms (explicit, from this app) and clock/time-zone changes, which
+             shift wall-clock schedule windows. Never starts capture. -->
+        <receiver
+            android:name=".schedule.RhythmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".service.RestartReceiver"
             android:exported="false">

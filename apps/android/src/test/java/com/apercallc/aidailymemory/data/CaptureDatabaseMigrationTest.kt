@@ -24,7 +24,7 @@ class CaptureDatabaseMigrationTest {
     )
 
     @Test
-    fun `exported schema v1 matches the entities Room opens`() {
+    fun `a v1 database migrates to the current schema and keeps its rows`() {
         helper.createDatabase(TEST_DB, 1).apply {
             execSQL(
                 "INSERT INTO recording_transition (revision, status, session_id, problem, cause, " +
@@ -35,12 +35,13 @@ class CaptureDatabaseMigrationTest {
             close()
         }
 
-        // Opening with the current entities validates the stored schema against them.
+        // Opening with the current entities (and the production migrations) validates the
+        // migrated schema against them.
         val db = Room.databaseBuilder(
             ApplicationProvider.getApplicationContext(),
             CaptureDatabase::class.java,
             TEST_DB,
-        ).allowMainThreadQueries().build()
+        ).addMigrations(CaptureDatabase.MIGRATION_1_2).allowMainThreadQueries().build()
         val row = db.openHelper.readableDatabase
             .query("SELECT status FROM recording_transition WHERE revision = 1")
         row.use {

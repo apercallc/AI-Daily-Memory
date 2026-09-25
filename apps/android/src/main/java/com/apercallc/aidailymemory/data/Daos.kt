@@ -59,6 +59,33 @@ interface SegmentDao {
 }
 
 @Dao
+interface SessionDao {
+    /** Registers a session once; later calls keep the first memory day and any rename. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun register(entity: SessionInfoEntity)
+
+    /** @return rows updated (0 if the session isn't registered). */
+    @Query("UPDATE session_info SET custom_title = :title WHERE session_id = :sessionId")
+    suspend fun setTitle(sessionId: String, title: String?): Int
+
+    @Query(
+        """
+        SELECT i.session_id AS sessionId, i.memory_day AS memoryDay, i.zone_id AS zoneId,
+            i.started_at_epoch_ms AS startedAtEpochMs, i.custom_title AS customTitle,
+            (SELECT MAX(t.occurred_at_epoch_ms) FROM recording_transition t
+                WHERE t.session_id = i.session_id) AS lastActivityEpochMs,
+            (SELECT COALESCE(SUM(s.duration_ms), 0) FROM audio_segment s
+                WHERE s.session_id = i.session_id
+                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED', 'DELETED')) AS capturedMs
+        FROM session_info i
+        WHERE i.memory_day >= :sinceDay
+        ORDER BY i.started_at_epoch_ms DESC
+        """,
+    )
+    fun observeSince(sinceDay: String): Flow<List<SessionRow>>
+}
+
+@Dao
 interface MarkerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: MarkerEntity)

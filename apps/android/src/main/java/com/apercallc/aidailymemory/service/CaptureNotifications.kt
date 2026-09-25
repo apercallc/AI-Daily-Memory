@@ -53,7 +53,35 @@ class CaptureNotifications(private val context: Context) {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { description = context.getString(R.string.channel_alerts_description) },
         )
+        system.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_RHYTHM,
+                context.getString(R.string.channel_rhythm_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = context.getString(R.string.channel_rhythm_description) },
+        )
     }
+
+    /**
+     * Wake time after a day ended at bedtime (ADR-0012). Only a suggestion: recording starts
+     * when the user taps Start, never by itself.
+     */
+    @SuppressLint("MissingPermission") // Guarded by areNotificationsEnabled().
+    fun morningReminder() {
+        if (!manager.areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_RHYTHM)
+            .setSmallIcon(R.drawable.ic_stat_recording)
+            .setContentTitle(context.getString(R.string.reminder_title))
+            .setContentText(context.getString(R.string.reminder_body))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openApp())
+            .addAction(activityAction(R.string.action_start, RecordingService.ACTION_START))
+            .build()
+        manager.notify(ID_REMINDER, notification)
+    }
+
+    fun cancelMorningReminder() = manager.cancel(ID_REMINDER)
 
     /**
      * Whether the recording indicator can actually be seen: app notifications on *and* the
@@ -178,7 +206,9 @@ class CaptureNotifications(private val context: Context) {
         const val CHANNEL_STATUS = "capture_status_v2"
         private const val LEGACY_CHANNEL_STATUS = "capture_status"
         const val CHANNEL_ALERTS = "capture_alerts"
+        const val CHANNEL_RHYTHM = "daily_rhythm"
         const val ID_STATUS = 1
         const val ID_ALERT = 2
+        const val ID_REMINDER = 3
     }
 }

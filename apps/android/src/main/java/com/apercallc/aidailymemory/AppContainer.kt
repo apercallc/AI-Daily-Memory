@@ -15,6 +15,10 @@ import com.apercallc.aidailymemory.capture.SegmentCipher
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.capture.TaggedReport
 import com.apercallc.aidailymemory.platform.PartialWakeLock
+import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
+import com.apercallc.aidailymemory.schedule.RhythmRunner
+import com.apercallc.aidailymemory.schedule.SessionRegistry
+import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
@@ -69,6 +73,9 @@ class AppContainer(context: Context) {
     val clock = DeviceClock(app.contentResolver)
     val ids = UuidV7Generator()
     val permissions = Permissions(app)
+    val settings = SettingsStore(
+        app.getSharedPreferences(SettingsStore.FILE_NAME, Context.MODE_PRIVATE),
+    )
     val notifications = CaptureNotifications(app)
     private val audioManager = app.getSystemService(AudioManager::class.java)
 
@@ -80,6 +87,9 @@ class AppContainer(context: Context) {
         estimatedBytesPerHour = 15L * 1024 * 1024,
     )
     val storage = StorageMonitor(segmentDirectory, storagePolicy)
+
+    /** Phone storage one recorded hour takes, for the audio-retention estimates. */
+    val storageBytesPerHour: Long get() = storagePolicy.estimatedBytesPerHour
 
     private val cipher by lazy { SegmentCipher.open(app) }
 
@@ -116,7 +126,8 @@ class AppContainer(context: Context) {
                 } else {
                     CaptureProblem.PERMISSION_DENIED
                 }
-                listOf(EngineSignals.signalFor(state, EngineReport.Failed(effect.sessionId, problem)))
+                val failed = EngineReport.Failed(effect.sessionId, problem)
+                listOf(EngineSignals.signalFor(state, failed))
             }
             is CaptureEffect.CloseMicrophone -> emptyList()
             is CaptureEffect.FinishSession -> listOf(CaptureSignal.Stopped(effect.sessionId))
@@ -213,6 +224,20 @@ class AppContainer(context: Context) {
         MarkerRecorder(controller, database.markers(), MarkerPolicy.Default, clock, ids)
     }
 
+    /** Applies the sleep schedule and quiet times to recording (ADR-0012). */
+    val rhythm: RhythmRunner by lazy {
+        RhythmRunner(
+            settings = settings,
+            controller = controller,
+            alarms = AndroidRhythmAlarms(app),
+            onWakeReminder = notifications::morningReminder,
+        )
+    }
+
+    val sessions: SessionRegistry by lazy {
+        SessionRegistry(database.sessions(), rhythm = { settings.rhythm.value })
+    }
+
     /** One presenter output for the app screen and the notification. */
     val statusModels: Flow<CaptureStatusModel?> by lazy {
         combine(controller.state, health.overview) { state, overview ->
@@ -233,6 +258,18 @@ class AppContainer(context: Context) {
     /** Restores the journal and makes any open session visible without a running service. */
     fun restoreOnProcessStart() {
         controller.restore()
+        appScope.launch { sessions.observe(controller.state) }
+        // Once a day has started, "good morning, start your day" is stale.
+        appScope.launch {
+            controller.state.collect { state ->
+                val started = state.status != RecordingStatus.IDLE &&
+                    state.status != RecordingStatus.COMPLETED
+                if (started) notifications.cancelMorningReminder()
+            }
+        }
+        // Catch up on the schedule (the process may have been dead across a change) and
+        // re-arm its alarm, which a reboot or app update clears.
+        appScope.launch { rhythm.catchUp() }
         appScope.launch {
             controller.awaitRestored()
             val state: RecordingState = controller.state.value

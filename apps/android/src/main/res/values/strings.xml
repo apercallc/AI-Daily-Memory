@@ -93,5 +93,83 @@
     <string name="channel_status_name">Recording status</string>
     <string name="channel_status_description">Shows while the microphone session is active. Required so recording is never hidden.</string>
     <string name="channel_alerts_name">Recording problems</string>
+    <string name="channel_rhythm_name">Daily rhythm</string>
+    <string name="channel_rhythm_description">Your morning reminder to start the day. Recording never starts by itself.</string>
+    <string name="reminder_title">Good morning</string>
+    <string name="reminder_body">Tap Start My Day when you\'re ready. Recording never starts on its own.</string>
     <string name="channel_alerts_description">Tells you when recording stopped unexpectedly and needs you.</string>
+
+    <!-- Navigation -->
+    <string name="nav_sessions">Sessions</string>
+    <string name="nav_settings">Schedule &amp; audio</string>
+    <string name="nav_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+
+    <!-- Sessions -->
+    <string name="sessions_title">Your sessions</string>
+    <string name="sessions_empty">No sessions yet. Tap Start My Day to begin.</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="day_captured">%1$s captured</string>
+    <string name="session_time_range">%1$s – %2$s</string>
+    <string name="session_time_open">%1$s – now</string>
+    <string name="session_rename_hint">Tap to rename</string>
+    <string name="part_early_morning">Early morning</string>
+    <string name="part_morning">Morning</string>
+    <string name="part_afternoon">Afternoon</string>
+    <string name="part_evening">Evening</string>
+    <string name="part_night">Night</string>
+    <string name="session_title_numbered">%1$s %2$d</string>
+    <string name="rename_title">Rename session</string>
+    <string name="rename_label">Name</string>
+    <string name="rename_reset">Use automatic name</string>
+    <string name="rename_too_long">Keep it to 60 characters or fewer.</string>
+    <string name="rename_invalid">Line breaks and hidden characters can\'t be used.</string>
+    <string name="rename_saved">Session renamed</string>
+    <string name="rename_reset_done">Automatic name restored</string>
+    <string name="rename_unknown">That session no longer exists</string>
+
+    <!-- Schedule & audio -->
+    <string name="sleep_section">Sleep schedule</string>
+    <string name="sleep_enabled">Use a sleep schedule</string>
+    <string name="sleep_explainer">Your day runs from waking up to bedtime, not midnight to midnight, so a late conversation stays with the evening it belongs to.</string>
+    <string name="sleep_bedtime">Bedtime</string>
+    <string name="sleep_wake">Wake up</string>
+    <string name="sleep_weekends">Different on Friday and Saturday nights</string>
+    <string name="sleep_weekend_bedtime">Weekend bedtime</string>
+    <string name="sleep_weekend_wake">Weekend wake up</string>
+    <string name="end_day">End the day at bedtime</string>
+    <string name="end_day_body">Recording stops at bedtime, so nothing runs overnight.</string>
+    <string name="reminder_setting">Morning reminder</string>
+    <string name="reminder_setting_body">A notification at wake-up. Recording never starts by itself.</string>
+    <string name="quiet_section">Quiet times</string>
+    <string name="quiet_explainer">Recording pauses by itself and resumes afterwards. If you pause it yourself, it stays paused.</string>
+    <string name="quiet_add">Add quiet time</string>
+    <string name="quiet_remove">Remove</string>
+    <string name="quiet_edit_title">Quiet time</string>
+    <string name="quiet_label">Name, like Lunch or Gym</string>
+    <string name="quiet_start">Starts</string>
+    <string name="quiet_end">Ends</string>
+    <string name="quiet_days">Days</string>
+    <string name="quiet_label_error">Enter a name of up to 40 characters.</string>
+    <string name="quiet_days_error">Pick at least one day.</string>
+    <string name="quiet_times_error">Start and end must be different.</string>
+    <string name="quiet_summary">%1$s – %2$s · %3$s</string>
+    <string name="quiet_every_day">Every day</string>
+    <string name="quiet_weekdays">Weekdays</string>
+    <string name="audio_section">Recorded audio</string>
+    <string name="audio_explainer">Your transcripts are what\'s kept. Audio is only needed until it has been transcribed. Audio sent for transcription is always deleted from the cloud afterwards.</string>
+    <string name="retention_transcript">Transcripts only (recommended)</string>
+    <string name="retention_7">Keep audio on this phone for 7 days</string>
+    <string name="retention_30">Keep audio on this phone for 30 days</string>
+    <string name="retention_forever">Keep audio until I delete it</string>
+    <string name="retention_estimate">Uses about %1$s of this phone\'s storage at 10 recorded hours a day.</string>
+    <string name="retention_grows">Grows every day. If storage fills up, recording stops; nothing you kept is deleted.</string>
+    <string name="next_quiet">Next: %1$s starts at %2$s</string>
+    <string name="next_resume">Next: recording resumes at %1$s</string>
+    <string name="next_pause_bedtime">Next: recording pauses at bedtime, %1$s</string>
+    <string name="next_end_day">Next: the day ends at %1$s</string>
+    <string name="next_reminder">Next: morning reminder at %1$s</string>
+    <string name="schedule_unreadable">Your previous schedule couldn\'t be read, so none is active. Set it again below.</string>
 </resources>

@@ -86,7 +86,12 @@ private sealed interface StartDialog {
  * stateless [CaptureScreen].
  */
 @Composable
-fun AiDailyMemoryApp(viewModel: CaptureViewModel, permissions: Permissions) {
+fun AiDailyMemoryApp(
+    viewModel: CaptureViewModel,
+    permissions: Permissions,
+    onOpenSessions: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val context = LocalContext.current
@@ -136,6 +141,8 @@ fun AiDailyMemoryApp(viewModel: CaptureViewModel, permissions: Permissions) {
         onBatterySettings = {
             context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         },
+        onOpenSessions = onOpenSessions,
+        onOpenSettings = onOpenSettings,
     )
 
     dialog?.let { current ->
@@ -248,6 +255,8 @@ fun CaptureScreen(
     onMark: (MarkerKind) -> Unit,
     onBatterySettings: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenSessions: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Scaffold(
@@ -310,6 +319,20 @@ fun CaptureScreen(
             }
 
             if (batteryRestricted) BatteryCard(onBatterySettings)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
+            ) {
+                TextButton(
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
+                    onClick = onOpenSessions,
+                ) { Text(stringResource(R.string.nav_sessions)) }
+                TextButton(
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
+                    onClick = onOpenSettings,
+                ) { Text(stringResource(R.string.nav_settings)) }
+            }
         }
     }
 }
@@ -451,7 +474,7 @@ private fun Stat(@StringRes label: Int, value: String) {
 }
 
 @Composable
-private fun durationText(ms: Long): String {
+internal fun durationText(ms: Long): String {
     val minutes = ms / MS_PER_MINUTE
     return when {
         minutes < 1 -> stringResource(R.string.duration_under_minute)

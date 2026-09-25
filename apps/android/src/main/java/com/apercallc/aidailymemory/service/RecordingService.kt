@@ -26,6 +26,7 @@ import com.apercallc.aidailymemory.recording.effects.CaptureEffect
 import com.apercallc.aidailymemory.recording.effects.EngineReport
 import com.apercallc.aidailymemory.recording.effects.EngineSignals
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -101,6 +103,7 @@ class RecordingService : Service(), EffectHandler {
             recoveryJob = container.recoveryScheduler.start(scope)
             scope.launch { watchIndicator() }
             scope.launch { DebugTelemetry(applicationContext).sampleWhileRunning() }
+            scope.launch { followRhythm() }
         }
         enterForeground()
         pendingCommands++
@@ -214,6 +217,26 @@ class RecordingService : Service(), EffectHandler {
         }
     }
 
+    /**
+     * While the service runs, check the schedule on a short timer. Audio capture keeps the CPU
+     * awake, so a quiet time or bedtime pause lands on time here even though the app-wide
+     * alarm is inexact. Checks are cheap and idempotent (RhythmRunner.catchUp).
+     */
+    private suspend fun followRhythm() {
+        val rhythm = container.rhythm
+        while (true) {
+            try {
+                rhythm.catchUp()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "rhythm_check_failed", e)
+            }
+            val untilNext = rhythm.msUntilNextAction() ?: RHYTHM_IDLE_CHECK_MS
+            delay(untilNext.coerceIn(RHYTHM_MIN_CHECK_MS, RHYTHM_IDLE_CHECK_MS))
+        }
+    }
+
     private fun failure(state: RecordingState, problem: CaptureProblem): List<RecordingEvent> {
         val sessionId = state.sessionId ?: return emptyList()
         return listOf(EngineSignals.signalFor(state, EngineReport.Failed(sessionId, problem)))
@@ -263,6 +286,10 @@ class RecordingService : Service(), EffectHandler {
     companion object {
         private const val TAG = "RecordingService"
         private const val NOTIFY_DEBOUNCE_MS = 200L
+
+        /** Re-check at least this often, so clock and schedule edits are picked up. */
+        private const val RHYTHM_IDLE_CHECK_MS = 60_000L
+        private const val RHYTHM_MIN_CHECK_MS = 250L
         const val ACTION_START = "com.apercallc.aidailymemory.action.START"
         const val ACTION_PAUSE = "com.apercallc.aidailymemory.action.PAUSE"
         const val ACTION_RESUME = "com.apercallc.aidailymemory.action.RESUME"

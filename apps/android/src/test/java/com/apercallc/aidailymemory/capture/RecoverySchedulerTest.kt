@@ -14,6 +14,7 @@ import com.apercallc.aidailymemory.recording.recovery.RecoveryCondition
 import com.apercallc.aidailymemory.recording.time.CaptureTime
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -23,6 +24,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class RecoverySchedulerTest {
     private val session = SessionId("s")

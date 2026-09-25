@@ -6,8 +6,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.apercallc.aidailymemory.service.RecordingService
-import com.apercallc.aidailymemory.ui.AiDailyMemoryApp
+import com.apercallc.aidailymemory.ui.AppRoot
 import com.apercallc.aidailymemory.ui.CaptureViewModel
+import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
+import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,13 +23,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val sessionsViewModel: SessionsViewModel by viewModels {
+        SessionsViewModel.Factory(container)
+    }
+
+    private val settingsViewModel: SettingsViewModel by viewModels {
+        SettingsViewModel.Factory(container)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
             AiDailyMemoryTheme {
-                AiDailyMemoryApp(viewModel = viewModel, permissions = container.permissions)
+                AppRoot(
+                    capture = viewModel,
+                    sessions = { sessionsViewModel },
+                    settings = { settingsViewModel },
+                    permissions = container.permissions,
+                )
             }
         }
     }

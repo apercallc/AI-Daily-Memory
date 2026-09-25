@@ -113,3 +113,29 @@ data class MarkerEntity(
 ) {
     val markerKind: MarkerKind get() = MarkerKind.valueOf(kind)
 }
+
+/**
+ * Per-session metadata that isn't a transition (ADR-0012). [memoryDay] is fixed when the
+ * session starts, so changing the sleep schedule later never moves past sessions between days.
+ * [customTitle] is the user's rename; null means "use the automatic title".
+ */
+@Entity(tableName = "session_info", indices = [Index("memory_day")])
+data class SessionInfoEntity(
+    @PrimaryKey @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "memory_day") val memoryDay: String,
+    @ColumnInfo(name = "zone_id") val zoneId: String,
+    @ColumnInfo(name = "started_at_epoch_ms") val startedAtEpochMs: Long,
+    @ColumnInfo(name = "custom_title") val customTitle: String?,
+)
+
+/** One row of the sessions list, with what was actually captured. */
+data class SessionRow(
+    val sessionId: String,
+    val memoryDay: String,
+    val zoneId: String,
+    val startedAtEpochMs: Long,
+    val customTitle: String?,
+    val lastActivityEpochMs: Long?,
+    /** Sealed audio only: gaps and torn segments don't count as captured. */
+    val capturedMs: Long,
+)
