@@ -190,6 +190,28 @@ class SegmentLifecycleTest {
     }
 
     @Test
+    fun `a segment left writing by a dead process is quarantined as incomplete`() {
+        val result = lifecycle.reduce(writing(), SegmentEvent.Abandon)
+
+        val applied = assertIs<SegmentTransition.Applied>(result)
+        assertEquals(SegmentState.QUARANTINED, applied.segment.state)
+        assertEquals(SegmentDefect.INCOMPLETE, applied.segment.defect)
+        assertNull(applied.segment.sha256)
+    }
+
+    @Test
+    fun `abandon never downgrades a segment that already sealed`() {
+        SegmentState.entries.filter { it != SegmentState.WRITING }.forEach { state ->
+            val segment = inState(state)
+            assertEquals(
+                SegmentTransition.Ignored(segment),
+                lifecycle.reduce(segment, SegmentEvent.Abandon),
+                "$state",
+            )
+        }
+    }
+
+    @Test
     fun `constructor arguments are validated`() {
         assertFailsWith<IllegalArgumentException> { SegmentLifecycle(recoveryWindowMs = -1) }
         assertFailsWith<IllegalArgumentException> { AudioSegment.writing(SessionId("s"), -1) }

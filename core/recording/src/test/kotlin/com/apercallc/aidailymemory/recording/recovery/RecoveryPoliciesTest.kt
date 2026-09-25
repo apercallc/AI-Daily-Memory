@@ -101,6 +101,7 @@ class InterruptionRecoveryPolicyTest {
         listOf(
             CaptureProblem.PERMISSION_DENIED,
             CaptureProblem.FOREGROUND_START_NOT_ALLOWED,
+            CaptureProblem.ENCRYPTION_UNAVAILABLE,
             CaptureProblem.PROCESS_RESTARTED,
             CaptureProblem.DEVICE_REBOOTED,
         ).forEach { problem ->

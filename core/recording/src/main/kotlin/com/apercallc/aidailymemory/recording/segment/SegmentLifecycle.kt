@@ -27,6 +27,9 @@ enum class SegmentDefect {
     EMPTY,
     ZERO_DURATION,
     MALFORMED_CHECKSUM,
+
+    /** Never sealed: the process died or the write failed mid-segment (ADR-0007 bounded loss). */
+    INCOMPLETE,
 }
 
 data class AudioSegment(
@@ -55,6 +58,12 @@ data class AudioSegment(
 
 sealed interface SegmentEvent {
     data class Seal(val byteSize: Long, val durationMs: Long, val sha256: String) : SegmentEvent
+
+    /**
+     * A segment left WRITING by a dead process or a failed write. Its bytes are not trusted
+     * audio, so it is quarantined and reported as a gap rather than silently dropped.
+     */
+    data object Abandon : SegmentEvent
     data object UploadCompleted : SegmentEvent
     data class ServerAcknowledged(val sha256: String, val atEpochMs: Long) : SegmentEvent
 
@@ -101,6 +110,14 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
             is SegmentEvent.Seal -> when (state) {
                 SegmentState.WRITING -> SegmentTransition.Applied(seal(segment, event))
                 else -> SegmentTransition.Rejected(segment, SegmentRejection.INVALID_IN_STATE)
+            }
+
+            SegmentEvent.Abandon -> when (state) {
+                SegmentState.WRITING -> SegmentTransition.Applied(
+                    segment.copy(state = SegmentState.QUARANTINED, defect = SegmentDefect.INCOMPLETE),
+                )
+                // A segment that did seal must never be downgraded by a late cleanup.
+                else -> SegmentTransition.Ignored(segment)
             }
 
             SegmentEvent.UploadCompleted -> when (state) {

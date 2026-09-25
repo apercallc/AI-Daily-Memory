@@ -62,6 +62,7 @@ data class InterruptionRecoveryPolicy(
             // Reopening would fail again or silently record nothing: the user has to act.
             CaptureProblem.PERMISSION_DENIED,
             CaptureProblem.FOREGROUND_START_NOT_ALLOWED,
+            CaptureProblem.ENCRYPTION_UNAVAILABLE,
             CaptureProblem.PROCESS_RESTARTED,
             CaptureProblem.DEVICE_REBOOTED,
             -> RecoveryDecision.NeedsUser

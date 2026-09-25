@@ -21,6 +21,9 @@ enum class CaptureProblem {
     PHONE_CALL,
     FOREGROUND_START_NOT_ALLOWED,
     STORAGE_LOW,
+
+    /** Local audio encryption keys are unusable; recording unencrypted is never an option. */
+    ENCRYPTION_UNAVAILABLE,
     PROCESS_RESTARTED,
     DEVICE_REBOOTED,
     UNKNOWN,
