@@ -1,6 +1,6 @@
 # ADR-0016: Knowing Which Words Are the User's — On-Device Owner Voice
 
-- Status: Proposed. Reverses README "Speaker Handling: no voice biometrics for the MVP" for
+- Status: Accepted (enrollment ships only after the biometric legal review). Reverses README "Speaker Handling: no voice biometrics for the MVP" for
   the account owner only.
 - Date: 2026-09-25
 

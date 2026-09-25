@@ -1,6 +1,6 @@
 # ADR-0015: Transcribe Speech, Not the Day — Speech Gating and Night Processing
 
-- Status: Proposed — makes README "Speech Detection" concrete
+- Status: Accepted — makes README "Speech Detection" concrete
 - Date: 2026-09-25
 
 ## Context

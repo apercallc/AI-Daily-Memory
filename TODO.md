@@ -278,7 +278,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Delete temporary cloud audio only after verified transcript persistence
 - [ ] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
 
-## Speech gating + night processing (ADR-0015, proposed)
+## Speech gating + night processing (ADR-0015)
 
 - [ ] Labeled day-audio set (speech / no speech / media / whisper / pocket) for VAD tuning
 - [ ] Night WorkManager job: charging + unmetered, deadline fallback at wake + 2 h, "late" flag
@@ -291,7 +291,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Plan daily speech-minute limit enforced server-side; overflow kept locally, shown as a gap
 - [ ] "Muffled" capture-health signal (phone in pocket/bag)
 
-## Storage modes (ADR-0014, proposed)
+## Storage modes (ADR-0014)
 
 - [ ] Account storage mode: On this phone (default) / Reports in cloud / Full cloud memory
 - [ ] Transient processing hold: until device ack, max 7 days, then crypto-shred
@@ -358,7 +358,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Regenerate when extraction version changes
 - [ ] Bound LLM context
 
-## Owner voice attribution (ADR-0016, proposed)
+## Owner voice attribution (ADR-0016)
 
 - [ ] Legal review: biometric consent (BIPA / CUBI / WA / GDPR Art. 9), published retention schedule
 - [ ] Consent screen; enrollment behind device unlock; delete anytime

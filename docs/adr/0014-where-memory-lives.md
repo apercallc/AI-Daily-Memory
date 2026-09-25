@@ -1,6 +1,6 @@
 # ADR-0014: Where Memory Lives — Phone by Default, Cloud Memory Opt-In
 
-- Status: Proposed — amends ADR-0005 (single query service) and ADR-0003 (temporary audio)
+- Status: Accepted — amends ADR-0005 (single query service) and ADR-0003 (temporary audio)
 - Date: 2026-09-25
 
 ## Context
@@ -99,9 +99,10 @@ phone: delete local audio (per ADR-0013 retention)
 - **Fully on-device processing:** not viable for quality and battery on typical phones today;
   revisit when on-device models (e.g. AICore) cover the device matrix.
 
-## Open questions (owner decisions)
+## Owner decisions (2026-09-25)
 
-1. Default mode at onboarding: preselect "On this phone" (recommended, per product direction)
-   or ask with no preselection.
-2. Transient hold maximum (7 days proposed).
-3. Retention for a lapsed cloud-mode account before deletion (needs a published policy).
+1. Onboarding preselects **"On this phone"**; the user can change it at any time.
+2. All three modes ship; "Reports in my cloud account" is the recommended mode for API/MCP.
+3. Transient hold maximum: **7 days**.
+4. Still open: retention for a lapsed cloud-mode account before deletion (needs a published
+   policy before Phase 10).

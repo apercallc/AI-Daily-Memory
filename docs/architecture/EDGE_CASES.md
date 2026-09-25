@@ -171,7 +171,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | "Hide silent notifications" enabled | Indicator channel is default importance (silent sound), so it stays visible |
 | Duplicate Start tap | Ignored instead of a false "action not available" |
 
-## 9. Where memory lives, speech, and speakers (ADR-0014/0015/0016, proposed)
+## 9. Where memory lives, speech, and speakers (ADR-0014/0015/0016)
 
 Speech and speaker cases are listed in ADR-0015 and ADR-0016. This section covers storage and
 data rights.
