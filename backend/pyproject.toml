@@ -9,6 +9,7 @@ description = "Backend for AI Daily Memory"
 requires-python = ">=3.13,<3.15"
 dependencies = [
   "alembic>=1.16,<2.0",
+  "argon2-cffi>=25,<26",  # password hashing for self-service sign-in (app/credentials.py)
   "botocore>=1.40,<2.0",
   "cryptography>=50,<52",  # HPKE (RFC 9180) module
   "fastapi>=0.116,<1.0",

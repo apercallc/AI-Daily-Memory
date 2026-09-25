@@ -75,6 +75,22 @@ class User(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class Credential(Base):
+    """Email + password for self-service sign-in (TODO Phase 1 "Account sign-in flow"). Kept
+    separate from `User` so an admin-provisioned, password-less account stays representable."""
+
+    __tablename__ = "credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    # Always lowercased before it reaches this column (app.credentials.normalize_email).
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = _created()
+    failed_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    locked_until: Mapped[datetime | None]
+
+
 class AccessToken(Base):
     """Device tokens and user API keys (AGENTS rule 4): only a SHA-256 hash is stored."""
 
