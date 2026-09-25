@@ -301,3 +301,18 @@ def test_non_http_scopes_pass_through_untouched() -> None:
     asyncio.run(middleware({"type": "lifespan"}, receive, send))
 
     assert seen == ["lifespan"]
+
+
+def test_a_request_over_its_time_budget_gets_the_timeout_envelope() -> None:
+    application = create_app(Settings(app_env="test", request_timeout_seconds=0.05))
+
+    @application.get("/slow")
+    async def slow() -> dict[str, str]:
+        await asyncio.sleep(1)
+        return {"status": "late"}
+
+    response = TestClient(application).get("/slow")
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "timeout"
+    assert response.headers["x-request-id"]

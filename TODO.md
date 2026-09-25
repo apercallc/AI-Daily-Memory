@@ -220,46 +220,47 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] FastAPI health endpoint scaffold
 - [x] Strict Python lint/type/test scaffold
 - [x] Typed settings from the environment; API docs/OpenAPI hidden outside development/test
-- [ ] Define API versioning policy (/v1)
-- [ ] Generate OpenAPI document in CI
+- [x] Define API versioning policy (/v1)
+- [ ] Generate OpenAPI document in CI (policy: docs/api/VERSIONING.md)
 - [ ] Validate breaking API changes
 - [x] Add request IDs / correlation IDs (validated inbound `X-Request-ID`)
 - [x] Add structured redacted logging (JSON; field-name redaction; no exception messages or query strings)
 - [x] Shared error envelope; validation errors never echo input
-- [ ] User-scoped schema from the first migration: user_id on every user-owned table, cascading FKs (ADR-0009)
+- [x] User-scoped schema from the first migration: user_id on every user-owned table, cascading FKs (ADR-0009)
 - [ ] Backend is the only DB client; Supabase Data API disabled, RLS deny-all backstop (ADR-0009)
 - [ ] Separate DB roles: migration owner, app (DML only), read-only
-- [ ] Add auth once multi-user testing starts
-- [ ] Add per-user authorization checks
+- [x] Bearer-token auth: hashed, scoped, revocable device tokens and API keys (sign-in flow still owed)
+- [ ] Add auth once multi-user testing starts (account sign-in; tokens issued after it)
+- [x] Add per-user authorization checks
 - [ ] Add rate limiting before public exposure
 - [x] Add payload/body size limits (declared and streamed; 413)
-- [ ] Add request timeouts
+- [x] Add request timeouts
 
 ## Upload protocol
 
-- [ ] Stable client-generated session/segment IDs
-- [ ] Signed temporary upload instructions
-- [ ] Direct-to-object-storage upload where possible
-- [ ] SHA-256 integrity validation
-- [ ] Idempotent segment finalize endpoint
-- [ ] Resume/retry behavior
-- [ ] Duplicate upload behavior
-- [ ] Expired signed URL handling
-- [ ] Quota checks
-- [ ] Temporary object lifecycle policy
-- [ ] Object keys prefixed users/{user_id}/ for isolation and prefix deletion
-- [ ] Same idempotency key with a different checksum is a hard, operator-visible error (ADR-0006)
+- [x] Stable client-generated session/segment IDs
+- [x] Signed temporary upload instructions
+- [x] Direct-to-object-storage upload where possible
+- [x] SHA-256 integrity validation
+- [x] Idempotent segment finalize endpoint
+- [x] Resume/retry behavior
+- [x] Duplicate upload behavior
+- [x] Expired signed URL handling
+- [x] Quota checks
+- [ ] Temporary object lifecycle policy (app deletes after transcription; bucket lifecycle rule as backstop still to configure)
+- [x] Object keys prefixed users/{user_id}/ for isolation and prefix deletion
+- [x] Same idempotency key with a different checksum is a hard, operator-visible error (ADR-0006)
 
 ## Processing jobs
 
-- [ ] PostgreSQL-backed initial job table
-- [ ] Claim/lease semantics for workers
-- [ ] Idempotency key per processing stage
-- [ ] Bounded exponential backoff
-- [ ] Dead-letter / terminal-failure state
-- [ ] Operator-visible failure reason
-- [ ] Retry-safe provider calls where possible
-- [ ] Do not require Redis until measured throughput justifies it
+- [x] PostgreSQL-backed initial job table
+- [x] Claim/lease semantics for workers
+- [x] Idempotency key per processing stage
+- [x] Bounded exponential backoff
+- [x] Dead-letter / terminal-failure state
+- [x] Operator-visible failure reason
+- [x] Retry-safe provider calls where possible
+- [x] Do not require Redis until measured throughput justifies it
 
 ## Transcription
 
@@ -267,17 +268,17 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Provider terms reviewed: no training on customer data, bounded retention, DPA, region
 - [ ] Recording-consent legal review (all-party-consent jurisdictions) before any non-developer user
 - [ ] Choose one provider for MVP
-- [ ] Abstract provider behind a thin interface
-- [ ] Preserve timestamps
-- [ ] Preserve provider/model/version metadata
-- [ ] Store confidence metadata if available
-- [ ] Handle provider timeout
-- [ ] Handle partial/invalid result
-- [ ] Define max chunk size
+- [x] Abstract provider behind a thin interface
+- [x] Preserve timestamps
+- [x] Preserve provider/model/version metadata
+- [x] Store confidence metadata if available
+- [x] Handle provider timeout
+- [x] Handle partial/invalid result
+- [x] Define max chunk size
 - [ ] Evaluate noisy/distant speech
 - [ ] Evaluate multiple speakers
-- [ ] Delete temporary cloud audio only after verified transcript persistence
-- [ ] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
+- [x] Delete temporary cloud audio only after verified transcript persistence
+- [x] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
 
 ## Speech gating + night processing (ADR-0015)
 

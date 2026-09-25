@@ -49,6 +49,7 @@ _STANDARD_ERRORS: dict[int, tuple[str, str]] = {
     429: ("too_many_requests", "Too many requests."),
     500: ("internal_error", "Internal error."),
     503: ("service_unavailable", "Service unavailable."),
+    504: ("timeout", "Request timed out."),
 }
 
 

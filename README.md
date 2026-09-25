@@ -37,13 +37,22 @@ Architecture companions: [edge-case catalog](docs/architecture/EDGE_CASES.md),
 ```bash
 cd backend
 uv sync --locked --extra dev
+# Tests need a throwaway PostgreSQL 16 database (its public schema is rebuilt each run).
+export TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/aidm_test
 uv run pytest
 uv run ruff check .
 uv run mypy app tests
+# Apply migrations, then run the API and the worker.
+export DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/aidm
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
+uv run python -m app.worker
 ```
 
-The current Android UI is intentionally a Phase 0 shell. Its controls exercise the deterministic recording state machine; real microphone capture and foreground-service behavior are the next implementation milestone.
+Status: the Android app captures real audio offline (foreground service, encrypted segments,
+recovery, daily rhythm, sessions, charging-time speech analysis). The backend has the Phase 1
+upload protocol, user-scoped schema, token auth, and job queue. Transcription stays disabled
+until Gate B (provider, cost model, and consent review), so no audio reaches any provider yet.
 
 
 ---

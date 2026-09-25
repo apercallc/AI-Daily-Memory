@@ -41,9 +41,16 @@ class PayloadTooLargeError(StarletteHTTPException):
 
 
 class RequestContextMiddleware:
-    def __init__(self, app: ASGIApp, *, max_body_bytes: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        timeout_seconds: float | None = None,
+    ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        self.timeout_seconds = timeout_seconds
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -77,7 +84,15 @@ class RequestContextMiddleware:
                 status_code = limit_status
                 await _send_error(scope, send_with_request_id, limit_status)
                 return
-            await self.app(scope, self._limited(receive), send_with_request_id)
+            async with asyncio.timeout(self.timeout_seconds):
+                await self.app(scope, self._limited(receive), send_with_request_id)
+        except TimeoutError:
+            # Over the request budget: a slow dependency must not pin a worker forever.
+            logger.warning("request_timeout", extra={"path": scope["path"]})
+            if response_started:
+                raise
+            status_code = HTTPStatus.GATEWAY_TIMEOUT.value
+            await _send_error(scope, send_with_request_id, HTTPStatus.GATEWAY_TIMEOUT)
         except (asyncio.CancelledError, ClientDisconnect):
             # The client disconnected. Nothing to send; record it honestly, not as a 500.
             if not response_started:
