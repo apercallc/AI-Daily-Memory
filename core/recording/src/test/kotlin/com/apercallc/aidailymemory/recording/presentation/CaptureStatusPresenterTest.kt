@@ -32,11 +32,13 @@ class CaptureStatusPresenterTest {
         val expected = mapOf(
             RecordingStatus.IDLE to Triple(Headline.READY, StatusTone.NEUTRAL, PrimaryAction.START),
             RecordingStatus.STARTING to
-                Triple(Headline.STARTING, StatusTone.RECORDING, PrimaryAction.NONE),
+                Triple(Headline.STARTING, StatusTone.NEUTRAL, PrimaryAction.NONE),
             RecordingStatus.RECORDING to
                 Triple(Headline.RECORDING, StatusTone.RECORDING, PrimaryAction.PAUSE),
             RecordingStatus.PAUSED to
                 Triple(Headline.PAUSED, StatusTone.PAUSED, PrimaryAction.RESUME),
+            RecordingStatus.RESUMING to
+                Triple(Headline.RESUMING, StatusTone.NEUTRAL, PrimaryAction.PAUSE),
             RecordingStatus.INTERRUPTED to
                 Triple(Headline.INTERRUPTED, StatusTone.ERROR, PrimaryAction.PAUSE),
             RecordingStatus.RECOVERING to
@@ -100,6 +102,7 @@ class CaptureStatusPresenterTest {
                 RecordingStatus.STARTING,
                 RecordingStatus.RECORDING,
                 RecordingStatus.PAUSED,
+                RecordingStatus.RESUMING,
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
             ),

@@ -31,7 +31,7 @@ object StartupRecovery {
         }
         return when (persisted.status) {
             RecordingStatus.STARTING -> listOf(CaptureSignal.StartFailed(sessionId, problem))
-            RecordingStatus.RECORDING, RecordingStatus.RECOVERING ->
+            RecordingStatus.RECORDING, RecordingStatus.RESUMING, RecordingStatus.RECOVERING ->
                 listOf(CaptureSignal.Interrupted(sessionId, problem))
             // Finish the stop the user already asked for. Before dispatching, the engine seals
             // the in-progress segment if its file is intact; otherwise it is a reported gap.

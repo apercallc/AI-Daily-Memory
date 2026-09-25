@@ -10,6 +10,7 @@
     <string name="status_recording">Recording</string>
     <string name="status_not_capturing">Not capturing audio</string>
     <string name="status_paused">Paused</string>
+    <string name="status_resuming">Resuming…</string>
     <string name="status_interrupted">Recording interrupted</string>
     <string name="status_recovering">Reconnecting microphone…</string>
     <string name="status_stopping">Saving…</string>
@@ -20,7 +21,7 @@
 
     <string name="problem_permission_denied">Microphone permission is off. Allow it in Settings to record.</string>
     <string name="problem_microphone_unavailable">Another app or the system is using the microphone.</string>
-    <string name="problem_phone_call">Paused for a phone call.</string>
+    <string name="problem_phone_call">Interrupted by a phone call.</string>
     <string name="problem_foreground_start_not_allowed">Open the app to start recording. Android doesn\'t allow starting from the background.</string>
     <string name="problem_storage_low">Storage is almost full. Free up space to keep recording.</string>
     <string name="problem_process_restarted">The app was closed by the system while recording.</string>

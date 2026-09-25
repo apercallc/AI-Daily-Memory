@@ -54,9 +54,20 @@ class DigitalSilenceDetectorTest {
     }
 
     @Test
+    fun `interleaved stereo needs the full duration on both channels`() {
+        val stereo = DigitalSilenceDetector(sampleRateHz = 1_000, thresholdMs = 10, channelCount = 2)
+
+        assertFalse(stereo.process(zeros(10)))
+        assertTrue(stereo.process(zeros(10)))
+    }
+
+    @Test
     fun `invalid configuration and counts are rejected`() {
         assertFailsWith<IllegalArgumentException> { DigitalSilenceDetector(0, 10) }
         assertFailsWith<IllegalArgumentException> { DigitalSilenceDetector(1_000, 0) }
+        assertFailsWith<IllegalArgumentException> { DigitalSilenceDetector(1_000, 10, 0) }
+        // 100 Hz x 5 ms is a zero-sample threshold: it would report silence immediately.
+        assertFailsWith<IllegalArgumentException> { DigitalSilenceDetector(100, 5) }
         assertFailsWith<IllegalArgumentException> { detector.process(zeros(2), count = 3) }
         assertFailsWith<IllegalArgumentException> { detector.process(zeros(2), count = -1) }
     }

@@ -41,6 +41,10 @@ data class AudioSegment(
 ) {
     init {
         require(sequence >= 0) { "sequence must not be negative" }
+        // Fail when corrupt persisted data is loaded, not later inside a reducer.
+        require((state == SegmentState.ACKNOWLEDGED) == (acknowledgedAtEpochMs != null)) {
+            "acknowledgedAtEpochMs must be set exactly when state is ACKNOWLEDGED"
+        }
     }
 
     companion object {
@@ -116,10 +120,13 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
                 SegmentState.WRITING ->
                     SegmentTransition.Rejected(segment, SegmentRejection.STILL_WRITING)
                 SegmentState.DELETED -> SegmentTransition.Ignored(segment)
-                else -> SegmentTransition.Applied(segment.copy(state = SegmentState.DELETED))
+                else -> SegmentTransition.Applied(deleted(segment))
             }
         }
     }
+
+    private fun deleted(segment: AudioSegment) =
+        segment.copy(state = SegmentState.DELETED, acknowledgedAtEpochMs = null)
 
     private fun seal(segment: AudioSegment, event: SegmentEvent.Seal): AudioSegment {
         val defect = when {
@@ -163,12 +170,12 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
             SegmentState.DELETED -> SegmentTransition.Ignored(segment)
             // Quarantined bytes are not usable audio; they can go once reported.
             SegmentState.QUARANTINED ->
-                SegmentTransition.Applied(segment.copy(state = SegmentState.DELETED))
+                SegmentTransition.Applied(deleted(segment))
             SegmentState.ACKNOWLEDGED -> {
                 val acknowledgedAt = checkNotNull(segment.acknowledgedAtEpochMs)
                 // If the wall clock went backwards, the window just lasts longer, which is safe.
                 if (nowEpochMs - acknowledgedAt >= recoveryWindowMs) {
-                    SegmentTransition.Applied(segment.copy(state = SegmentState.DELETED))
+                    SegmentTransition.Applied(deleted(segment))
                 } else {
                     SegmentTransition.Rejected(segment, SegmentRejection.RECOVERY_WINDOW_OPEN)
                 }

@@ -87,7 +87,9 @@ fun AiDailyMemoryApp() {
                     dispatch(RecordingCommand.Start(sessionId), CaptureSignal.Started(sessionId))
                 }
                 PrimaryAction.PAUSE -> dispatch(RecordingCommand.Pause)
-                PrimaryAction.RESUME -> dispatch(RecordingCommand.Resume)
+                PrimaryAction.RESUME -> state.sessionId?.let { sessionId ->
+                    dispatch(RecordingCommand.Resume, CaptureSignal.Started(sessionId))
+                }
                 PrimaryAction.NONE -> Unit
             }
         },
@@ -174,8 +176,9 @@ fun CaptureScreen(
 @Composable
 private fun PrimaryActionButton(model: CaptureStatusModel, onClick: (PrimaryAction) -> Unit) {
     val status = AiDailyMemoryTheme.statusColors
-    val colors = if (model.primaryAction == PrimaryAction.PAUSE) {
-        // Pause is the privacy control: give it the recording color so it is unmistakable.
+    val colors = if (model.headline == Headline.RECORDING) {
+        // While audio is really being captured, Pause (the privacy control) takes the
+        // recording color so it is unmistakable. Never while nothing is being captured.
         ButtonDefaults.buttonColors(
             containerColor = status.recording,
             contentColor = status.onRecording,
@@ -253,6 +256,7 @@ private fun headlineText(headline: Headline): Int = when (headline) {
     Headline.RECORDING -> R.string.status_recording
     Headline.NOT_CAPTURING -> R.string.status_not_capturing
     Headline.PAUSED -> R.string.status_paused
+    Headline.RESUMING -> R.string.status_resuming
     Headline.INTERRUPTED -> R.string.status_interrupted
     Headline.RECOVERING -> R.string.status_recovering
     Headline.STOPPING -> R.string.status_stopping

@@ -30,7 +30,11 @@ class StartupRecoveryTest {
 
     @Test
     fun `capturing sessions become visibly interrupted with the restart cause`() {
-        listOf(RecordingStatus.RECORDING, RecordingStatus.RECOVERING).forEach { status ->
+        listOf(
+            RecordingStatus.RECORDING,
+            RecordingStatus.RESUMING,
+            RecordingStatus.RECOVERING,
+        ).forEach { status ->
             val afterCrash = recover(status, RestartCause.PROCESS_RESTARTED)
             val afterReboot = recover(status, RestartCause.DEVICE_REBOOTED)
 

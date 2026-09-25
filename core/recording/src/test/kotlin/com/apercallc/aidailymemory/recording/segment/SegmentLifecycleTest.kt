@@ -193,5 +193,12 @@ class SegmentLifecycleTest {
     fun `constructor arguments are validated`() {
         assertFailsWith<IllegalArgumentException> { SegmentLifecycle(recoveryWindowMs = -1) }
         assertFailsWith<IllegalArgumentException> { AudioSegment.writing(SessionId("s"), -1) }
+        // Corrupt persisted rows fail at load time, not deep inside the reducer.
+        assertFailsWith<IllegalArgumentException> {
+            inState(SegmentState.SEALED).copy(state = SegmentState.ACKNOWLEDGED)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            inState(SegmentState.SEALED).copy(acknowledgedAtEpochMs = 5)
+        }
     }
 }

@@ -5,6 +5,9 @@ enum class RecordingStatus {
     STARTING,
     RECORDING,
     PAUSED,
+
+    /** Resume requested; the microphone is reopening. Not capturing until `Started`. */
+    RESUMING,
     INTERRUPTED,
     RECOVERING,
     STOPPING,
@@ -88,6 +91,7 @@ sealed interface RecordingCommand : RecordingEvent {
 sealed interface CaptureSignal : RecordingEvent {
     val sessionId: SessionId
 
+    /** Audio is flowing: the first buffer arrived after a start or a resume. */
     data class Started(override val sessionId: SessionId) : CaptureSignal
     data class StartFailed(
         override val sessionId: SessionId,
@@ -144,19 +148,23 @@ object RecordingStateMachine {
                 // Pausing wins over automatic recovery: a privacy pause must never be undone
                 // by the capture engine.
                 RecordingStatus.RECORDING,
+                RecordingStatus.RESUMING,
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
                 -> current.moveTo(RecordingStatus.PAUSED)
                 else -> null
             }
 
+            // Never straight to RECORDING: after a restart the service may be gone, so the
+            // engine must confirm audio is flowing (`Started`) before we claim capture.
             RecordingCommand.Resume ->
-                current.moveToIf(status == RecordingStatus.PAUSED, RecordingStatus.RECORDING)
+                current.moveToIf(status == RecordingStatus.PAUSED, RecordingStatus.RESUMING)
 
             RecordingCommand.Stop -> when (status) {
                 RecordingStatus.STARTING,
                 RecordingStatus.RECORDING,
                 RecordingStatus.PAUSED,
+                RecordingStatus.RESUMING,
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
                 -> current.moveTo(RecordingStatus.STOPPING, current.problem)
@@ -168,8 +176,10 @@ object RecordingStateMachine {
                 else -> null
             }
 
-            is CaptureSignal.Started ->
-                current.moveToIf(status == RecordingStatus.STARTING, RecordingStatus.RECORDING)
+            is CaptureSignal.Started -> current.moveToIf(
+                status == RecordingStatus.STARTING || status == RecordingStatus.RESUMING,
+                RecordingStatus.RECORDING,
+            )
 
             is CaptureSignal.StartFailed -> when (status) {
                 RecordingStatus.STARTING ->
@@ -177,8 +187,9 @@ object RecordingStateMachine {
                 else -> null
             }
 
+            // A failed resume keeps the session (unlike a failed start) and becomes visible.
             is CaptureSignal.Interrupted -> when (status) {
-                RecordingStatus.RECORDING, RecordingStatus.RECOVERING ->
+                RecordingStatus.RECORDING, RecordingStatus.RESUMING, RecordingStatus.RECOVERING ->
                     current.moveTo(RecordingStatus.INTERRUPTED, event.problem)
                 else -> null
             }
@@ -219,7 +230,8 @@ object RecordingStateMachine {
                 event.sessionId == current.sessionId &&
                     (status == RecordingStatus.STARTING || status == RecordingStatus.RECORDING)
             RecordingCommand.Pause -> status == RecordingStatus.PAUSED
-            RecordingCommand.Resume -> status == RecordingStatus.RECORDING
+            RecordingCommand.Resume ->
+                status == RecordingStatus.RESUMING || status == RecordingStatus.RECORDING
             RecordingCommand.Stop ->
                 status == RecordingStatus.STOPPING || status == RecordingStatus.COMPLETED
             RecordingCommand.Reset -> status == RecordingStatus.IDLE

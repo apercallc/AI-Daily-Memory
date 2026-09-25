@@ -11,22 +11,25 @@ package com.apercallc.aidailymemory.recording.audio
  * buffer from the end: with live audio, the first sample checked is almost always non-zero.
  * Not thread-safe; use one instance per capture stream.
  */
-class DigitalSilenceDetector(sampleRateHz: Int, thresholdMs: Long) {
+class DigitalSilenceDetector(sampleRateHz: Int, thresholdMs: Long, channelCount: Int = 1) {
     private val thresholdSamples: Long
     private var zeroRunSamples = 0L
 
     init {
         require(sampleRateHz > 0) { "sampleRateHz must be positive" }
         require(thresholdMs > 0) { "thresholdMs must be positive" }
-        thresholdSamples = sampleRateHz.toLong() * thresholdMs / MILLIS_PER_SECOND
+        require(channelCount > 0) { "channelCount must be positive" }
+        // Counted in interleaved samples, so stereo needs twice as many zeros for the same time.
+        thresholdSamples = sampleRateHz.toLong() * channelCount * thresholdMs / MILLIS_PER_SECOND
+        require(thresholdSamples > 0) { "threshold is shorter than one sample" }
     }
 
     /** True once the current run of exact zeros reaches the threshold. */
     val isSilent: Boolean get() = zeroRunSamples >= thresholdSamples
 
     /**
-     * Feeds the first [count] 16-bit PCM samples of [samples] (interleaved channels are fine:
-     * a blocked mic zeroes all of them). Returns [isSilent].
+     * Feeds the first [count] interleaved 16-bit PCM samples of [samples] (a blocked mic zeroes
+     * every channel). Returns [isSilent].
      */
     fun process(samples: ShortArray, count: Int = samples.size): Boolean {
         require(count in 0..samples.size) { "count $count outside buffer of ${samples.size}" }

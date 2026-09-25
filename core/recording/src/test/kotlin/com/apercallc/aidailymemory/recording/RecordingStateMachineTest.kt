@@ -6,6 +6,7 @@ import com.apercallc.aidailymemory.recording.RecordingStatus.INTERRUPTED
 import com.apercallc.aidailymemory.recording.RecordingStatus.PAUSED
 import com.apercallc.aidailymemory.recording.RecordingStatus.RECORDING
 import com.apercallc.aidailymemory.recording.RecordingStatus.RECOVERING
+import com.apercallc.aidailymemory.recording.RecordingStatus.RESUMING
 import com.apercallc.aidailymemory.recording.RecordingStatus.STARTING
 import com.apercallc.aidailymemory.recording.RecordingStatus.STOPPING
 import kotlin.test.Test
@@ -63,7 +64,11 @@ class RecordingStateMachineTest {
         (RECORDING to RecordingCommand.Pause) to PAUSED,
         (RECORDING to interrupted) to INTERRUPTED,
         (RECORDING to RecordingCommand.Stop) to STOPPING,
-        (PAUSED to RecordingCommand.Resume) to RECORDING,
+        (PAUSED to RecordingCommand.Resume) to RESUMING,
+        (RESUMING to started) to RECORDING,
+        (RESUMING to interrupted) to INTERRUPTED,
+        (RESUMING to RecordingCommand.Pause) to PAUSED,
+        (RESUMING to RecordingCommand.Stop) to STOPPING,
         (PAUSED to RecordingCommand.Stop) to STOPPING,
         (INTERRUPTED to recoveryStarted) to RECOVERING,
         (INTERRUPTED to RecordingCommand.Pause) to PAUSED,
@@ -82,6 +87,7 @@ class RecordingStateMachineTest {
         RECORDING to startSame,
         PAUSED to RecordingCommand.Pause,
         RECORDING to RecordingCommand.Resume,
+        RESUMING to RecordingCommand.Resume,
         STOPPING to RecordingCommand.Stop,
         COMPLETED to RecordingCommand.Stop,
         IDLE to RecordingCommand.Reset,
@@ -215,6 +221,21 @@ class RecordingStateMachineTest {
     }
 
     @Test
+    fun `resume never claims recording until audio is confirmed flowing`() {
+        val resuming = RecordingStateMachine.reduce(stateIn(PAUSED), RecordingCommand.Resume).state
+        assertEquals(RESUMING, resuming.status)
+
+        // After a restart the service may be gone: the engine reports it, the session survives.
+        val failed = RecordingStateMachine.reduce(
+            resuming,
+            CaptureSignal.Interrupted(sessionA, CaptureProblem.FOREGROUND_START_NOT_ALLOWED),
+        ).state
+        assertEquals(INTERRUPTED, failed.status)
+        assertEquals(sessionA, failed.sessionId)
+        assertEquals(CaptureProblem.FOREGROUND_START_NOT_ALLOWED, failed.problem)
+    }
+
+    @Test
     fun `failed recovery re-enters interrupted with the new cause`() {
         val next = RecordingStateMachine.reduce(
             stateIn(RECOVERING),
@@ -249,6 +270,7 @@ class RecordingStateMachineTest {
             RecordingCommand.Pause,
             RecordingCommand.Pause, // duplicate from a watch retry
             RecordingCommand.Resume,
+            started, // audio flowing again after resume
             interrupted,
             recoveryStarted,
             recovered,
@@ -262,7 +284,7 @@ class RecordingStateMachineTest {
 
         assertEquals(COMPLETED, final.status)
         assertEquals(sessionA, final.sessionId)
-        assertEquals(9, final.revision)
+        assertEquals(10, final.revision)
     }
 
     @Test

@@ -17,6 +17,7 @@ enum class Headline {
     /** RECORDING in the state machine, but health says audio is not being saved. */
     NOT_CAPTURING,
     PAUSED,
+    RESUMING,
     INTERRUPTED,
     RECOVERING,
     STOPPING,
@@ -54,6 +55,7 @@ object CaptureStatusPresenter {
             RecordingStatus.RECORDING ->
                 if (capturingFailed) Headline.NOT_CAPTURING else Headline.RECORDING
             RecordingStatus.PAUSED -> Headline.PAUSED
+            RecordingStatus.RESUMING -> Headline.RESUMING
             RecordingStatus.INTERRUPTED -> Headline.INTERRUPTED
             RecordingStatus.RECOVERING -> Headline.RECOVERING
             RecordingStatus.STOPPING -> Headline.STOPPING
@@ -66,6 +68,7 @@ object CaptureStatusPresenter {
                 RecordingStatus.IDLE, RecordingStatus.COMPLETED -> PrimaryAction.START
                 // A privacy pause is always one tap away while anything could be capturing.
                 RecordingStatus.RECORDING,
+                RecordingStatus.RESUMING,
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
                 -> PrimaryAction.PAUSE
@@ -84,15 +87,21 @@ object CaptureStatusPresenter {
         Headline.RECOVERING -> StatusTone.WARNING
         Headline.RECORDING ->
             if (health.level == HealthLevel.WARNING) StatusTone.WARNING else StatusTone.RECORDING
-        Headline.STARTING -> StatusTone.RECORDING
         Headline.PAUSED -> StatusTone.PAUSED
-        Headline.READY, Headline.STOPPING, Headline.COMPLETED -> StatusTone.NEUTRAL
+        // Not capturing yet, so never the recording color.
+        Headline.STARTING,
+        Headline.RESUMING,
+        Headline.READY,
+        Headline.STOPPING,
+        Headline.COMPLETED,
+        -> StatusTone.NEUTRAL
     }
 
     private val STOPPABLE = setOf(
         RecordingStatus.STARTING,
         RecordingStatus.RECORDING,
         RecordingStatus.PAUSED,
+        RecordingStatus.RESUMING,
         RecordingStatus.INTERRUPTED,
         RecordingStatus.RECOVERING,
     )
