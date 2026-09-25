@@ -34,8 +34,12 @@ class Settings(BaseSettings):
     max_upload_duration_ms: int = Field(default=30 * 60_000, gt=0)
     daily_upload_bytes_quota: int = Field(default=512 * 1_048_576, gt=0)
 
-    # Gate B: no audio reaches a provider until one is chosen and reviewed (TODO Phase 1).
-    transcription_provider: Literal["disabled"] = "disabled"
+    # Gate B (ADR-0018): the integration exists, but stays "disabled" until an operator turns
+    # it on deliberately — the cost model, provider-terms, and consent reviews TODO.md lists
+    # are a human decision this setting does not make for them.
+    transcription_provider: Literal["disabled", "deepgram"] = "disabled"
+    deepgram_api_key: SecretStr | None = None
+    deepgram_model: str = "nova-2"
 
     @property
     def expose_api_docs(self) -> bool:

@@ -11,6 +11,7 @@ dependencies = [
     { name = "botocore" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -20,7 +21,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "botocore-stubs" },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pytest" },
@@ -35,7 +35,7 @@ requires-dist = [
     { name = "botocore-stubs", marker = "extra == 'dev'", specifier = ">=1.40,<2.0" },
     { name = "cryptography", specifier = ">=50,<52" },
     { name = "fastapi", specifier = ">=0.116,<1.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1.0" },
+    { name = "httpx", specifier = ">=0.28,<1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.3,<3.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.9,<3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4.0" },

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import Engine, text
 
 from app.config import Settings
@@ -18,7 +19,7 @@ from app.transcription import (
     TranscriptResult,
     validate,
 )
-from app.worker import Worker, handlers_for
+from app.worker import Worker, handlers_for, provider_for
 from tests.conftest import FakeObjectStore, make_account
 
 pytestmark = pytest.mark.anyio
@@ -301,6 +302,41 @@ async def test_validate_rejects_out_of_order_spans() -> None:
 
 async def test_transcription_stays_disabled_until_gate_b() -> None:
     assert handlers_for(Settings(app_env="test")) == {}
+    assert provider_for(Settings(app_env="test")) is None
+
+
+async def test_deepgram_requires_an_api_key_before_it_can_be_enabled() -> None:
+    with pytest.raises(SystemExit):
+        provider_for(Settings(app_env="test", transcription_provider="deepgram"))
+
+
+async def test_a_configured_deepgram_key_produces_a_provider() -> None:
+    settings = Settings(
+        app_env="test", transcription_provider="deepgram", deepgram_api_key=SecretStr("dg-key")
+    )
+    provider = provider_for(settings)
+    assert provider is not None
+    assert provider.name == "deepgram"
+    assert provider.model == "nova-2"
+
+
+async def test_handlers_for_needs_a_database_and_store_once_enabled() -> None:
+    settings = Settings(
+        app_env="test", transcription_provider="deepgram", deepgram_api_key=SecretStr("dg-key")
+    )
+    with pytest.raises(SystemExit):
+        handlers_for(settings)
+
+
+async def test_handlers_for_registers_transcribe_once_enabled(
+    database: Database, store: FakeObjectStore
+) -> None:
+    settings = Settings(
+        app_env="test", transcription_provider="deepgram", deepgram_api_key=SecretStr("dg-key")
+    )
+    handlers = handlers_for(settings, database.sessions, store)
+    assert set(handlers) == {"transcribe"}
+    assert isinstance(handlers["transcribe"], TranscribeHandler)
 
 
 async def test_run_forever_stops_when_asked(database: Database, store: FakeObjectStore) -> None:

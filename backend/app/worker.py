@@ -17,13 +17,16 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.config import Settings, get_settings
 from app.db import Database
 from app.jobs import ClaimedJob, claim, complete, fail
 from app.observability import configure_logging
+from app.providers import DeepgramProvider
 from app.retention import sweep
-from app.storage import object_store_from
-from app.transcription import JobError
+from app.storage import ObjectStore, object_store_from
+from app.transcription import JobError, TranscribeHandler, TranscriptionProvider
 
 logger = logging.getLogger("app.worker")
 
@@ -123,9 +126,31 @@ class Worker:
                     continue
 
 
-def handlers_for(settings: Settings) -> dict[str, Handler]:
+def provider_for(settings: Settings) -> TranscriptionProvider | None:
+    """None while disabled (Gate B, ADR-0018): a setting alone never turns real audio into a
+    provider call — see the module docstrings in `providers.py` and `transcription.py`.
+    """
+    if settings.transcription_provider == "disabled":
+        return None
+    if settings.deepgram_api_key is None:
+        raise SystemExit("DEEPGRAM_API_KEY is required when transcription_provider=deepgram")
+    return DeepgramProvider(
+        settings.deepgram_api_key.get_secret_value(), model=settings.deepgram_model
+    )
+
+
+def handlers_for(
+    settings: Settings,
+    sessions: async_sessionmaker[AsyncSession] | None = None,
+    store: ObjectStore | None = None,
+) -> dict[str, Handler]:
     """Enabled stages only. Transcription stays off until a provider passes Gate B."""
-    return {}
+    provider = provider_for(settings)
+    if provider is None:
+        return {}
+    if sessions is None or store is None:
+        raise SystemExit("a database and object store are required to run transcription")
+    return {"transcribe": TranscribeHandler(sessions, store, provider)}
 
 
 async def _main(settings: Settings) -> None:  # pragma: no cover - process entry point
@@ -133,7 +158,7 @@ async def _main(settings: Settings) -> None:  # pragma: no cover - process entry
         raise SystemExit("DATABASE_URL is not set")
     database = Database(settings.database_url.get_secret_value())
     store = object_store_from(settings)
-    handlers = handlers_for(settings)
+    handlers = handlers_for(settings, database.sessions, store)
     if not handlers:
         logger.warning("worker_no_stages_enabled")
 

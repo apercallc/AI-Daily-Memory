@@ -12,6 +12,7 @@ dependencies = [
   "botocore>=1.40,<2.0",
   "cryptography>=50,<52",  # HPKE (RFC 9180) module
   "fastapi>=0.116,<1.0",
+  "httpx>=0.28,<1.0",  # Deepgram provider (app/providers.py)
   "psycopg[binary]>=3.2,<4.0",
   "pydantic-settings>=2.10,<3.0",
   "sqlalchemy[asyncio]>=2.0.40,<3.0",
@@ -21,7 +22,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "botocore-stubs>=1.40,<2.0",
-  "httpx>=0.28,<1.0",
   "mypy>=2.3,<3.0",
   "pip-audit>=2.9,<3.0",
   "pytest>=9.1,<10.0",
