@@ -15,26 +15,44 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Command invalid in current state | `Rejected`, state unchanged, logged; never crashes the service | `RecordingStateMachine` | ✅ |
 | Late engine callback from a previous session | `Rejected` (signals are session-scoped) | `RecordingStateMachine` | ✅ |
 | `Start` for a new session while one is active | `Rejected`, not silently merged | `RecordingStateMachine` | ✅ |
-| Start fails (permission, mic busy, background start blocked) | `StartFailed(problem)` → IDLE with a visible reason | reducer + presenter | ✅ (logic) |
-| Mic lost mid-recording (call, other app, route change) | `Interrupted(problem)` → RECOVERING → RECORDING, or back to INTERRUPTED | reducer | ✅ (logic) |
+| Start fails (permission, mic busy, background start blocked) | `StartFailed(problem)` → IDLE with a visible reason | reducer + presenter, `RecordingService` | ✅ |
+| Mic lost mid-recording (call, other app) | `Interrupted(problem)`; bounded automatic recovery (backoff for mic loss, wait for call end); pause cancels it; gives up to a user notification | reducer, `InterruptionRecoveryPolicy`, `RecoveryScheduler`, `AudioCaptureEngine` | ✅ (on-device verification pending) |
 | User pauses during recovery | Pause wins; capture never auto-resumes after a privacy pause | reducer | ✅ |
-| Mic silently blocked (delivers zeros) | Sustained exact-zero run (per channel, so stereo is not tripped early) → `MICROPHONE_BLOCKED` critical | `DigitalSilenceDetector`, health | ✅ (logic) |
+| Mic silently blocked (delivers zeros) or silenced by the platform | 4 s exact-zero run, or `AudioRecordingConfiguration.isClientSilenced` → `Interrupted(MICROPHONE_UNAVAILABLE)` (or `PHONE_CALL` when in a call); silence is never sealed as captured audio beyond the detection window | `DigitalSilenceDetector`, `AudioCaptureEngine` | ✅ (on-device verification pending) |
 | "Recording" but nothing being saved (stuck encoder, dead thread) | No sealed segment within segment length + grace → `NOT_CAPTURING` headline | `CaptureHealthEvaluator`, presenter | ✅ |
 | Resume right after a long pause | Stall timer runs from whichever is newer: entering RECORDING or the last seal | health evaluator | ✅ |
-| Process death while recording | On start: `Interrupted(PROCESS_RESTARTED)`, gap visible, no auto-restart | `StartupRecovery` | ✅ (logic) |
-| Reboot while recording | `Interrupted(DEVICE_REBOOTED)` + "tap to resume" notification | `StartupRecovery`, ADR-0010 | ✅ logic / 📐 notification |
+| Process death while recording | Every process start restores the journal: `Interrupted(PROCESS_RESTARTED)`, gap visible, "tap to resume" notification, no auto-restart; a sticky service restart only reports | `RecordingController`, `RestartClassifier`, `RecordingService` | ✅ |
+| Reboot while recording | Boot id / monotonic clock → `Interrupted(DEVICE_REBOOTED)` + "tap to resume" notification after first unlock | `RestartClassifier`, `RestartReceiver`, ADR-0010 | ✅ |
 | Process death during STARTING / STOPPING | Becomes failed start / completed stop | `StartupRecovery` | ✅ |
 | Corrupt persisted state (non-idle state without a session) | Refused on load (`RecordingState` invariant); the persistence layer fails loudly | `RecordingState.init` | ✅ |
-| Crash mid-segment | Append-safe container; loss bounded to one segment; reported as a gap | ADR-0007 | 📐 |
+| Crash mid-segment | Row written before bytes; on restart the WRITING row is quarantined `INCOMPLETE` and its torn file removed; loss bounded to one segment and reported | `SegmentStore.abandonUnfinished`, `SegmentLifecycle` | ✅ |
 | Zero-byte, zero-duration, or malformed-checksum segment | QUARANTINED with its defect, never uploaded, counted as a gap | `SegmentLifecycle` | ✅ |
 | Missing, duplicate, or overlapping segments; hole inside continuous capture | Classified gap (`MISSING_SEGMENTS`, `DUPLICATE_SEQUENCE`, `OVERLAP`, `TIME_DISCONTINUITY`, `REBOOT`) | `GapDetector` | ✅ |
 | Pause/resume boundaries | Not gaps (`continuesPrevious = false`) | `GapDetector` | ✅ |
-| Low storage | Warn at threshold; stop capture cleanly at the hard stop, before writes fail | `StoragePolicy`, health | ✅ (logic) |
+| Low storage | Warn at threshold (health + UI "storage left"); refuse to start and stop at segment rotation at the hard stop, before writes fail; recovery waits for space | `StoragePolicy`, `AudioCaptureEngine`, `RecoveryScheduler` | ✅ (device test pending) |
 | Free space unreadable | `UNKNOWN`, treated as a warning, never OK | `StoragePolicy` | ✅ |
 | Uploads stuck for days | Pending bytes over budget → warning. Unacknowledged audio is **never** deleted to make room | `StoragePolicy`, `SegmentLifecycle` | ✅ |
-| Device locked all day | Keystore key without a user-auth requirement | ADR-0007 | 📐 |
-| Before first unlock after reboot | No capture (credential-encrypted storage unavailable) | ADR-0007 | 📐 |
-| OEM battery killers (aggressive vendors) | Detect via restart journal; guide the user to exemptions; never claim continuity | TODO Phase 0 | 📐 |
+| Device locked all day | Keystore key without a user-auth requirement | `SegmentCipher` | ✅ (device test pending) |
+| Before first unlock after reboot | App is not direct-boot aware: no component runs before unlock; Start is also blocked by `DEVICE_LOCKED` | manifest, `CapturePreconditions` | ✅ |
+| OEM battery killers (aggressive vendors) | Kill shows up as a process-restart interruption; an info card links to battery settings without promising it helps | `RecordingController`, capture screen | ✅ (vendor matrix pending) |
+| Keystore unusable (Tink would silently fall back to a cleartext keyset) | Refused: `ENCRYPTION_UNAVAILABLE`, nothing written unencrypted, no phantom segment row | `SegmentCipher`, `SegmentStore` | ✅ |
+| Journal's newest row undecodable | Restart IDLE with `UNKNOWN` problem, revision kept monotonic | `JournalCodec`, `RecordingController` | ✅ |
+| Journal write fails | Transition not published and no effect runs; failure logged to the operator | `RecordingController` | ✅ |
+| Foreground start refused (permission revoked, background) | Follow-up `StartFailed`/`Interrupted`; later effects skipped so the mic never opens without the service | `RecordingService`, `RecordingController` | ✅ |
+| Notification permission denied | Recording does not start: the indicator would be invisible | `CapturePreconditions` | ✅ |
+| Microphone permanently denied ("don't ask again") | Settings deep link instead of a dead system dialog | `PermissionFlow` | ✅ |
+| App updated mid-session | `MY_PACKAGE_REPLACED` wakes the process; treated as a process restart | `RestartReceiver` | ✅ |
+| Quick Stop → Start race on the service | `stopSelf(startId)` never stops a newer command | `RecordingService` | ✅ |
+| Wedged encoder | Input stall bounded (~1 s) → `Interrupted(UNKNOWN)`; final drain bounded | `AacEncoder` | ✅ |
+| Audio route change (headset, Bluetooth) | Capture continues on the new route; change logged for endurance correlation | `AudioCaptureEngine` | ✅ (device test pending) |
+| Marker while not capturing, or double tap | Refused / acknowledged once | `MarkerPolicy` (ADR-0011) | ✅ |
+| Recording notification blocked, channel disabled, or swiped away (Android 14+) | Mic never opens without a visible indicator (`INDICATOR_HIDDEN`), re-checked while capturing; a dismissed indicator is re-posted | `RecordingService`, `CaptureNotifications`, `CommandReceiver` | ✅ |
+| Slow fsync / storage stall during segment rotation | Reader thread never touches the disk; 2 s platform buffer plus a 5 s writer backlog; a full backlog stops capture visibly instead of dropping audio | `AudioCaptureEngine` | ✅ (device measurement pending) |
+| Seal fails (close/fsync/rename) or the segment row cannot be written (`SQLiteFullException`) | Capture stops with an interruption; health only counts real seals as progress | `AudioCaptureEngine`, `SegmentStore` | ✅ |
+| Unexpected crash inside the capture job | Always reported as `Failed(UNKNOWN)`; never left claiming RECORDING | `AudioCaptureEngine.open` | ✅ |
+| Caller cancelled mid-command (service destroyed, recovery wait superseded) | Reduce → journal → effects runs to completion once started | `RecordingController` | ✅ |
+| Interruption restored from a dead process (e.g. during a call) | Never retried automatically; the user resumes | `RecoveryScheduler` | ✅ |
+| Command while the service cannot enter the foreground (permission revoked, background) | The service is not started (that would crash); the command runs detached and reports the problem | `RecordingService.send` | ✅ |
 | Background start from watch refused | `StartFailed(FOREGROUND_START_NOT_ALLOWED)` + phone notification | ADR-0010 | 📐 |
 
 ## 2. Time and identity
@@ -110,6 +128,6 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 
 ## Open
 
-- ❓ Quick Note model: a window inside a session, or its own session.
+- ✅ Quick Note model: a marker window inside the active session (ADR-0011).
 - ❓ Behavior when the user starts a phone call on speaker while recording (legal, per
   jurisdiction). Default: treat it as `PHONE_CALL` interruption and do not capture.

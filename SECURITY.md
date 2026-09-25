@@ -27,6 +27,30 @@ Report security issues privately to the repository owner/organization maintainer
 - High/critical known vulnerabilities block production release unless a documented risk acceptance exists.
 - Release builds should produce an SBOM before broad production rollout.
 
+## Local audio at rest (Android)
+
+- Segments are encrypted with Tink streaming AEAD (AES-256-GCM-HKDF, 4 KB segments). The
+  segment id is the associated data, so a file cannot be moved onto another segment's record.
+- The keyset is wrapped by an Android Keystore key that does not require user
+  authentication (capture must work while the phone is locked). If the Keystore is unusable,
+  recording refuses to start (`ENCRYPTION_UNAVAILABLE`); Tink's cleartext-keyset fallback is
+  rejected explicitly.
+- Keys are not rotated automatically: HKDF derives a fresh key per segment from a random
+  salt, so there is no nonce-reuse budget to rotate for. If the Keystore key is lost or
+  invalidated (e.g. data cleared, Keystore reset), unacknowledged local segments become
+  unreadable. The app never silently generates a new key over them.
+- Segments live in `noBackupFilesDir`; backup and device transfer exclude all app data.
+- The local capture database (`capture.db`) holds metadata only: session and segment ids,
+  timestamps, checksums, lifecycle states, and marker windows. It holds no audio and no
+  transcript text, and relies on Android file-based encryption (credential-encrypted
+  storage). If it ever stores content (Phase 2+), it needs app-level encryption first.
+- Logs name events and exception types only, never exception messages: platform messages
+  carry file paths and segment ids, and UUIDv7 ids encode recording times.
+- **Deletion is logical deletion plus key hygiene, not physical erasure.** Deleting a
+  segment unlinks its ciphertext file; flash storage may keep stale blocks until the
+  controller reclaims them. Because only ciphertext is ever written, those blocks are not
+  readable without the key. We do not promise physical flash erasure.
+
 ## Recording privacy
 
 The application must not be designed to hide recording state. Recording indicators and pause/stop controls are product requirements.
