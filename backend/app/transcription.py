@@ -21,7 +21,7 @@ from app.db.models import (
     TranscriptSegment,
     User,
 )
-from app.jobs import ClaimedJob
+from app.jobs import ClaimedJob, enqueue
 from app.retention import MAX_HOLD
 from app.sealing import seal, transcript_payload
 from app.storage import ObjectMissingError, ObjectStore
@@ -210,6 +210,16 @@ class TranscribeHandler:
             )
             upload.active_transcript_id = transcript.id
             upload.state = "transcribed"
+            # Phase 2 (ADR-0019): the only server-side transcript is a full_cloud one, so this
+            # is the only path that can ever have something to extract. One job per session:
+            # a later clip in the same session adds evidence but doesn't retrigger a rerun.
+            await enqueue(
+                session,
+                user_id=user_id,
+                kind="extract",
+                subject_id=upload.session_id,
+                idempotency_key=f"extract:{upload.session_id}",
+            )
 
     async def _persist_sealed(
         self,

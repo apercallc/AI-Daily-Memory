@@ -21,9 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, get_settings
 from app.db import Database
+from app.extraction import ExtractHandler, ExtractionProvider
 from app.jobs import ClaimedJob, claim, complete, fail
 from app.observability import configure_logging
-from app.providers import DeepgramProvider
+from app.providers import ClaudeExtractionProvider, DeepgramProvider
 from app.retention import sweep
 from app.storage import ObjectStore, object_store_from
 from app.transcription import JobError, TranscribeHandler, TranscriptionProvider
@@ -139,18 +140,36 @@ def provider_for(settings: Settings) -> TranscriptionProvider | None:
     )
 
 
+def extraction_provider_for(settings: Settings) -> ExtractionProvider | None:
+    """None while disabled (ADR-0019), same posture as `provider_for` above."""
+    if settings.extraction_provider == "disabled":
+        return None
+    if settings.claude_api_key is None:
+        raise SystemExit("CLAUDE_API_KEY is required when extraction_provider=claude")
+    return ClaudeExtractionProvider(
+        settings.claude_api_key.get_secret_value(), model=settings.claude_model
+    )
+
+
 def handlers_for(
     settings: Settings,
     sessions: async_sessionmaker[AsyncSession] | None = None,
     store: ObjectStore | None = None,
 ) -> dict[str, Handler]:
-    """Enabled stages only. Transcription stays off until a provider passes Gate B."""
+    """Enabled stages only. Transcription and extraction each stay off until their own provider
+    is turned on deliberately (Gate B / ADR-0019)."""
+    handlers: dict[str, Handler] = {}
     provider = provider_for(settings)
-    if provider is None:
-        return {}
-    if sessions is None or store is None:
-        raise SystemExit("a database and object store are required to run transcription")
-    return {"transcribe": TranscribeHandler(sessions, store, provider)}
+    if provider is not None:
+        if sessions is None or store is None:
+            raise SystemExit("a database and object store are required to run transcription")
+        handlers["transcribe"] = TranscribeHandler(sessions, store, provider)
+    extraction = extraction_provider_for(settings)
+    if extraction is not None:
+        if sessions is None:
+            raise SystemExit("a database is required to run extraction")
+        handlers["extract"] = ExtractHandler(sessions, extraction)
+    return handlers
 
 
 async def _main(settings: Settings) -> None:  # pragma: no cover - process entry point

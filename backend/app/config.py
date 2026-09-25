@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr | None = None
     deepgram_model: str = "nova-2"
 
+    # Phase 2 structured extraction (ADR-0019): same posture as transcription_provider — the
+    # integration exists, but no gold-dataset evaluation exists yet (TODO.md "AI evaluation"),
+    # so this stays "disabled" until an operator turns it on deliberately.
+    extraction_provider: Literal["disabled", "claude"] = "disabled"
+    claude_api_key: SecretStr | None = None
+    claude_model: str = "claude-sonnet-5"
+
     @property
     def expose_api_docs(self) -> bool:
         # Interactive docs describe the private API surface; keep them off in deployed envs.

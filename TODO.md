@@ -333,33 +333,34 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ## Event grouping
 
-- [ ] Group transcript segments into useful event windows
-- [ ] Preserve exact evidence links
+- [x] Group transcript segments into useful event windows (session_id, ADR-0019 — reuses the
+  client-assigned session, no new grouping table or boundary-detection logic)
+- [x] Preserve exact evidence links (memory_item_evidence -> transcript_segments)
 - [ ] Avoid over-fragmented 30-second memories
 - [ ] Handle long meetings
 - [ ] Handle short Quick Notes
 - [ ] Handle event boundary corrections
 
-## Structured extraction
+## Structured extraction (ADR-0019; full_cloud accounts only — see ADR-0014)
 
-- [ ] Decisions
-- [ ] Actions
-- [ ] Commitments
-- [ ] Ideas
+- [x] Decisions
+- [x] Actions
+- [x] Commitments
+- [x] Ideas
 - [ ] Facts
-- [ ] Questions
+- [x] Questions
 - [ ] Highlights
-- [ ] Confidence/review state
-- [ ] Extraction/model/prompt version metadata
-- [ ] Never rewrite source transcript
-- [ ] Treat transcript text as untrusted model input: delimit as data, schema-validate output, no tool access
-- [ ] Memory items cite evidence many-to-many (memory_item_evidence)
+- [x] Confidence/review state
+- [x] Extraction/model/prompt version metadata
+- [x] Never rewrite source transcript
+- [x] Treat transcript text as untrusted model input: delimit as data, schema-validate output, no tool access
+- [x] Memory items cite evidence many-to-many (memory_item_evidence)
 
 ## Human correction
 
 - [ ] Correct
 - [ ] Edit
-- [ ] Dismiss / Not a task
+- [x] Dismiss / Not a task (memory_items.dismissed_at)
 - [ ] Supersede old decisions
 - [ ] Store correction separately from evidence
 - [ ] Include confirmed corrections in future retrieval ranking
@@ -367,15 +368,19 @@ Goal: prove reliable Android capture before building AI infrastructure.
 ## Daily summary / daily report
 
 - [x] Daily report contract v1 + JSON Schema (contracts/) + Markdown template (docs/product/daily-report-example.md)
-- [ ] Generate the report at bedtime (ReportTiming.dueAt) from structured memory + evidence
-- [ ] Deliver it at wake time (ReportTiming.deliverAt); "partial" while audio is pending
-- [ ] Report screen in the app; share as Markdown (Google Drive via the share sheet)
+- [ ] Generate the report at bedtime (ReportTiming.dueAt) from structured memory + evidence —
+  no scheduler exists; a report is built as soon as extraction has something (ADR-0019)
+- [ ] Deliver it at wake time (ReportTiming.deliverAt); "partial" while audio is pending — the
+  "partial" status is implemented (GET /v1/reports/{memory_day}); wake-time delivery is not
+- [ ] Report screen in the app; share as Markdown (Google Drive via the share sheet) — not built;
+  `render_markdown` exists and is unused by the app
 - [ ] Optional nightly auto-save to Drive from the phone (`drive.file`, on-device auth; server never holds Drive tokens)
-- [ ] Build from structured memory + evidence
-- [ ] Avoid summary-of-summary drift
-- [ ] Link important items to source timestamps
-- [ ] Regenerate when extraction version changes
-- [ ] Bound LLM context
+- [x] Build from structured memory + evidence (app/reports/build.py)
+- [ ] Avoid summary-of-summary drift (no headline/summary text is generated at all yet)
+- [x] Link important items to source timestamps
+- [x] Regenerate when extraction version changes (rebuilt on every extraction run; a version
+  bump alone does not retroactively re-run past sessions)
+- [ ] Bound LLM context (no chunking/truncation for a very long day's transcript yet)
 
 ## Owner voice attribution (ADR-0016)
 

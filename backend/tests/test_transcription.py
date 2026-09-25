@@ -10,6 +10,7 @@ from sqlalchemy import Engine, text
 
 from app.config import Settings
 from app.db import Database
+from app.extraction import ExtractHandler
 from app.jobs import ClaimedJob, enqueue
 from app.storage import audio_key
 from app.transcription import (
@@ -19,7 +20,7 @@ from app.transcription import (
     TranscriptResult,
     validate,
 )
-from app.worker import Worker, handlers_for, provider_for
+from app.worker import Worker, extraction_provider_for, handlers_for, provider_for
 from tests.conftest import FakeObjectStore, make_account
 
 pytestmark = pytest.mark.anyio
@@ -130,7 +131,10 @@ def worker(database: Database, store: FakeObjectStore, provider: FakeProvider) -
 def state(db: Engine) -> tuple[str, str]:
     with db.connect() as connection:
         row = connection.execute(
-            text("SELECT u.state, j.state AS job FROM audio_uploads u, processing_jobs j"),
+            text(
+                "SELECT u.state, j.state AS job FROM audio_uploads u, processing_jobs j "
+                "WHERE j.kind = 'transcribe'",
+            ),
         ).one()
     return row.state, row.job
 
@@ -337,6 +341,55 @@ async def test_handlers_for_registers_transcribe_once_enabled(
     handlers = handlers_for(settings, database.sessions, store)
     assert set(handlers) == {"transcribe"}
     assert isinstance(handlers["transcribe"], TranscribeHandler)
+
+
+async def test_extraction_stays_disabled_until_a_provider_is_configured() -> None:
+    assert extraction_provider_for(Settings(app_env="test")) is None
+
+
+async def test_claude_requires_an_api_key_before_it_can_be_enabled() -> None:
+    with pytest.raises(SystemExit):
+        extraction_provider_for(Settings(app_env="test", extraction_provider="claude"))
+
+
+async def test_a_configured_claude_key_produces_a_provider() -> None:
+    settings = Settings(
+        app_env="test", extraction_provider="claude", claude_api_key=SecretStr("claude-key")
+    )
+    provider = extraction_provider_for(settings)
+    assert provider is not None
+    assert provider.name == "claude"
+
+
+async def test_handlers_for_needs_a_database_to_run_extraction() -> None:
+    settings = Settings(
+        app_env="test", extraction_provider="claude", claude_api_key=SecretStr("claude-key")
+    )
+    with pytest.raises(SystemExit):
+        handlers_for(settings)
+
+
+async def test_handlers_for_registers_extract_once_enabled(database: Database) -> None:
+    settings = Settings(
+        app_env="test", extraction_provider="claude", claude_api_key=SecretStr("claude-key")
+    )
+    handlers = handlers_for(settings, database.sessions)
+    assert set(handlers) == {"extract"}
+    assert isinstance(handlers["extract"], ExtractHandler)
+
+
+async def test_both_stages_can_be_enabled_together(
+    database: Database, store: FakeObjectStore
+) -> None:
+    settings = Settings(
+        app_env="test",
+        transcription_provider="deepgram",
+        deepgram_api_key=SecretStr("dg-key"),
+        extraction_provider="claude",
+        claude_api_key=SecretStr("claude-key"),
+    )
+    handlers = handlers_for(settings, database.sessions, store)
+    assert set(handlers) == {"transcribe", "extract"}
 
 
 async def test_run_forever_stops_when_asked(database: Database, store: FakeObjectStore) -> None:

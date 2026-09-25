@@ -66,18 +66,24 @@ async def enqueue(
     subject_id: uuid.UUID,
     idempotency_key: str,
     max_attempts: int = 5,
+    run_after: Clock | None = None,
 ) -> None:
-    """Creates the job unless one with this key exists. The caller commits."""
+    """Creates the job unless one with this key exists. The caller commits. [run_after] delays
+    the first claim (e.g. extraction waits a little for sibling clips of the same session to
+    finish transcribing); omitted, the row's own server default (now) applies."""
+    values: dict[str, object] = {
+        "id": uuid.uuid4(),
+        "user_id": user_id,
+        "kind": kind,
+        "subject_id": subject_id,
+        "idempotency_key": idempotency_key,
+        "max_attempts": max_attempts,
+    }
+    if run_after is not None:
+        values["run_after"] = run_after
     await session.execute(
         insert(ProcessingJob)
-        .values(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            kind=kind,
-            subject_id=subject_id,
-            idempotency_key=idempotency_key,
-            max_attempts=max_attempts,
-        )
+        .values(**values)
         .on_conflict_do_nothing(index_elements=["idempotency_key"]),
     )
 

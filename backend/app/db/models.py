@@ -6,7 +6,7 @@ the models and the migrations drift apart.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, get_args
 
 from sqlalchemy import (
@@ -25,7 +25,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Stable constraint names make migrations reviewable and reversible.
@@ -43,6 +43,17 @@ STORAGE_MODES: tuple[str, ...] = get_args(StorageMode)
 UPLOAD_STATES: tuple[str, ...] = get_args(UploadState)
 JOB_STATES = ("queued", "running", "succeeded", "dead")
 TOKEN_KINDS = ("device", "api")
+
+# Phase 2 structured extraction (TODO.md, ADR-0019): kept in sync with app/reports/daily.py's
+# Confidence and Commitment.direction literals, which are the contract these rows are read into.
+MemoryItemKind = Literal["decision", "action", "commitment", "idea", "question"]
+Confidence = Literal["confirmed", "likely", "possible"]
+CommitmentDirection = Literal["i_owe", "owed_to_me"]
+MEMORY_ITEM_KINDS: tuple[str, ...] = get_args(MemoryItemKind)
+CONFIDENCE_LEVELS: tuple[str, ...] = get_args(Confidence)
+COMMITMENT_DIRECTIONS: tuple[str, ...] = get_args(CommitmentDirection)
+ReportStatus = Literal["complete", "partial"]
+REPORT_STATUSES: tuple[str, ...] = get_args(ReportStatus)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -255,3 +266,77 @@ class SealedDelivery(Base):
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = _created()
     expires_at: Mapped[datetime]
+
+
+class MemoryItem(Base):
+    """One extracted decision/action/commitment/idea/question (Phase 2, ADR-0019). Extraction
+    only ever runs for `full_cloud` accounts: it's the only mode where the server holds a
+    plaintext transcript to extract from (app/transcription.py). `memory_day` is currently the
+    UTC calendar date of the session's first clip — a placeholder for the phone's real
+    sleep-midpoint memory day (ADR-0012), which the upload protocol doesn't carry yet."""
+
+    __tablename__ = "memory_items"
+    __table_args__ = (
+        CheckConstraint(_in("kind", MEMORY_ITEM_KINDS), name="kind"),
+        CheckConstraint(_in("confidence", CONFIDENCE_LEVELS), name="confidence"),
+        CheckConstraint(
+            "kind != 'commitment' OR direction IS NOT NULL", name="commitment_has_direction"
+        ),
+        Index("ix_memory_items_user_id_memory_day", "user_id", "memory_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    session_id: Mapped[uuid.UUID]
+    memory_day: Mapped[date]
+    kind: Mapped[str] = mapped_column(String(16))
+    text: Mapped[str] = mapped_column(String(280))
+    confidence: Mapped[str] = mapped_column(String(16))
+    owner: Mapped[str | None] = mapped_column(String(80))  # action items only
+    counterpart: Mapped[str | None] = mapped_column(String(80))  # commitments only
+    direction: Mapped[str | None] = mapped_column(String(16))  # commitments only
+    due: Mapped[date | None]
+    extraction_model: Mapped[str] = mapped_column(String(80))
+    extraction_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _created()
+    # A user right (ADR-0004 amendment): "not a task" without deleting the evidence behind it.
+    # Correcting or editing text isn't implemented yet — see TODO.md "Human correction".
+    dismissed_at: Mapped[datetime | None]
+
+
+class MemoryItemEvidence(Base):
+    """Many-to-many: a memory item cites one or more transcript segments (ADR-0004, TODO.md
+    "Memory items cite evidence many-to-many")."""
+
+    __tablename__ = "memory_item_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    memory_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"),
+        index=True,
+    )
+    transcript_segment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("transcript_segments.id", ondelete="CASCADE"),
+    )
+    quote: Mapped[str | None] = mapped_column(String(280))
+
+
+class DailyReportRow(Base):
+    """The assembled report (app/reports/daily.py's `DailyReport` contract, stored as JSON) for
+    one user's memory day. Regenerated in place whenever extraction produces new items for that
+    day; `extraction_version` says which extraction pass produced it."""
+
+    __tablename__ = "daily_reports"
+    __table_args__ = (
+        CheckConstraint(_in("status", REPORT_STATUSES), name="status"),
+        UniqueConstraint("user_id", "memory_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    memory_day: Mapped[date]
+    status: Mapped[str] = mapped_column(String(16))
+    report: Mapped[dict[str, object]] = mapped_column(JSONB)
+    extraction_version: Mapped[int] = mapped_column(Integer)
+    generated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
