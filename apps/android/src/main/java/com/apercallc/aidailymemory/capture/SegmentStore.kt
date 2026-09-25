@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.capture
 
 import com.apercallc.aidailymemory.recording.audio.AdtsScanner
+import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import android.util.Log
 import com.apercallc.aidailymemory.data.CaptureTimeColumns
 import com.apercallc.aidailymemory.data.SegmentDao
@@ -137,6 +138,35 @@ class SegmentStore(
             }
         }
         return lost
+    }
+
+    /**
+     * Applies the user's audio-retention setting (ADR-0013): deletes the local file and records
+     * DELETED for every segment the lifecycle allows. The lifecycle refuses anything the server
+     * hasn't acknowledged and anything inside the recovery window, whatever the setting says.
+     * Returns how many segments were deleted.
+     */
+    suspend fun applyRetention(nowEpochMs: Long, retention: AudioRetention): Int {
+        var deleted = 0
+        val candidates = dao.inState(SegmentState.ACKNOWLEDGED.name) +
+            dao.inState(SegmentState.QUARANTINED.name)
+        for (entity in candidates) {
+            val result = lifecycle.reduce(
+                entity.toSegment(),
+                SegmentEvent.RetentionDelete(nowEpochMs, retention),
+            )
+            if (result !is SegmentTransition.Applied) continue
+            val file = File(directory, entity.fileName)
+            // File first: a row that says DELETED while the audio still exists would be a lie
+            // about the user's data. If the delete fails, try again next time.
+            if (file.exists() && !file.delete()) {
+                Log.w(TAG, "retention_file_delete_failed")
+                continue
+            }
+            dao.update(entity.withSegment(result.segment))
+            deleted++
+        }
+        return deleted
     }
 
     private suspend fun recoverSealed(entity: SegmentEntity, file: File): SegmentEntity? {

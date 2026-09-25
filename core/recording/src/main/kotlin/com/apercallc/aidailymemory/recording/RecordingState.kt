@@ -191,9 +191,13 @@ object RecordingStateMachine {
             RecordingCommand.ScheduledPause -> when (status) {
                 RecordingStatus.RECORDING,
                 RecordingStatus.RESUMING,
-                RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
                 -> current.moveTo(RecordingStatus.PAUSED).copy(pausedBySchedule = true)
+                // Quiet time must still stop a pending automatic retry, but an interruption
+                // may be one the recovery policy handed to the user. Marking it as a schedule
+                // pause would let quiet time's end reopen the mic by itself, so it becomes an
+                // ordinary pause that only the user resumes.
+                RecordingStatus.INTERRUPTED -> current.moveTo(RecordingStatus.PAUSED)
                 else -> null
             }
 

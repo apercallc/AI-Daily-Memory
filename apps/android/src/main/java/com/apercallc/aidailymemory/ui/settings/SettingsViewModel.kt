@@ -31,10 +31,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val bytesPerHour: Long get() = container.storageBytesPerHour
 
     fun updateRhythm(rhythm: DailyRhythm) {
+        val previous = settings.rhythm.value
         settings.setRhythm(rhythm)
         viewModelScope.launch {
             try {
-                container.rhythm.onRhythmChanged()
+                container.rhythm.onRhythmChanged(previous)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

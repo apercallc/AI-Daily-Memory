@@ -37,25 +37,35 @@ class RhythmRunner(
     private val controller: RecordingController,
     private val alarms: RhythmAlarms,
     private val onWakeReminder: () -> Unit,
+    /** Recording came back on its own after a night paused (day not ended at bedtime). */
+    private val onResumedAfterSleep: () -> Unit = {},
     private val now: () -> Instant = Instant::now,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val lock = Mutex()
+
+    /** Last check, kept in memory; persisted on actions and every [PERSIST_EVERY]. */
+    private var lastCheck: Instant? = null
+    private var lastPersisted: Instant? = null
 
     suspend fun catchUp() = lock.withLock {
         controller.awaitRestored()
         val rhythm = settings.rhythm.value
         val current = now()
         // First run, or the clock moved backwards: start from now, never replay history.
-        val last = settings.lastRhythmCheckEpochMs
-            ?.let(Instant::ofEpochMilli)
+        val last = (lastCheck ?: settings.lastRhythmCheckEpochMs?.let(Instant::ofEpochMilli))
             ?.takeIf { !it.isAfter(current) }
             ?: current
         val missed = RhythmPlanner.transitionsBetween(rhythm, last, current, zone())
-            .mapNotNull { t -> t.actionFor(rhythm)?.let { t.at to it } }
+            .mapNotNull { t -> t.actionFor(rhythm)?.let { t to it } }
             .lastOrNull()
-        settings.lastRhythmCheckEpochMs = current.toEpochMilli()
-        missed?.let { (at, action) -> apply(action, lateBy = Duration.between(at, current)) }
+        markChecked(current, force = missed != null)
+        missed?.let { (transition, action) ->
+            apply(action, lateBy = Duration.between(transition.at, current))
+            if (action == RhythmAction.RESUME && transition.from == OffState.Sleeping) {
+                onResumedAfterSleep()
+            }
+        }
         reschedule(rhythm, current)
     }
 
@@ -63,15 +73,33 @@ class RhythmRunner(
      * The user just changed the schedule. If it says "quiet" right now, honor it now rather
      * than at the next boundary; otherwise start watching from this moment.
      */
-    suspend fun onRhythmChanged() = lock.withLock {
+    suspend fun onRhythmChanged(previous: DailyRhythm) = lock.withLock {
         controller.awaitRestored()
         val rhythm = settings.rhythm.value
         val current = now()
-        settings.lastRhythmCheckEpochMs = current.toEpochMilli()
-        if (RhythmPlanner.stateAt(rhythm, current, zone()) is OffState.Quiet) {
-            apply(RhythmAction.PAUSE, lateBy = Duration.ZERO)
-        }
+        markChecked(current, force = true)
+        // Only when *this edit* made now quiet: editing an unrelated setting during lunch must
+        // not re-pause a recording the user resumed on purpose.
+        val quietNow = RhythmPlanner.stateAt(rhythm, current, zone()) is OffState.Quiet
+        val quietBefore = RhythmPlanner.stateAt(previous, current, zone()) is OffState.Quiet
+        if (quietNow && !quietBefore) apply(RhythmAction.PAUSE, lateBy = Duration.ZERO)
         reschedule(rhythm, current)
+    }
+
+    /**
+     * The in-service timer checks every minute; writing each check to disk would be ~1,440
+     * writes a recording day. A persisted value at most [PERSIST_EVERY] old is safe: every
+     * action forces a write, so catch-up after process death can't replay one already applied.
+     */
+    private fun markChecked(at: Instant, force: Boolean) {
+        lastCheck = at
+        val persisted = lastPersisted
+        if (force || persisted == null || Duration.between(persisted, at) >= PERSIST_EVERY ||
+            at.isBefore(persisted)
+        ) {
+            settings.lastRhythmCheckEpochMs = at.toEpochMilli()
+            lastPersisted = at
+        }
     }
 
     /** Milliseconds until the next schedule change that needs an action, or null if none. */
@@ -104,5 +132,6 @@ class RhythmRunner(
     private companion object {
         const val TAG = "RhythmRunner"
         val REMINDER_GRACE: Duration = Duration.ofHours(2)
+        val PERSIST_EVERY: Duration = Duration.ofMinutes(5)
     }
 }

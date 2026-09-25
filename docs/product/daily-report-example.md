@@ -6,7 +6,7 @@ _Your day in memory · times in America/Chicago (CDT)_
 
 ## At a glance
 
-Kafka migration approved; follow-ups for the payment incident are owned.
+Kafka migration approved; follow\-ups for the payment incident are owned.
 
 - Standup settled on the new consumer implementation.
 - Priya needs the incident timeline by Thursday.
@@ -21,7 +21,7 @@ Kafka migration approved; follow-ups for the payment incident are owned.
 
 **You promised**
 
-- Sam: review the failed-message dashboard — due Wed, Sep 23 · _9:12 AM, Standup and planning_ (likely)
+- Sam: review the failed\-message dashboard — due Wed, Sep 23 · _9:12 AM, Standup and planning_ (likely)
 
 **Promised to you**
 
@@ -37,7 +37,7 @@ Kafka migration approved; follow-ups for the payment incident are owned.
 
 ## Open questions
 
-- Who owns on-call during the migration week? · _9:05 AM, Standup and planning_ (possible)
+- Who owns on\-call during the migration week? · _9:05 AM, Standup and planning_ (possible)
 
 ## Highlights
 
@@ -52,7 +52,7 @@ Kafka migration approved; follow-ups for the payment incident are owned.
 
 ### 8:03 AM – 11:58 AM · Standup and planning
 
-Daily standup, then incident follow-up with Priya.
+Daily standup, then incident follow\-up with Priya.
 
 - 8:42 AM — Daily standup
 - 10:40 AM — Incident review

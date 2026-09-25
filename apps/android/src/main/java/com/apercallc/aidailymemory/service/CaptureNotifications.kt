@@ -84,6 +84,24 @@ class CaptureNotifications(private val context: Context) {
     fun cancelMorningReminder() = manager.cancel(ID_REMINDER)
 
     /**
+     * Recording reopened by itself after a night paused (the day isn't ended at bedtime). The
+     * status notification is silent, so say so once, audibly, on the rhythm channel.
+     */
+    @SuppressLint("MissingPermission") // Guarded by areNotificationsEnabled().
+    fun resumedAfterSleep() {
+        if (!manager.areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_RHYTHM)
+            .setSmallIcon(R.drawable.ic_stat_recording)
+            .setContentTitle(context.getString(R.string.resumed_after_sleep_title))
+            .setContentText(context.getString(R.string.resumed_after_sleep_body))
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(openApp())
+            .build()
+        manager.notify(ID_REMINDER, notification)
+    }
+
+    /**
      * Whether the recording indicator can actually be seen: app notifications on *and* the
      * status channel not blocked. The service checks this before and during capture.
      */
@@ -155,7 +173,7 @@ class CaptureNotifications(private val context: Context) {
             if (fromAlert) {
                 activityAction(label, RecordingService.ACTION_RESUME)
             } else {
-                action(label, RecordingService.ACTION_RESUME)
+                micAction(label, RecordingService.ACTION_RESUME)
             }
         }
         when (model.primaryAction) {
@@ -176,7 +194,8 @@ class CaptureNotifications(private val context: Context) {
     private fun action(label: Int, serviceAction: String) =
         NotificationCompat.Action(0, context.getString(label), broadcast(serviceAction))
 
-    private fun activityAction(label: Int, serviceAction: String) = NotificationCompat.Action(
+    /** Opens the microphone, so it requires an unlocked phone (see [micAction]). */
+    private fun activityAction(label: Int, serviceAction: String) = NotificationCompat.Action.Builder(
         0,
         context.getString(label),
         PendingIntent.getActivity(
@@ -185,7 +204,18 @@ class CaptureNotifications(private val context: Context) {
             CommandActivity.intent(context, serviceAction),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         ),
-    )
+    ).setAuthenticationRequired(true).build()
+
+    /**
+     * Actions that open the microphone require the device to be unlocked, so neither someone
+     * holding a locked phone nor an app with notification access can start recording through
+     * a button. Pause and Stop never require it: stopping must always be one tap.
+     */
+    private fun micAction(label: Int, serviceAction: String) = NotificationCompat.Action.Builder(
+        0,
+        context.getString(label),
+        broadcast(serviceAction),
+    ).setAuthenticationRequired(true).build()
 
     /** Explicit and immutable: only this app's own receiver can get it, and nobody can edit it. */
     private fun broadcast(serviceAction: String) = PendingIntent.getBroadcast(

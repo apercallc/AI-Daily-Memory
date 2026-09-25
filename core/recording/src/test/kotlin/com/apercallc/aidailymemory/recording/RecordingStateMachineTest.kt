@@ -364,6 +364,15 @@ class ScheduledTransitionsTest {
     }
 
     @Test
+    fun `quiet time stops an interruption but never marks it for automatic resume`() {
+        val paused = reduce(state(INTERRUPTED), RecordingCommand.ScheduledPause).state
+
+        assertEquals(PAUSED, paused.status)
+        assertFalse(paused.pausedBySchedule)
+        assertIs<Transition.Ignored>(reduce(paused, RecordingCommand.ScheduledResume))
+    }
+
+    @Test
     fun `the schedule never resumes a pause the user made`() {
         val userPaused = state(PAUSED)
 

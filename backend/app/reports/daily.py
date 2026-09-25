@@ -9,6 +9,7 @@ of it, so transcript text can't inject headings, links, images, or HTML into an 
 """
 
 import re
+import unicodedata
 from datetime import date, datetime
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -161,14 +162,40 @@ class DailyReport(_Model):
 
 # --- Markdown rendering ---------------------------------------------------------------------
 
-_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]<>()#+!|~])")
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]<>()#+!|~&=-])")
 _WHITESPACE = re.compile(r"\s+")
+# Anything a renderer could turn into a clickable link: scheme URLs and bare www. hosts.
+_LINKISH = re.compile(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+")
+# "1." or "1)" at the start of a line would become an ordered list.
+_LEADING_ORDINAL = re.compile(r"^(\d+)([.)])")
+# Control, format (bidi overrides, zero-width), and line/paragraph separators.
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 _BLANK_RUNS = re.compile(r"\n{3,}")
 
 
 def escape(text: str) -> str:
-    """Inline-safe Markdown: one line, every structural character escaped."""
-    return _MD_SPECIAL.sub(r"\\\1", _WHITESPACE.sub(" ", text).strip())
+    """Inline-safe Markdown for untrusted text: one visible line that renders as plain text.
+
+    - whitespace (including newlines) collapses to single spaces, then invisible and bidi
+      control characters are removed;
+    - URLs become inline code, which no renderer turns into a link;
+    - every other structural character is backslash-escaped, including a leading ordinal.
+    """
+    flat = _WHITESPACE.sub(" ", text).strip()
+    visible = "".join(c for c in flat if unicodedata.category(c) not in _INVISIBLE_CATEGORIES)
+    parts: list[str] = []
+    position = 0
+    for match in _LINKISH.finditer(visible):
+        parts.append(_escape_plain(visible[position : match.start()], at_start=position == 0))
+        parts.append(f"`{match.group(0).replace('`', '')}`")
+        position = match.end()
+    parts.append(_escape_plain(visible[position:], at_start=position == 0))
+    return "".join(parts)
+
+
+def _escape_plain(text: str, *, at_start: bool) -> str:
+    escaped = _MD_SPECIAL.sub(r"\\\1", text)
+    return _LEADING_ORDINAL.sub(r"\1\\\2", escaped) if at_start else escaped
 
 
 def _clock(moment: datetime, zone: ZoneInfo) -> str:

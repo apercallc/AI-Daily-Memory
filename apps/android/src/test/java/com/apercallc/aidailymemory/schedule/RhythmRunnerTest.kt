@@ -42,6 +42,7 @@ class RhythmRunnerTest {
     private var now: Instant = at(9, 0)
     private val alarms = mutableListOf<Instant?>()
     private var reminders = 0
+    private var resumedAfterSleep = 0
 
     // 2026-09-22 is a Tuesday.
     private fun at(hour: Int, minute: Int = 0, day: Int = 22): Instant =
@@ -88,6 +89,7 @@ class RhythmRunnerTest {
             controller = controller,
             alarms = { alarms += it },
             onWakeReminder = { reminders++ },
+            onResumedAfterSleep = { resumedAfterSleep++ },
             now = { now },
             zone = { zone },
         )
@@ -203,7 +205,7 @@ class RhythmRunnerTest {
         assertEquals(RecordingStatus.RECORDING, controller.state.value.status)
 
         settings.setRhythm(rhythm)
-        runner.onRhythmChanged()
+        runner.onRhythmChanged(previous = DailyRhythm.None)
 
         assertEquals(RecordingStatus.PAUSED, controller.state.value.status)
         assertTrue(controller.state.value.pausedBySchedule)
@@ -218,5 +220,62 @@ class RhythmRunnerTest {
 
         assertNull(alarms.last())
         assertNull(runner.msUntilNextAction())
+    }
+
+    @Test
+    fun `editing an unrelated setting during quiet time never re-pauses a manual resume`() =
+        runTest {
+            // Regression: any schedule edit used to pause whenever "now" was quiet.
+            val (controller, runner) = setUp()
+            controller.recording()
+            runner.catchUp()
+            now = at(12, 0)
+            runner.catchUp() // lunch pause
+            controller.dispatch(RecordingCommand.Resume)
+            controller.report(EngineReport.AudioFlowing(session))
+            assertEquals(RecordingStatus.RECORDING, controller.state.value.status)
+
+            val previous = settings.rhythm.value
+            settings.setRhythm(previous.copy(morningReminder = false))
+            runner.onRhythmChanged(previous)
+
+            assertEquals(RecordingStatus.RECORDING, controller.state.value.status)
+        }
+
+    @Test
+    fun `resuming after a night paused tells the user once`() = runTest {
+        settings.setRhythm(rhythm.copy(endDayAtBedtime = false))
+        val (controller, runner) = setUp()
+        controller.recording()
+        now = at(22, 0)
+        runner.catchUp()
+        now = at(23, 0)
+        runner.catchUp()
+        assertTrue(controller.state.value.pausedBySchedule)
+
+        now = at(7, 0, day = 23)
+        runner.catchUp()
+
+        assertEquals(RecordingStatus.RESUMING, controller.state.value.status)
+        assertEquals(1, resumedAfterSleep)
+    }
+
+    @Test
+    fun `routine checks don't write to disk every minute`() = runTest {
+        val (controller, runner) = setUp()
+        controller.recording()
+        now = at(9, 0)
+        runner.catchUp()
+        val written = settings.lastRhythmCheckEpochMs
+
+        now = at(9, 1)
+        runner.catchUp()
+        now = at(9, 2)
+        runner.catchUp()
+        assertEquals(written, settings.lastRhythmCheckEpochMs)
+
+        now = at(9, 6)
+        runner.catchUp()
+        assertEquals(at(9, 6).toEpochMilli(), settings.lastRhythmCheckEpochMs)
     }
 }

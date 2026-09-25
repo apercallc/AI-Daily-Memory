@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -28,6 +29,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -39,8 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.apercallc.aidailymemory.R
@@ -167,6 +171,7 @@ private fun TimeRow(@StringRes label: Int, time: LocalTime, onChange: (LocalTime
     }
     if (picking) {
         TimePickerDialog(
+            title = label,
             initial = time,
             onDismiss = { picking = false },
             onConfirm = {
@@ -180,6 +185,7 @@ private fun TimeRow(@StringRes label: Int, time: LocalTime, onChange: (LocalTime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimePickerDialog(
+    @StringRes title: Int,
     initial: LocalTime,
     onDismiss: () -> Unit,
     onConfirm: (LocalTime) -> Unit,
@@ -189,9 +195,23 @@ private fun TimePickerDialog(
         initialMinute = initial.minute,
         is24Hour = DateFormat.is24HourFormat(LocalContext.current),
     )
+    // The clock dial has a fixed size and clips at large font scales; typing always fits.
+    val largeText = LocalDensity.current.fontScale > LARGE_FONT_SCALE
+    var typing by rememberSaveable { mutableStateOf(largeText) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        text = { TimePicker(state = state) },
+        title = { Text(stringResource(title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AiDailyMemoryTheme.spacing.sm)) {
+                if (typing) TimeInput(state = state) else TimePicker(state = state)
+                TextButton(
+                    onClick = { typing = !typing },
+                    modifier = Modifier.heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget),
+                ) {
+                    Text(stringResource(if (typing) R.string.time_use_dial else R.string.time_type_in))
+                }
+            }
+        },
         confirmButton = {
             TextButton(onClick = { onConfirm(LocalTime.of(state.hour, state.minute)) }) {
                 Text(stringResource(R.string.action_ok))
@@ -210,6 +230,15 @@ private fun SleepSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
 
     SectionTitle(R.string.sleep_section)
     Explainer(R.string.sleep_explainer)
+    if (plan == null && rhythm.sleep.isNotEmpty()) {
+        // Windows this screen can't show are still active: say so rather than show "off".
+        Notice(R.string.sleep_custom)
+        OutlinedButton(
+            onClick = { setPlan(SleepPlan.Default) },
+            modifier = Modifier.heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget),
+        ) { Text(stringResource(R.string.sleep_custom_reset)) }
+        return
+    }
     SwitchRow(R.string.sleep_enabled, null, plan != null) { on ->
         setPlan(if (on) SleepPlan.Default else null)
     }
@@ -245,6 +274,7 @@ private fun SleepSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
 @Composable
 private fun QuietSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    var removing by rememberSaveable { mutableStateOf<String?>(null) }
     val times = TimeText.rememberLocalFormatter()
 
     SectionTitle(R.string.quiet_section)
@@ -258,7 +288,10 @@ private fun QuietSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget)
-                    .selectable(selected = false, role = Role.Button) { editing = quiet.id },
+                    .clickable(
+                        onClickLabel = stringResource(R.string.quiet_edit_label, quiet.label),
+                        role = Role.Button,
+                    ) { editing = quiet.id },
             ) {
                 Text(quiet.label, style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -272,14 +305,22 @@ private fun QuietSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            val toggleLabel = stringResource(R.string.quiet_toggle_label, quiet.label)
             Switch(
+                modifier = Modifier.semantics { contentDescription = toggleLabel },
                 checked = quiet.enabled,
                 onCheckedChange = { on ->
                     val updated = rhythm.quiet.map { if (it.id == quiet.id) it.copy(enabled = on) else it }
                     onChange(rhythm.copy(quiet = updated))
                 },
             )
-            TextButton(onClick = { onChange(rhythm.copy(quiet = rhythm.quiet - quiet)) }) {
+            val removeLabel = stringResource(R.string.quiet_remove_label, quiet.label)
+            TextButton(
+                onClick = { removing = quiet.id },
+                modifier = Modifier
+                    .heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget)
+                    .semantics { contentDescription = removeLabel },
+            ) {
                 Text(stringResource(R.string.quiet_remove))
             }
         }
@@ -296,8 +337,30 @@ private fun QuietSection(rhythm: DailyRhythm, onChange: (DailyRhythm) -> Unit) {
             onDismiss = { editing = null },
             onSave = { saved ->
                 editing = null
-                val others = rhythm.quiet.filterNot { it.id == saved.id }
-                onChange(rhythm.copy(quiet = others + saved))
+                // Edited items keep their place; new ones go last.
+                val updated = if (rhythm.quiet.any { it.id == saved.id }) {
+                    rhythm.quiet.map { if (it.id == saved.id) saved else it }
+                } else {
+                    rhythm.quiet + saved
+                }
+                onChange(rhythm.copy(quiet = updated))
+            },
+        )
+    }
+
+    rhythm.quiet.firstOrNull { it.id == removing }?.let { quiet ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text(stringResource(R.string.quiet_remove_title, quiet.label)) },
+            text = { Text(stringResource(R.string.quiet_remove_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    onChange(rhythm.copy(quiet = rhythm.quiet - quiet))
+                }) { Text(stringResource(R.string.quiet_remove)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { removing = null }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -402,6 +465,7 @@ private fun AudioSection(
     val context = LocalContext.current
     SectionTitle(R.string.audio_section)
     Explainer(R.string.audio_explainer)
+    Explainer(R.string.audio_not_yet_deleted)
     Column(modifier = Modifier.selectableGroup()) {
         AudioRetention.entries.forEach { option ->
             val estimate = option.estimatedBytes(bytesPerHour, ASSUMED_HOURS_PER_DAY)
@@ -458,6 +522,7 @@ object QuietWindowForm {
 }
 
 private const val NEW_QUIET = "new"
+private const val LARGE_FONT_SCALE = 1.3f
 private const val ASSUMED_HOURS_PER_DAY = 10.0
 private val WEEKDAYS = setOf(
     DayOfWeek.MONDAY,

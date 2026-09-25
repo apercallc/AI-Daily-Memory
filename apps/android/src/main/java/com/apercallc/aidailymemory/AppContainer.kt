@@ -231,6 +231,7 @@ class AppContainer(context: Context) {
             controller = controller,
             alarms = AndroidRhythmAlarms(app),
             onWakeReminder = notifications::morningReminder,
+            onResumedAfterSleep = notifications::resumedAfterSleep,
         )
     }
 
@@ -259,6 +260,12 @@ class AppContainer(context: Context) {
     fun restoreOnProcessStart() {
         controller.restore()
         appScope.launch { sessions.observe(controller.state) }
+        // Retention (ADR-0013) runs at start and whenever a session completes.
+        appScope.launch {
+            controller.awaitRestored()
+            applyRetention()
+            controller.state.collect { if (it.status == RecordingStatus.COMPLETED) applyRetention() }
+        }
         // Once a day has started, "good morning, start your day" is stale.
         appScope.launch {
             controller.state.collect { state ->
@@ -276,6 +283,18 @@ class AppContainer(context: Context) {
             val open = state.status == RecordingStatus.PAUSED ||
                 state.status == RecordingStatus.INTERRUPTED
             if (open) notifications.alert(state)
+        }
+    }
+
+    private suspend fun applyRetention() {
+        try {
+            val deleted = segments.applyRetention(System.currentTimeMillis(), settings.retention.value)
+            if (deleted > 0) Log.i(TAG, "retention_deleted count=$deleted")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Kept audio simply stays until the next pass; never silent.
+            logFailure(TAG, "retention_failed", e)
         }
     }
 

@@ -215,8 +215,8 @@ def test_model_text_cannot_inject_markdown_structure() -> None:
 
     md = render_markdown(report)
 
-    assert "\\# Pwned \\[click\\]\\(https://evil.example\\)" in md
-    assert "\\!\\[x\\]" in md
+    assert "\\# Pwned \\[click\\]\\(`https://evil.example)`" in md
+    assert "\\!\\[x\\]\\(`https://evil.example/p.png)`" in md
     assert "\\<b\\>hi\\</b\\>" in md
     assert "\n- fake" not in md
     assert escape("  a\n\tb  ") == "a b"
@@ -293,3 +293,30 @@ def test_sessions_cannot_end_before_they_start() -> None:
             end=at(10) - timedelta(minutes=1),
             timezone="America/Chicago",
         )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Regression: bare URLs used to become clickable links in Drive/GitHub.
+        ("see https://evil.example/login now", "see `https://evil.example/login` now"),
+        ("visit www.evil.example today", "visit `www.evil.example` today"),
+        ("HTTP://CAPS.example", "`HTTP://CAPS.example`"),
+        # Leading list markers, rules, and ordinals would add structure.
+        ("- fake item", "\\- fake item"),
+        ("---", "\\-\\-\\-"),
+        ("1. first", "1\\. first"),
+        ("2) second", "2\\) second"),
+        ("Setext===", "Setext\\=\\=\\="),
+        # Entities and invisible/bidi characters.
+        ("a &lt;b&gt;", "a \\&lt;b\\&gt;"),
+        # U+2028 is a line break, so it becomes a space like any other newline.
+        ("\u202eevil\u200b\u2028text", "evil text"),
+        # Backticks can't break out of the code span.
+        ("https://a.example/`x`", "`https://a.example/x`"),
+        # Ordinary prose is left readable.
+        ("Ship it on Friday.", "Ship it on Friday."),
+    ],
+)
+def test_untrusted_text_renders_as_plain_text(text: str, expected: str) -> None:
+    assert escape(text) == expected

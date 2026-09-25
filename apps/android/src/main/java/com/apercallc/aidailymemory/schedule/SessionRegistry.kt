@@ -12,8 +12,6 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 
 /** Result of a rename; the UI shows the reason when it isn't [Saved]. */
 enum class RenameResult { SAVED, RESET, TOO_LONG, INVALID_CHARACTERS, UNKNOWN_SESSION }
@@ -29,15 +27,23 @@ class SessionRegistry(
     private val now: () -> Instant = Instant::now,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
+    /**
+     * Registers on every state change, not only the first: the insert is idempotent, and a
+     * failed registration (a busy or full database) is retried by the session's next state
+     * change instead of leaving it missing from the list for good.
+     */
     suspend fun observe(state: StateFlow<RecordingState>) {
-        state.map { it.sessionId }.distinctUntilChanged().collect { sessionId ->
-            if (sessionId == null) return@collect
+        var registered: String? = null
+        state.collect { current ->
+            val sessionId = current.sessionId?.value ?: return@collect
+            if (sessionId == registered) return@collect
             try {
-                register(sessionId.value)
+                register(sessionId)
+                registered = sessionId
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Metadata only: capture is unaffected, and the next start tries again.
+                // Metadata only: capture is unaffected; the next state change tries again.
                 logFailure(TAG, "session_register_failed", e)
             }
         }

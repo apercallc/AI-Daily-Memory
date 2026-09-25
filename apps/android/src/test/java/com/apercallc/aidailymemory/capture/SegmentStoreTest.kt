@@ -12,6 +12,7 @@ import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.segment.SegmentDefect
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.segment.SegmentState
+import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
@@ -223,4 +224,30 @@ class SegmentStoreTest {
         assertEquals(SegmentState.QUARANTINED.name, db.segments().get(open.entity.segmentId)?.state)
         assertFalse(file.exists())
     }
+
+    @Test
+    fun `retention deletes acknowledged audio by the user's setting and never anything else`() =
+        runTest {
+            // Regression: the retention setting was never applied (security review).
+            val kept = store.seal(store.begin(session, false, format).apply { writeFrames(5) })
+            val acked = store.seal(store.begin(session, false, format).apply { writeFrames(5) })
+            val ackedAt = 1_000L
+            db.segments().update(
+                acked.copy(state = SegmentState.ACKNOWLEDGED.name, acknowledgedAtEpochMs = ackedAt),
+            )
+            val day = 24 * 60 * 60 * 1000L
+
+            // Keep-until-deleted: nothing goes.
+            assertEquals(0, store.applyRetention(ackedAt + 365 * day, AudioRetention.KEEP_UNTIL_DELETED))
+            // Keep 7 days, one day later: still kept.
+            assertEquals(0, store.applyRetention(ackedAt + day, AudioRetention.KEEP_7_DAYS))
+            // Transcripts only, after the recovery window: the acknowledged file goes.
+            assertEquals(1, store.applyRetention(ackedAt + day, AudioRetention.TRANSCRIPT_ONLY))
+
+            assertEquals(SegmentState.DELETED.name, db.segments().get(acked.segmentId)?.state)
+            assertFalse(File(directory, acked.fileName).exists())
+            // The unacknowledged segment is untouched, file and row.
+            assertEquals(SegmentState.SEALED.name, db.segments().get(kept.segmentId)?.state)
+            assertTrue(File(directory, kept.fileName).exists())
+        }
 }

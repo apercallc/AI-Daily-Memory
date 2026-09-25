@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -28,19 +30,24 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
+import com.apercallc.aidailymemory.ui.settings.NextChange
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 enum class AppScreen { CAPTURE, SESSIONS, SETTINGS }
+
+private const val NEXT_CHANGE_REFRESH_MS = 30_000L
 
 /**
  * Top-level screen switch. Three screens don't justify a navigation library; state survives
@@ -72,6 +79,8 @@ fun AppRoot(
 @Composable
 private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
     val days by viewModel.days.collectAsStateWithLifecycle()
+    val today by viewModel.today.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshToday() }
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
     LaunchedEffect(viewModel) {
@@ -80,7 +89,7 @@ private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
     SecondaryScreen(R.string.sessions_title, onBack, snackbar) { modifier ->
         SessionsScreen(
             days = days,
-            today = LocalDate.now(),
+            today = today,
             onRename = viewModel::rename,
             modifier = modifier,
         )
@@ -91,8 +100,12 @@ private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
 private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val rhythm by viewModel.rhythm.collectAsStateWithLifecycle()
     val retention by viewModel.retention.collectAsStateWithLifecycle()
-    val next = remember(rhythm) {
-        SettingsViewModel.nextChange(rhythm, Instant.now(), ZoneId.systemDefault())
+    // Recomputed on a slow tick too, so "Next: …" never shows a time that already passed.
+    val next by produceState<NextChange?>(initialValue = null, rhythm) {
+        while (true) {
+            value = SettingsViewModel.nextChange(rhythm, Instant.now(), ZoneId.systemDefault())
+            delay(NEXT_CHANGE_REFRESH_MS)
+        }
     }
     SecondaryScreen(R.string.nav_settings, onBack, snackbar = null) { modifier ->
         RhythmSettingsScreen(
@@ -123,6 +136,9 @@ private fun SecondaryScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                // The Scaffold's padding already covers the bars it knows about; consume it so
+                // safeDrawingPadding doesn't add the same insets a second time.
+                .consumeWindowInsets(padding)
                 .safeDrawingPadding()
                 .padding(horizontal = spacing.xxl, vertical = spacing.lg),
             verticalArrangement = Arrangement.spacedBy(spacing.lg),

@@ -96,6 +96,8 @@
     <string name="channel_rhythm_name">Daily rhythm</string>
     <string name="channel_rhythm_description">Your morning reminder to start the day. Recording never starts by itself.</string>
     <string name="reminder_title">Good morning</string>
+    <string name="resumed_after_sleep_title">Recording resumed</string>
+    <string name="resumed_after_sleep_body">Your sleep schedule ended, so recording picked up again. Tap Pause any time.</string>
     <string name="reminder_body">Tap Start My Day when you\'re ready. Recording never starts on its own.</string>
     <string name="channel_alerts_description">Tells you when recording stopped unexpectedly and needs you.</string>
 
@@ -129,6 +131,7 @@
     <string name="rename_saved">Session renamed</string>
     <string name="rename_reset_done">Automatic name restored</string>
     <string name="rename_unknown">That session no longer exists</string>
+    <string name="rename_failed">Couldn\'t save the name. Try again.</string>
 
     <!-- Schedule & audio -->
     <string name="sleep_section">Sleep schedule</string>
@@ -147,6 +150,16 @@
     <string name="quiet_explainer">Recording pauses by itself and resumes afterwards. If you pause it yourself, it stays paused.</string>
     <string name="quiet_add">Add quiet time</string>
     <string name="quiet_remove">Remove</string>
+    <string name="quiet_edit_label">Edit %1$s</string>
+    <string name="quiet_toggle_label">%1$s quiet time</string>
+    <string name="quiet_remove_label">Remove %1$s</string>
+    <string name="quiet_remove_title">Remove %1$s?</string>
+    <string name="quiet_remove_body">Recording will no longer pause for it.</string>
+    <string name="time_type_in">Type the time</string>
+    <string name="time_use_dial">Use the clock</string>
+    <string name="sleep_custom">Your sleep schedule was set up in a way this screen can\'t show, and it\'s still active.</string>
+    <string name="sleep_custom_reset">Start over with 11 PM to 7 AM</string>
+    <string name="audio_not_yet_deleted">Automatic deletion starts once transcription arrives in a later update. Until then, recordings stay on this phone.</string>
     <string name="quiet_edit_title">Quiet time</string>
     <string name="quiet_label">Name, like Lunch or Gym</string>
     <string name="quiet_start">Starts</string>
