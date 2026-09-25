@@ -157,6 +157,7 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     edit = viewModel::clearConnectError,
                     disconnect = viewModel::disconnect,
                     retryUploads = viewModel::retryUploads,
+                    changeStorageMode = viewModel::changeStorageMode,
                 )
             },
             modifier = modifier,

@@ -20,6 +20,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -60,6 +61,27 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val linker = container.accountLinker
     private val connecting = MutableStateFlow(false)
     private val connectError = MutableStateFlow<ConnectError?>(null)
+    private val storageMode = MutableStateFlow<String?>(null)
+    private val storageModeUpdating = MutableStateFlow(false)
+
+    init {
+        // Refetched from scratch on every link change: a mode fetched under an old token must
+        // never be shown as if it were the new account's.
+        viewModelScope.launch {
+            container.links.link.collectLatest { link ->
+                storageMode.value = null
+                if (link == null) return@collectLatest
+                storageMode.value = try {
+                    withContext(Dispatchers.IO) { container.accountApi.me(link) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logFailure(TAG, "storage_mode_fetch_failed", e)
+                    null
+                }
+            }
+        }
+    }
 
     val account: StateFlow<AccountUi> = combine(
         combine(
@@ -73,7 +95,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.links.link.flatMapLatest {
             container.database.clips().observeProblems(container.links.uploadSinceEpochMs)
         },
-    ) { (link, problem, revoke), busy, error, problems ->
+        combine(storageMode, storageModeUpdating, ::Pair),
+    ) { (link, problem, revoke), busy, error, problems, (mode, modeUpdating) ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
             problem = problem,
@@ -82,8 +105,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             uploadProblems = problems,
             revokePending = revoke.first,
             revokeManual = revoke.second,
+            storageMode = mode,
+            storageModeUpdating = modeUpdating,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
+
+    /** Switches storage mode server-side; audio already uploaded is unaffected (ADR-0014). */
+    fun changeStorageMode(mode: String) {
+        val link = container.links.link.value ?: return
+        if (storageModeUpdating.value) return
+        storageModeUpdating.value = true
+        viewModelScope.launch {
+            val applied = try {
+                withContext(Dispatchers.IO) { container.accountApi.setStorageMode(link, mode) }
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "storage_mode_change_failed", e)
+                false
+            }
+            if (applied) storageMode.value = mode
+            storageModeUpdating.value = false
+        }
+    }
 
     /** Verifies the token with the server, then stores it sealed. Off the main thread. */
     fun connect(url: String, token: String, includeBacklog: Boolean) {

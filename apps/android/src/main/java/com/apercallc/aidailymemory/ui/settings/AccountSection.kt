@@ -12,6 +12,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,6 +51,9 @@ data class AccountUi(
     val revokePending: Boolean = false,
     /** A disconnected token this phone can't revoke itself (it has to be done server-side). */
     val revokeManual: Boolean = false,
+    /** Where memory lives (ADR-0014); null while connected but not yet fetched. */
+    val storageMode: String? = null,
+    val storageModeUpdating: Boolean = false,
 )
 
 /**
@@ -64,6 +68,7 @@ fun AccountSection(
     onEdit: () -> Unit,
     onDisconnect: () -> Unit,
     onRetryUploads: () -> Unit,
+    onStorageModeChange: (String) -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -75,15 +80,26 @@ fun AccountSection(
         if (account.revokePending) Status(stringResource(R.string.account_revoke_pending), isError = false)
         if (account.revokeManual) Status(stringResource(R.string.account_revoke_manual), isError = true)
         if (account.host != null) {
-            Connected(account, onDisconnect, onRetryUploads)
+            Connected(account, onDisconnect, onRetryUploads, onStorageModeChange)
         } else {
             ConnectForm(account, onConnect, onEdit)
         }
     }
 }
 
+private val STORAGE_MODES = listOf(
+    "phone_only" to R.string.storage_mode_phone_only,
+    "reports_cloud" to R.string.storage_mode_reports_cloud,
+    "full_cloud" to R.string.storage_mode_full_cloud,
+)
+
 @Composable
-private fun Connected(account: AccountUi, onDisconnect: () -> Unit, onRetryUploads: () -> Unit) {
+private fun Connected(
+    account: AccountUi,
+    onDisconnect: () -> Unit,
+    onRetryUploads: () -> Unit,
+    onStorageModeChange: (String) -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     Text(
         text = stringResource(R.string.account_connected, account.host.orEmpty()),
@@ -94,6 +110,7 @@ private fun Connected(account: AccountUi, onDisconnect: () -> Unit, onRetryUploa
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    StorageModePicker(account.storageMode, account.storageModeUpdating, onStorageModeChange)
     if (account.uploadProblems > 0) {
         Status(
             pluralStringResource(R.plurals.account_upload_problems, account.uploadProblems, account.uploadProblems),
@@ -189,6 +206,39 @@ private fun ConnectForm(
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
     ) {
         Text(stringResource(if (account.connecting) R.string.account_checking else R.string.account_connect))
+    }
+}
+
+/** Where memory lives (ADR-0014). Shown only once the current mode is known; a switch is
+ * disabled while a change is in flight so a slow network can't queue up two conflicting ones. */
+@Composable
+private fun StorageModePicker(mode: String?, updating: Boolean, onChange: (String) -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    if (mode == null) return
+    Text(
+        text = stringResource(R.string.storage_mode_title),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        STORAGE_MODES.forEach { (value, labelRes) ->
+            val selected = value == mode
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = spacing.minTouchTarget)
+                    .toggleable(
+                        value = selected,
+                        role = Role.RadioButton,
+                        enabled = !updating,
+                        onValueChange = { if (!selected) onChange(value) },
+                    ),
+            ) {
+                RadioButton(selected = selected, onClick = null, enabled = !updating)
+                Text(stringResource(labelRes), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 

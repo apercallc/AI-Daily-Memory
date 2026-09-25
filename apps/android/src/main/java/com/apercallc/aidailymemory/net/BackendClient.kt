@@ -57,6 +57,13 @@ interface AccountApi {
     /** Verifies the token; returns the account's storage mode (ADR-0014). */
     fun me(link: ServerLink): String
 
+    /**
+     * Switches the account's storage mode. Takes effect for uploads made from now on; audio
+     * already uploaded keeps whatever the mode was at the time (ADR-0014) — nothing already on
+     * the server moves as part of this call.
+     */
+    fun setStorageMode(link: ServerLink, mode: String)
+
     /** Revokes the calling token on the server (Disconnect). */
     fun revokeCurrent(link: ServerLink)
 }
@@ -126,6 +133,10 @@ class HttpUploadApi(
 
     override fun me(link: ServerLink): String =
         request(link, "GET", "/v1/me", null).optString("storage_mode").ifEmpty { throw IOException("missing_mode") }
+
+    override fun setStorageMode(link: ServerLink, mode: String) {
+        request(link, "PUT", "/v1/me", JSONObject().put("storage_mode", mode))
+    }
 
     override fun revokeCurrent(link: ServerLink) {
         request(link, "DELETE", "/v1/tokens/current", null)

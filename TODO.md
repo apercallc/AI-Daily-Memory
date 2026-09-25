@@ -290,7 +290,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Backlog consent: only audio recorded after connecting, unless the user opts in
 - [x] Failed uploads and unreadable segments shown with a retry
 - [x] Transcript screen per session (delivered transcripts, local time, speaker labels)
-- [ ] Account sign-in flow (tokens are issued by `python -m app.admin` until then)
+- [x] Account sign-in flow (backend: POST /v1/signup, /v1/login; `python -m app.admin` still
+  works for operator use; Android UI still expects a pasted token, not its own signup form)
 
 ## Speech gating + night processing (ADR-0015)
 
@@ -308,7 +309,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 ## Storage modes (ADR-0014)
 
 - [x] Account storage mode stored per user (phone_only default; reports_cloud; full_cloud)
-- [ ] Storage-mode switching UI + migrations between modes
+- [x] Storage-mode switching UI (takes effect for uploads from now on; migrating data already
+  stored under a previous mode is not implemented — see the two items below)
 - [x] Transient processing hold: sealed copy until the phone acknowledges, max 7 days
 - [x] Transcripts sealed to the uploading device's HPKE key (X25519/HKDF-SHA256/AES-256-GCM; Tink on the phone; interop tested both ways)
 - [x] Invariant: local audio acknowledged (deletable) only after its transcript is stored on the phone

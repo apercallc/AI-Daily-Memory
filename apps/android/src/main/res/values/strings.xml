@@ -217,4 +217,8 @@
     <string name="account_disconnect">Disconnect</string>
     <string name="account_revoke_manual">An old connection couldn\'t be revoked from this phone. Ask for its device token to be revoked on the server.</string>
     <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
+    <string name="storage_mode_title">Where memory lives</string>
+    <string name="storage_mode_phone_only">Phone only — transcripts stay on this phone</string>
+    <string name="storage_mode_reports_cloud">Reports in the cloud — daily reports are stored on the server; transcripts stay on this phone</string>
+    <string name="storage_mode_full_cloud">Full cloud — transcripts and reports are stored on the server</string>
 </resources>

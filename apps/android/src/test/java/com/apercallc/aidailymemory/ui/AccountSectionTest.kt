@@ -1,7 +1,9 @@
 package com.apercallc.aidailymemory.ui
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
@@ -32,8 +34,11 @@ class AccountSectionTest {
         onEdit: () -> Unit = {},
         onDisconnect: () -> Unit = {},
         onRetry: () -> Unit = {},
+        onStorageModeChange: (String) -> Unit = {},
     ) = compose.setContent {
-        AiDailyMemoryTheme { AccountSection(account, onConnect, onEdit, onDisconnect, onRetry) }
+        AiDailyMemoryTheme {
+            AccountSection(account, onConnect, onEdit, onDisconnect, onRetry, onStorageModeChange)
+        }
     }
 
     @Test
@@ -131,6 +136,54 @@ class AccountSectionTest {
         compose.onNodeWithText(
             "An old connection couldn't be revoked from this phone. Ask for its device token to be revoked on the server.",
         ).assertExists()
+    }
+
+    @Test
+    fun `the storage mode picker is hidden until the current mode is known`() {
+        show(AccountUi(host = "api.example", storageMode = null))
+
+        compose.onAllNodesWithText("Where memory lives").assertCountEquals(0)
+    }
+
+    @Test
+    fun `picking a different storage mode reports it`() {
+        var changed: String? = null
+        show(
+            AccountUi(host = "api.example", storageMode = "phone_only"),
+            onStorageModeChange = { changed = it },
+        )
+
+        compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
+            .performClick()
+
+        assertEquals("full_cloud", changed)
+    }
+
+    @Test
+    fun `picking the already-selected mode reports nothing`() {
+        var changes = 0
+        show(
+            AccountUi(host = "api.example", storageMode = "phone_only"),
+            onStorageModeChange = { changes++ },
+        )
+
+        compose.onNodeWithText("Phone only — transcripts stay on this phone").performClick()
+
+        assertEquals(0, changes)
+    }
+
+    @Test
+    fun `the picker is disabled while a change is in flight`() {
+        var changes = 0
+        show(
+            AccountUi(host = "api.example", storageMode = "phone_only", storageModeUpdating = true),
+            onStorageModeChange = { changes++ },
+        )
+
+        compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
+            .performClick()
+
+        assertEquals(0, changes)
     }
 
     @Test

@@ -168,6 +168,16 @@ class HttpUploadApiTest {
     }
 
     @Test
+    fun `setStorageMode sends the new mode as a PUT`() {
+        respond = { 200 to JSONObject().put("storage_mode", "full_cloud").toString() }
+
+        api.setStorageMode(ServerLink(base, token), "full_cloud")
+
+        assertEquals(listOf("PUT /v1/me"), requests.map { it.first })
+        assertEquals("""{"storage_mode":"full_cloud"}""", String(requests.single().third))
+    }
+
+    @Test
     fun `an upload target that isn't https is refused`() {
         respond = {
             200 to JSONObject()

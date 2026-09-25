@@ -32,6 +32,10 @@ class AccountLinkerTest {
 
         override fun me(link: ServerLink): String = onMe().also { calls += "me" }
 
+        override fun setStorageMode(link: ServerLink, mode: String) {
+            calls += "setStorageMode"
+        }
+
         override fun revokeCurrent(link: ServerLink) {
             calls += "revoke"
             onRevoke()

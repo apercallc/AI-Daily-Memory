@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from app.main import create_app
-from tests.conftest import settings_for
+from tests.conftest import make_account, settings_for
 
 pytestmark = pytest.mark.anyio
 
@@ -81,6 +81,39 @@ def test_wrong_password_and_unknown_email_both_return_401_without_a_hint(
 
     assert wrong.status_code == unknown.status_code == 401
     assert wrong.json()["error"]["code"] == unknown.json()["error"]["code"] == "invalid_credentials"
+
+
+def test_storage_mode_can_be_switched_and_takes_effect_immediately(
+    client: TestClient, db: Engine
+) -> None:
+    account = make_account(db, storage_mode="phone_only")
+    headers = {"Authorization": f"Bearer {account.token}"}
+
+    before = client.get("/v1/me", headers=headers)
+    assert before.json()["storage_mode"] == "phone_only"
+
+    switched = client.put("/v1/me", json={"storage_mode": "full_cloud"}, headers=headers)
+    assert switched.status_code == 200
+    assert switched.json()["storage_mode"] == "full_cloud"
+
+    after = client.get("/v1/me", headers=headers)
+    assert after.json()["storage_mode"] == "full_cloud"
+
+
+def test_an_invalid_storage_mode_is_rejected(client: TestClient, db: Engine) -> None:
+    account = make_account(db)
+    headers = {"Authorization": f"Bearer {account.token}"}
+
+    response = client.put("/v1/me", json={"storage_mode": "everywhere"}, headers=headers)
+
+    assert response.status_code == 422
+    # Unchanged.
+    assert client.get("/v1/me", headers=headers).json()["storage_mode"] == "phone_only"
+
+
+def test_storage_mode_update_requires_authentication(client: TestClient) -> None:
+    response = client.put("/v1/me", json={"storage_mode": "full_cloud"})
+    assert response.status_code == 401
 
 
 def test_an_extra_field_is_rejected(client: TestClient) -> None:

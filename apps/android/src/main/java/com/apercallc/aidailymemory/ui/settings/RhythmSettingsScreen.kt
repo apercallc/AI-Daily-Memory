@@ -66,6 +66,7 @@ data class AccountActions(
     val edit: () -> Unit = {},
     val disconnect: () -> Unit = {},
     val retryUploads: () -> Unit = {},
+    val changeStorageMode: (String) -> Unit = {},
 )
 
 /** Stateless: renders the rhythm and retention, reports edits as whole new values. */
@@ -103,6 +104,7 @@ fun RhythmSettingsScreen(
                 onEdit = accountActions.edit,
                 onDisconnect = accountActions.disconnect,
                 onRetryUploads = accountActions.retryUploads,
+                onStorageModeChange = accountActions.changeStorageMode,
             )
         }
     }
