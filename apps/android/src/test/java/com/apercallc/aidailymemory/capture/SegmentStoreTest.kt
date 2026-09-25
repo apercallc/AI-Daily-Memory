@@ -180,4 +180,47 @@ class SegmentStoreTest {
         assertTrue(open.isClosed)
         assertFailsWith<IllegalStateException> { store.seal(open) }
     }
+
+    /** The crash window: file closed, fsynced, and renamed, but the SEALED row never written. */
+    private suspend fun crashAfterRename(frames: Int): OpenSegment {
+        val open = store.begin(session, continuesPrevious = false, format)
+        open.writeFrames(count = frames)
+        open.close()
+        val part = File(directory, "${open.entity.segmentId}${SegmentStore.PART_SUFFIX}")
+        assertTrue(part.renameTo(File(directory, open.entity.fileName)))
+        return open
+    }
+
+    @Test
+    fun `a complete segment renamed just before a crash is recovered, not thrown away`() = runTest {
+        // Regression: recovery used to mark it INCOMPLETE and orphan a perfectly good file.
+        val open = crashAfterRename(frames = 40)
+
+        val lost = store.abandonUnfinished()
+
+        assertEquals(0, lost)
+        val row = db.segments().get(open.entity.segmentId)!!
+        assertEquals(SegmentState.SEALED.name, row.state)
+        assertEquals(40L * 1024 * 1000 / 16_000, row.durationMs)
+        val file = File(directory, row.fileName)
+        val plaintext = cipher.decrypting(file.inputStream(), row.segmentId).use { it.readBytes() }
+        val sha = MessageDigest.getInstance("SHA-256").digest(plaintext)
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(sha, row.sha256)
+    }
+
+    @Test
+    fun `a renamed segment that fails verification is quarantined and deleted`() = runTest {
+        val open = crashAfterRename(frames = 10)
+        val file = File(directory, open.entity.fileName)
+        val bytes = file.readBytes()
+        bytes[bytes.size / 2] = (bytes[bytes.size / 2].toInt() xor 0x01).toByte()
+        file.writeBytes(bytes)
+
+        val lost = store.abandonUnfinished()
+
+        assertEquals(1, lost)
+        assertEquals(SegmentState.QUARANTINED.name, db.segments().get(open.entity.segmentId)?.state)
+        assertFalse(file.exists())
+    }
 }

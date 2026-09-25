@@ -21,6 +21,7 @@ object CaptureStrings {
         Headline.RECORDING -> R.string.status_recording
         Headline.NOT_CAPTURING -> R.string.status_not_capturing
         Headline.PAUSED -> R.string.status_paused
+        Headline.QUIET_TIME -> R.string.status_quiet_time
         Headline.RESUMING -> R.string.status_resuming
         Headline.INTERRUPTED -> R.string.status_interrupted
         Headline.RECOVERING -> R.string.status_recovering
@@ -34,6 +35,7 @@ object CaptureStrings {
         ?: when (model.headline) {
             Headline.READY, Headline.COMPLETED, Headline.START_FAILED -> R.string.detail_idle
             Headline.PAUSED -> R.string.detail_paused
+            Headline.QUIET_TIME -> R.string.detail_quiet_time
             else -> R.string.detail_active
         }
 

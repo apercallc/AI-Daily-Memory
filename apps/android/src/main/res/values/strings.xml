@@ -9,6 +9,7 @@
     <string name="status_recording">Recording</string>
     <string name="status_not_capturing">Not capturing audio</string>
     <string name="status_paused">Paused</string>
+    <string name="status_quiet_time">Quiet time</string>
     <string name="status_resuming">Resuming…</string>
     <string name="status_interrupted">Recording interrupted</string>
     <string name="status_recovering">Reconnecting microphone…</string>
@@ -18,6 +19,7 @@
     <string name="detail_idle">Audio is recorded on this phone, encrypted, and never leaves it without your say.</string>
     <string name="detail_active">Audio is being saved on this phone in encrypted one-minute segments.</string>
     <string name="detail_paused">The microphone is off. Nothing is being recorded.</string>
+    <string name="detail_quiet_time">Your schedule paused recording. The microphone is off and it resumes by itself when quiet time ends.</string>
 
     <string name="problem_permission_denied">Microphone permission is off. Allow it in Settings to record.</string>
     <string name="problem_microphone_unavailable">Another app or the system is using the microphone.</string>

@@ -4,6 +4,9 @@ import android.util.Log
 import com.apercallc.aidailymemory.data.CaptureTimeColumns
 import com.apercallc.aidailymemory.data.TransitionDao
 import com.apercallc.aidailymemory.data.TransitionEntity
+import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.CaptureProblem
+import com.apercallc.aidailymemory.recording.RecordingCommand
 import com.apercallc.aidailymemory.recording.RecordingEvent
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStateMachine
@@ -19,6 +22,7 @@ import com.apercallc.aidailymemory.recording.recovery.BootStamp
 import com.apercallc.aidailymemory.recording.recovery.RestartClassifier
 import com.apercallc.aidailymemory.recording.recovery.StartupRecovery
 import com.apercallc.aidailymemory.recording.time.CaptureTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
@@ -102,10 +106,24 @@ class RecordingController(
         if (attached === handler) attached = null
     }
 
-    /** Restores persisted state once per process. Every dispatch waits for this to finish. */
+    /**
+     * Restores persisted state once per process. Every dispatch waits for this to finish, so
+     * it always finishes: if the journal itself can't be read, the app starts idle with a
+     * visible problem instead of hanging every button and the boot receiver forever. (Writes
+     * will then fail loudly too; the database is unusable and the user sees it.)
+     */
     fun restore() {
         scope.launch {
-            val report = lock.withLock { withContext(NonCancellable) { restoreLocked() } }
+            val report = try {
+                lock.withLock { withContext(NonCancellable) { restoreLocked() } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "journal_restore_failed", e)
+                val fallback = RecordingState.Initial.copy(problem = CaptureProblem.UNKNOWN)
+                _state.value = fallback
+                RestoreReport(RestoredState.Corrupt(fallback, revision = -1), emptyList())
+            }
             restored.complete(report)
         }
     }
@@ -138,7 +156,15 @@ class RecordingController(
         _state.value = restoredState.state
         _statusSinceElapsedMs.value = elapsedRealtimeMs()
         // No engine runs yet in this process, so any WRITING segment is a torn leftover.
-        beforeRecovery()
+        // Cleanup failing must not lose the journal state we already read: the revision
+        // has to stay monotonic, or every later journal write would collide.
+        try {
+            beforeRecovery()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "restore_cleanup_failed", e)
+        }
         val events = latest?.let { (_, time) ->
             val cause = RestartClassifier.classify(bootOf(time), currentBoot())
             StartupRecovery.eventsFor(restoredState.state, cause)
@@ -170,10 +196,12 @@ class RecordingController(
             }
             is Transition.Ignored -> return transition to emptyList()
             is Transition.Rejected -> {
-                // Never silent: logged, and surfaced to whoever is listening.
+                // Never silent: always logged. Only a person's command is surfaced to the UI:
+                // a late engine signal is not something the user did, so telling them "that
+                // action isn't available" would be wrong.
                 val cause = JournalCodec.causeOf(event)
                 Log.w(TAG, "transition_rejected cause=$cause status=${transition.state.status}")
-                _rejections.tryEmit(transition)
+                if (event is RecordingCommand) _rejections.tryEmit(transition)
                 return transition to emptyList()
             }
         }

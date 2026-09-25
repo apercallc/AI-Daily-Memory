@@ -13,6 +13,8 @@ import com.apercallc.aidailymemory.capture.RecoveryScheduler
 import com.apercallc.aidailymemory.capture.RoomTransitionJournal
 import com.apercallc.aidailymemory.capture.SegmentCipher
 import com.apercallc.aidailymemory.capture.SegmentStore
+import com.apercallc.aidailymemory.capture.TaggedReport
+import com.apercallc.aidailymemory.platform.PartialWakeLock
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
@@ -40,6 +42,7 @@ import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.storage.StoragePolicy
 import com.apercallc.aidailymemory.service.CaptureNotifications
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -152,9 +155,31 @@ class AppContainer(context: Context) {
         )
     }
 
-    private val engineReports = Channel<EngineReport>(Channel.UNLIMITED).also { channel ->
-        appScope.launch { for (report in channel) controller.report(report) }
+    private val engineReports = Channel<TaggedReport>(Channel.UNLIMITED).also { channel ->
+        appScope.launch {
+            for (tagged in channel) {
+                // Queued before a quick Pause → Resume: it describes a microphone open that no
+                // longer exists and must not confirm or fail the current one.
+                if (tagged.generation != engine.generation) {
+                    Log.i(TAG, "stale_engine_report_dropped")
+                    continue
+                }
+                // One failed report (a journal write) must not end reporting for the life of
+                // the process: later reports would never reach the controller, leaving the
+                // screen claiming a state the microphone is not in.
+                try {
+                    controller.report(tagged.report)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logFailure(TAG, "engine_report_failed", e)
+                }
+            }
+        }
     }
+
+    /** True while [com.apercallc.aidailymemory.service.RecordingService] exists. Main thread. */
+    @Volatile var serviceRunning = false
 
     val health: CaptureHealthTracker by lazy {
         CaptureHealthTracker(
@@ -180,6 +205,7 @@ class AppContainer(context: Context) {
                 }
             },
             onNeedsUser = notifications::alert,
+            keepAwake = PartialWakeLock(app, "AiDailyMemory:recovery"),
         )
     }
 

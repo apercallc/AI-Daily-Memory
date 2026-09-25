@@ -161,4 +161,43 @@ class RecoverySchedulerTest {
         assertEquals(RecordingStatus.INTERRUPTED, controller.state.value.status)
         assertEquals(1, needsUser.size)
     }
+
+    @Test
+    fun `a mic that recovers and fails again within seconds uses up the retry budget`() = runTest {
+        // Regression: RECORDING used to reset the budget on the first buffer, so a mic that
+        // briefly "recovers" and drops again was retried forever, flashing "Recording".
+        val needsUser = mutableListOf<RecordingState>()
+        val controller = setUp(needsUser = needsUser)
+        controller.interrupt(CaptureProblem.MICROPHONE_UNAVAILABLE)
+
+        repeat(4) {
+            advanceTimeBy(5_000)
+            if (controller.state.value.status == RecordingStatus.RECOVERING) {
+                controller.report(EngineReport.AudioFlowing(session))
+                advanceTimeBy(2_000) // far less than a stable minute
+                controller.report(EngineReport.Failed(session, CaptureProblem.MICROPHONE_UNAVAILABLE))
+            }
+        }
+        advanceTimeBy(60_000)
+
+        assertEquals(RecordingStatus.INTERRUPTED, controller.state.value.status)
+        assertEquals(1, needsUser.size)
+    }
+
+    @Test
+    fun `recording that holds for a stable minute earns a fresh retry budget`() = runTest {
+        val needsUser = mutableListOf<RecordingState>()
+        val controller = setUp(needsUser = needsUser)
+
+        repeat(3) {
+            controller.interrupt(CaptureProblem.MICROPHONE_UNAVAILABLE)
+            advanceTimeBy(5_000)
+            assertEquals(RecordingStatus.RECOVERING, controller.state.value.status)
+            controller.report(EngineReport.AudioFlowing(session))
+            advanceTimeBy(61_000) // stable: the next interruption is a new one
+        }
+
+        assertEquals(RecordingStatus.RECORDING, controller.state.value.status)
+        assertEquals(0, needsUser.size)
+    }
 }

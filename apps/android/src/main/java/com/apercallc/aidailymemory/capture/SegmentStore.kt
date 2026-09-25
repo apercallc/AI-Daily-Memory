@@ -1,5 +1,6 @@
 package com.apercallc.aidailymemory.capture
 
+import com.apercallc.aidailymemory.recording.audio.AdtsScanner
 import android.util.Log
 import com.apercallc.aidailymemory.data.CaptureTimeColumns
 import com.apercallc.aidailymemory.data.SegmentDao
@@ -116,11 +117,52 @@ class SegmentStore(
         return apply(segment.entity, event)
     }
 
-    /** Quarantines every segment a previous process left WRITING and removes its torn file. */
+    /**
+     * Resolves every segment a previous process left WRITING. Returns how many were lost.
+     *
+     * A crash between the rename and the SEALED row leaves a complete, fsynced `.seg` file
+     * behind a WRITING row: that audio is real and is sealed after re-verifying it. Anything
+     * else (a torn `.part`, or a `.seg` that doesn't decrypt and parse cleanly) is quarantined
+     * as a gap and its file removed.
+     */
     suspend fun abandonUnfinished(): Int {
         val stale = dao.inState(SegmentState.WRITING.name)
-        stale.forEach { abandon(it) }
-        return stale.size
+        var lost = 0
+        for (entity in stale) {
+            val recovered = File(directory, entity.fileName).takeIf { it.isFile }
+                ?.let { recoverSealed(entity, it) }
+            if (recovered?.state != SegmentState.SEALED.name) {
+                abandon(entity)
+                lost++
+            }
+        }
+        return lost
+    }
+
+    private suspend fun recoverSealed(entity: SegmentEntity, file: File): SegmentEntity? {
+        val plaintext = try {
+            cipher().decrypting(file.inputStream(), entity.segmentId).use { it.readBytes() }
+        } catch (e: IOException) {
+            // Includes authentication failures: a tampered or torn ciphertext is not audio.
+            logFailure(TAG, "segment_recovery_unreadable", e, warning = true)
+            null
+        } catch (e: GeneralSecurityException) {
+            logFailure(TAG, "segment_recovery_unreadable", e, warning = true)
+            null
+        } ?: return deleteAndForget(file)
+        val scan = AdtsScanner.scan(plaintext)
+        if (scan.corrupt || scan.validBytes != plaintext.size || scan.completeFrames == 0) {
+            return deleteAndForget(file)
+        }
+        val sha256 = MessageDigest.getInstance("SHA-256").digest(plaintext)
+            .joinToString("") { "%02x".format(it) }
+        Log.i(TAG, "segment_recovered_after_crash")
+        return apply(entity, SegmentEvent.Seal(file.length(), scan.durationMs, sha256))
+    }
+
+    private fun deleteAndForget(file: File): SegmentEntity? {
+        if (!file.delete()) Log.w(TAG, "segment_file_delete_failed")
+        return null
     }
 
     private suspend fun abandon(entity: SegmentEntity): SegmentEntity {
@@ -176,7 +218,9 @@ class OpenSegment internal constructor(
     private val fileOutput = FileOutputStream(file)
     private val output: OutputStream = try {
         cipher.encrypting(SyncOnClose(fileOutput), entity.segmentId)
-    } catch (e: GeneralSecurityException) {
+    } catch (e: Throwable) {
+        // Any failure (a key error or an IOException writing the header) must not leak the
+        // descriptor: one leak per failed segment adds up over a day of retries.
         fileOutput.close()
         throw e
     }

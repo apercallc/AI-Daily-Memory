@@ -63,6 +63,12 @@ data class CaptureConfig(
     }
 }
 
+/**
+ * An engine report tagged with the microphone open it came from. Reports from an earlier open
+ * (queued before a quick Pause → Resume) must never confirm or fail the current one.
+ */
+data class TaggedReport(val generation: Long, val report: EngineReport)
+
 /** Live engine facts that feed capture health. */
 data class EngineHealth(
     val lastSealedElapsedMs: Long? = null,
@@ -87,7 +93,7 @@ class AudioCaptureEngine(
     private val storage: suspend () -> StorageHealth,
     private val elapsedRealtimeMs: () -> Long,
     private val scope: CoroutineScope,
-    private val onReport: (EngineReport) -> Unit,
+    private val onReport: (TaggedReport) -> Unit,
     private val config: CaptureConfig = CaptureConfig(),
 ) {
     private val reader = Executors.newSingleThreadExecutor { Thread(it, "audio-reader") }
@@ -100,6 +106,10 @@ class AudioCaptureEngine(
     @Volatile private var stopRequested = false
 
     @Volatile private var silencedBySystem = false
+
+    /** Incremented on every open; see [TaggedReport]. */
+    @Volatile var generation = 0L
+        private set
 
     private val _health = MutableStateFlow(EngineHealth())
     val health: StateFlow<EngineHealth> = _health.asStateFlow()
@@ -117,14 +127,17 @@ class AudioCaptureEngine(
             // Only reachable if an open was planned without a close; say so instead of
             // leaving the controller waiting for a confirmation that never comes.
             Log.e(TAG, "engine_open_while_running")
-            onReport(EngineReport.Failed(sessionId, CaptureProblem.UNKNOWN))
+            val failed = EngineReport.Failed(sessionId, CaptureProblem.UNKNOWN)
+            onReport(TaggedReport(generation, failed))
             return@withLock
         }
         stopRequested = false
         silencedBySystem = false
+        val openGeneration = ++generation
+        val report: (EngineReport) -> Unit = { onReport(TaggedReport(openGeneration, it)) }
         job = scope.launch(reader) {
             val problem = try {
-                capture(sessionId)
+                capture(sessionId, report)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -133,7 +146,7 @@ class AudioCaptureEngine(
                 logFailure(TAG, "capture_crashed", e)
                 CaptureProblem.UNKNOWN
             }
-            problem?.let { onReport(EngineReport.Failed(sessionId, it)) }
+            problem?.let { report(EngineReport.Failed(sessionId, it)) }
         }
     }
 
@@ -146,7 +159,10 @@ class AudioCaptureEngine(
 
     /** Runs one capture; returns the problem that ended it, or null for a requested stop. */
     @SuppressLint("MissingPermission") // Checked by the caller; a revocation is caught below.
-    private suspend fun capture(sessionId: SessionId): CaptureProblem? {
+    private suspend fun capture(
+        sessionId: SessionId,
+        report: (EngineReport) -> Unit,
+    ): CaptureProblem? {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         if (isInCall()) return CaptureProblem.PHONE_CALL
         if (storage().mustStopCapture) return CaptureProblem.STORAGE_LOW
@@ -173,7 +189,7 @@ class AudioCaptureEngine(
                 logFailure(TAG, "encoder_unavailable", e)
                 return CaptureProblem.UNKNOWN
             }
-            return encoder.use { pipeline(sessionId, record, it) }
+            return encoder.use { pipeline(sessionId, record, it, report) }
         } finally {
             audioManager.unregisterAudioRecordingCallback(callback)
             record.stop()
@@ -186,6 +202,7 @@ class AudioCaptureEngine(
         sessionId: SessionId,
         record: AudioRecord,
         encoder: AacEncoder,
+        report: (EngineReport) -> Unit,
     ): CaptureProblem? = coroutineScope {
         val problem = AtomicReference<CaptureProblem?>(null)
         val pool = Channel<Chunk>(config.poolSize)
@@ -196,7 +213,7 @@ class AudioCaptureEngine(
             val failure = write(sessionId, encoder, filled, pool)
             if (failure != null) problem.compareAndSet(null, failure)
         }
-        read(sessionId, record, filled, pool, problem)
+        read(sessionId, record, filled, pool, problem, report)
         filled.close()
         writing.join()
         problem.get()
@@ -209,6 +226,7 @@ class AudioCaptureEngine(
         filled: Channel<Chunk>,
         pool: Channel<Chunk>,
         problem: AtomicReference<CaptureProblem?>,
+        report: (EngineReport) -> Unit,
     ) {
         val silence = DigitalSilenceDetector(config.sampleRateHz, config.silenceThresholdMs)
         val overrun = OverrunCheck(record)
@@ -230,9 +248,12 @@ class AudioCaptureEngine(
                 problem.compareAndSet(null, CaptureProblem.MICROPHONE_UNAVAILABLE)
                 break
             }
-            if (!announced) {
+            // Only real audio confirms capture. A blocked or silenced mic delivers zeros from
+            // the first buffer; announcing that as "flowing" would show Recording while nothing
+            // is captured and reset the recovery budget on every retry.
+            if (!announced && !silencedBySystem && hasSignal(chunk.samples, read)) {
                 announced = true
-                onReport(EngineReport.AudioFlowing(sessionId))
+                report(EngineReport.AudioFlowing(sessionId))
             }
             val silent = silence.process(chunk.samples, read)
             if (silent != _health.value.microphoneSilent) {
@@ -393,6 +414,11 @@ class AudioCaptureEngine(
     }
 
     private fun isInCall(): Boolean = audioManager.mode in CALL_MODES
+
+    private fun hasSignal(samples: ShortArray, count: Int): Boolean {
+        for (i in 0 until count) if (samples[i].toInt() != 0) return true
+        return false
+    }
 
     /**
      * Diagnostic: compares frames the platform captured with frames we read. With a 2 s

@@ -40,10 +40,25 @@ class RecordingServiceTest {
             android.Manifest.permission.POST_NOTIFICATIONS,
         )
 
-        RecordingService.send(app, RecordingService.ACTION_PAUSE)
+        RecordingService.send(app, RecordingService.ACTION_START)
 
         val started = shadowOf(app as Application).nextStartedService
-        assertEquals(RecordingService.ACTION_PAUSE, started?.action)
+        assertEquals(RecordingService.ACTION_START, started?.action)
+    }
+
+    @Test
+    fun `pause and stop never start a service that isn't running`() {
+        // Regression: starting the service only to pause or stop it is a background
+        // foreground-service start, which the platform can refuse and then crash the app for.
+        shadowOf(app as Application).grantPermissions(
+            android.Manifest.permission.RECORD_AUDIO,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        )
+
+        RecordingService.send(app, RecordingService.ACTION_PAUSE)
+        RecordingService.send(app, RecordingService.ACTION_STOP)
+
+        assertNull(shadowOf(app as Application).nextStartedService)
     }
 
     @Test

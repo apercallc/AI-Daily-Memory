@@ -28,12 +28,20 @@ class CaptureNotifications(private val context: Context) {
 
     fun createChannels() {
         val system = context.getSystemService(NotificationManager::class.java)
+        // The first status channel was IMPORTANCE_LOW, a "silent" notification that users can
+        // hide from the status bar and lock screen. Importance can't be raised on an existing
+        // channel, so it is replaced.
+        system.deleteNotificationChannel(LEGACY_CHANNEL_STATUS)
         system.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_STATUS,
                 context.getString(R.string.channel_status_name),
-                NotificationManager.IMPORTANCE_LOW,
+                // Default importance keeps the indicator in the status bar and on the lock
+                // screen even with "hide silent notifications" on; setSilent() keeps it quiet.
+                NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
+                setSound(null, null)
+                enableVibration(false)
                 description = context.getString(R.string.channel_status_description)
                 setShowBadge(false)
             },
@@ -64,6 +72,7 @@ class CaptureNotifications(private val context: Context) {
             // the recording indicator re-posts it; pausing is the way to stop recording.
             .setDeleteIntent(broadcast(RecordingService.ACTION_SHOW_STATUS))
             .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .also { addActions(it, model) }
@@ -80,7 +89,7 @@ class CaptureNotifications(private val context: Context) {
         val notification = builder(CHANNEL_ALERTS, model)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setAutoCancel(true)
-            .also { addActions(it, model) }
+            .also { addActions(it, model, fromAlert = true) }
             .build()
         manager.notify(ID_ALERT, notification)
     }
@@ -105,17 +114,29 @@ class CaptureNotifications(private val context: Context) {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openApp())
 
-    private fun addActions(builder: NotificationCompat.Builder, model: CaptureStatusModel) {
+    /**
+     * @param fromAlert no service is running: actions that open the microphone go through
+     * [CommandActivity] so they start in the foreground (see there).
+     */
+    private fun addActions(
+        builder: NotificationCompat.Builder,
+        model: CaptureStatusModel,
+        fromAlert: Boolean = false,
+    ) {
+        val resume: (Int) -> NotificationCompat.Action = { label ->
+            if (fromAlert) {
+                activityAction(label, RecordingService.ACTION_RESUME)
+            } else {
+                action(label, RecordingService.ACTION_RESUME)
+            }
+        }
         when (model.primaryAction) {
             PrimaryAction.PAUSE ->
                 builder.addAction(action(R.string.action_pause, RecordingService.ACTION_PAUSE))
-            PrimaryAction.RESUME ->
-                builder.addAction(action(R.string.action_resume, RecordingService.ACTION_RESUME))
+            PrimaryAction.RESUME -> builder.addAction(resume(R.string.action_resume))
             PrimaryAction.START, PrimaryAction.NONE -> Unit
         }
-        if (model.canRetry) {
-            builder.addAction(action(R.string.action_retry, RecordingService.ACTION_RESUME))
-        }
+        if (model.canRetry) builder.addAction(resume(R.string.action_retry))
         if (model.canMark) {
             builder.addAction(action(R.string.action_highlight, RecordingService.ACTION_HIGHLIGHT))
         }
@@ -126,6 +147,17 @@ class CaptureNotifications(private val context: Context) {
 
     private fun action(label: Int, serviceAction: String) =
         NotificationCompat.Action(0, context.getString(label), broadcast(serviceAction))
+
+    private fun activityAction(label: Int, serviceAction: String) = NotificationCompat.Action(
+        0,
+        context.getString(label),
+        PendingIntent.getActivity(
+            context,
+            serviceAction.hashCode(),
+            CommandActivity.intent(context, serviceAction),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        ),
+    )
 
     /** Explicit and immutable: only this app's own receiver can get it, and nobody can edit it. */
     private fun broadcast(serviceAction: String) = PendingIntent.getBroadcast(
@@ -143,7 +175,8 @@ class CaptureNotifications(private val context: Context) {
     )
 
     companion object {
-        const val CHANNEL_STATUS = "capture_status"
+        const val CHANNEL_STATUS = "capture_status_v2"
+        private const val LEGACY_CHANNEL_STATUS = "capture_status"
         const val CHANNEL_ALERTS = "capture_alerts"
         const val ID_STATUS = 1
         const val ID_ALERT = 2

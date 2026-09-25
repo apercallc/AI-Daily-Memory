@@ -74,6 +74,7 @@ class RecordingService : Service(), EffectHandler {
     @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
+        container.serviceRunning = true
         scope.launch {
             container.statusModels
                 .filterNotNull()
@@ -116,10 +117,20 @@ class RecordingService : Service(), EffectHandler {
     }
 
     override fun onDestroy() {
+        container.serviceRunning = false
         container.controller.detach(this)
         recoveryJob?.cancel()
+        val state = container.controller.state.value
         // Seal whatever is being written on the app scope, which outlives this service.
-        container.appScope.launch { container.engine.close() }
+        container.appScope.launch {
+            // Destroyed while the microphone was meant to be open (the system took the service
+            // down but kept the process): without this the screen would keep saying Recording.
+            val sessionId = state.sessionId
+            if (state.status in MIC_OPEN && sessionId != null) {
+                container.controller.report(EngineReport.Failed(sessionId, CaptureProblem.UNKNOWN))
+            }
+            container.engine.close()
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -127,10 +138,7 @@ class RecordingService : Service(), EffectHandler {
     private suspend fun handle(action: String?) {
         val controller = container.controller
         when (action) {
-            ACTION_START -> {
-                val sessionId = SessionId(container.ids.next().toString())
-                controller.dispatch(RecordingCommand.Start(sessionId))
-            }
+            ACTION_START -> startIfIdle(container)
             ACTION_PAUSE -> controller.dispatch(RecordingCommand.Pause)
             ACTION_RESUME -> controller.dispatch(RecordingCommand.Resume)
             ACTION_STOP -> controller.dispatch(RecordingCommand.Stop)
@@ -263,6 +271,8 @@ class RecordingService : Service(), EffectHandler {
         const val ACTION_QUICK_NOTE = "com.apercallc.aidailymemory.action.QUICK_NOTE"
         const val ACTION_SHOW_STATUS = "com.apercallc.aidailymemory.action.SHOW_STATUS"
 
+        private val NO_SERVICE_NEEDED = setOf(ACTION_PAUSE, ACTION_STOP)
+
         private val MIC_OPEN = setOf(
             RecordingStatus.RECORDING,
             RecordingStatus.RESUMING,
@@ -287,6 +297,13 @@ class RecordingService : Service(), EffectHandler {
                 ACTION_QUICK_NOTE -> return mark(container, MarkerKind.QUICK_NOTE)
             }
             if (!container.permissions.microphoneGranted) return dispatchDirect(container, action)
+            // Pausing or stopping never needs a service that isn't running: its effects
+            // (close the mic, finish the session) are no-ops without one. Starting the service
+            // just for them would be a foreground start from the background, which can crash
+            // ("did not then call startForeground") when the platform refuses it.
+            if (action in NO_SERVICE_NEEDED && !container.serviceRunning) {
+                return dispatchDirect(container, action)
+            }
             try {
                 ContextCompat.startForegroundService(context, intent(context, action))
             } catch (e: IllegalStateException) {
@@ -301,13 +318,31 @@ class RecordingService : Service(), EffectHandler {
             }
         }
 
+        /**
+         * A second Start tap while a session is starting or running is a duplicate, not a new
+         * session: every Start gets a fresh id, so dispatching it would be rejected and tell
+         * the user their tap "isn't available".
+         */
+        private suspend fun startIfIdle(container: AppContainer) {
+            val status = container.controller.state.value.status
+            if (status != RecordingStatus.IDLE && status != RecordingStatus.COMPLETED) {
+                Log.i(TAG, "start_ignored_session_active")
+                return
+            }
+            val sessionId = SessionId(container.ids.next().toString())
+            container.controller.dispatch(RecordingCommand.Start(sessionId))
+        }
+
         private fun mark(container: AppContainer, kind: MarkerKind) {
             container.appScope.launch { container.placeMarker(kind) }
         }
 
         private fun dispatchDirect(container: AppContainer, action: String) {
+            if (action == ACTION_START) {
+                container.appScope.launch { startIfIdle(container) }
+                return
+            }
             val command = when (action) {
-                ACTION_START -> RecordingCommand.Start(SessionId(container.ids.next().toString()))
                 ACTION_PAUSE -> RecordingCommand.Pause
                 ACTION_RESUME -> RecordingCommand.Resume
                 ACTION_STOP -> RecordingCommand.Stop
