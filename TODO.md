@@ -49,7 +49,7 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [x] Generate and commit Gradle wrapper using Gradle 9.7.1
 - [x] Generate and commit backend uv.lock
 - [x] CI uses the wrapper and fails on a stale uv.lock (`uv sync --locked`)
-- [ ] Verify fresh clone builds on macOS, Linux, and CI
+- [ ] Verify fresh clone builds on macOS, Linux, and CI (Linux verified with JDK 17 + Android SDK 37; macOS and CI pending)
 - [ ] Enable main-branch protection
 - [ ] Require CI before merge
 - [ ] Require at least one approving review once more than one maintainer exists
@@ -65,14 +65,14 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [x] Edge-to-edge app shell
 - [x] Responsive status / action layout scaffold
 - [x] Define semantic color tokens for recording, paused, warning, error (fixed, not dynamic: `StatusColors`)
-- [ ] Add typography scale and spacing tokens
+- [x] Add typography scale and spacing tokens (`Tokens.kt`: `Spacing`, `AppTypography`)
 - [x] Support light/dark mode
 - [x] Support dynamic color where appropriate (chrome only; capture state uses fixed tokens)
 - [ ] Meet WCAG/Android accessibility expectations
-- [ ] 48dp minimum touch targets
-- [ ] Content descriptions for non-text controls (status card: merged semantics + polite live region done; indicator dot is decorative next to text)
+- [x] 48dp minimum touch targets (`Spacing.minTouchTarget`; asserted in `CaptureScreenTest`)
+- [x] Content descriptions for non-text controls (all controls are text; status dot is decorative next to the headline; headline/detail are a polite live region, stats read as label + value)
 - [ ] TalkBack test critical flows
-- [ ] Support font scaling to at least 200% (main screen scrolls instead of clipping; verify on device)
+- [ ] Support font scaling to at least 200% (main screen scrolls, all text in sp, buttons grow with `heightIn`; verify on device)
 - [ ] Add screenshot/golden testing only if it provides maintainable value
 
 # Phase 0 — Capture reliability
@@ -87,17 +87,17 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ## Permissions / foreground service
 
-- [ ] Implement microphone permission education and request flow
-- [ ] Handle permanently denied microphone permission
-- [ ] Request notification permission where required
-- [ ] Implement microphone foreground service
-- [ ] Declare correct foreground-service type
-- [ ] Create persistent recording notification
-- [ ] Add notification actions: Pause, Resume, Stop, Highlight
-- [ ] Ensure foreground service enters foreground within platform timeout
-- [ ] Handle app background / screen-off behavior
-- [ ] Handle OEM-specific battery restrictions without misleading the user
-- [ ] Pause keeps the foreground service running with the mic closed (ADR-0010)
+- [x] Implement microphone permission education and request flow
+- [x] Handle permanently denied microphone permission (persisted "asked before" → Settings deep link)
+- [x] Request notification permission where required (required to record: the indicator must be visible)
+- [x] Implement microphone foreground service (`RecordingService`)
+- [x] Declare correct foreground-service type (`microphone`)
+- [x] Create persistent recording notification (public on lock screen; re-posted if swiped away)
+- [x] Add notification actions: Pause, Resume, Stop, Highlight
+- [x] Ensure foreground service enters foreground within platform timeout (`startForeground` first; never started when it would fail)
+- [ ] Handle app background / screen-off behavior (implemented as an FGS without wake locks; verify in the hardware spike)
+- [x] Handle OEM-specific battery restrictions without misleading the user (kills surface as interruptions; honest info card + battery settings link)
+- [x] Pause keeps the foreground service running with the mic closed (ADR-0010)
 
 ## Recording state machine
 
@@ -108,68 +108,68 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Session identity, monotonic revision, and capture-problem reason in state
 - [x] Exhaustive status × event matrix test
 - [x] Separate user commands from capture-engine signals (watch may only send commands)
-- [ ] Wire state machine to Android service
-- [ ] Persist state transitions (append-only journal keyed by revision) before dependent side effects
+- [x] Wire state machine to Android service (`RecordingController` + `CaptureEffectPlanner`)
+- [x] Persist state transitions (append-only journal keyed by revision) before dependent side effects
 - [x] Decide recovery events for a persisted state after process death/reboot (`StartupRecovery`)
-- [ ] Recover persisted session state after process death (service wiring)
-- [ ] After reboot: never auto-start; post "tap to resume" notification and record the gap (ADR-0010)
+- [x] Recover persisted session state after process death (service wiring)
+- [x] After reboot: never auto-start; post "tap to resume" notification and record the gap (ADR-0010)
 - [ ] Add state-machine property/fuzz tests if transition count expands materially
 
 ## Local persistence, identity, time
 
-- [ ] Room with exported schema and migration tests from the first entity
+- [x] Room with exported schema and migration tests from the first entity
 - [x] UUIDv7 generator for client-created IDs (ADR-0006) — monotonic, clock-skew safe
 - [x] Capture-time model: occurred_at (UTC), timezone, UTC offset, local_date, elapsedRealtime + boot id (`CaptureTime`)
-- [ ] Stamp every captured record with `CaptureTime` in the recorder service
-- [ ] Decide Quick Note model: marked window inside an active session vs. short standalone session (open product decision)
+- [x] Stamp every captured record with `CaptureTime` in the recorder service (transitions, segments, markers)
+- [x] Decide Quick Note model: marked window inside an active session (ADR-0011)
 
 ## Audio capture
 
-- [ ] Select initial capture format after device benchmark, among append-safe containers only (Ogg/Opus or AAC-ADTS; not MP4 — ADR-0007)
-- [ ] Implement short crash-resistant local segments
-- [ ] Add monotonic sequence IDs
-- [ ] Add checksums
-- [ ] fsync/close segments safely before marking persisted
-- [ ] Avoid a single all-day audio file
-- [ ] Handle microphone loss / audio route changes
-- [ ] Handle incoming/outgoing calls
-- [ ] Handle another app taking microphone focus
+- [ ] Select initial capture format after device benchmark, among append-safe containers only (Ogg/Opus or AAC-ADTS; not MP4 — ADR-0007). AAC-LC/ADTS 16 kHz 32 kbit/s implemented provisionally; benchmark owed (docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md)
+- [x] Implement short crash-resistant local segments (60 s, ADTS, row before bytes)
+- [x] Add monotonic sequence IDs (dense per session, unique index)
+- [x] Add checksums (SHA-256 over plaintext)
+- [x] fsync/close segments safely before marking persisted (fsync + atomic rename + dir sync, then SEALED)
+- [x] Avoid a single all-day audio file
+- [x] Handle microphone loss / audio route changes (verify on device)
+- [x] Handle incoming/outgoing calls (audio mode + silenced client → `PHONE_CALL`; resumes when the call ends; verify on device)
+- [x] Handle another app taking microphone focus (`isClientSilenced` + digital silence; bounded retries)
 - [x] Detect audio gaps — classification logic (`GapDetector`)
-- [ ] Feed sealed-segment timings from the recorder into `GapDetector`
+- [x] Feed sealed-segment timings from the recorder into `GapDetector` (capture health shows gaps)
 - [x] Detect corrupt or zero-byte segments at seal (`SegmentLifecycle` → QUARANTINED)
 - [x] Detect sustained digital silence (blocked mic) — `DigitalSilenceDetector`
-- [ ] Report detector output as `Interrupted(MICROPHONE_UNAVAILABLE)` from the recorder
-- [ ] Never mark uncaptured time as successfully recorded
+- [x] Report detector output as `Interrupted(MICROPHONE_UNAVAILABLE)` from the recorder
+- [x] Never mark uncaptured time as successfully recorded (only SEALED counts; torn segments quarantined)
 
 ## Local security
 
-- [ ] Encrypt local temporary audio with Tink streaming AEAD (not deprecated security-crypto; ADR-0007)
-- [ ] Protect keys with Android Keystore (no user-auth requirement, or capture fails while locked)
-- [ ] No capture before first unlock after reboot (credential-encrypted storage)
-- [ ] Define key rotation / invalidation behavior
+- [x] Encrypt local temporary audio with Tink streaming AEAD (not deprecated security-crypto; ADR-0007)
+- [x] Protect keys with Android Keystore (no user-auth requirement; Tink's cleartext fallback refused)
+- [x] No capture before first unlock after reboot (not direct-boot aware + `DEVICE_LOCKED` blocker)
+- [x] Define key rotation / invalidation behavior (SECURITY.md)
 - [x] Disable Android backup of sensitive app data (allowBackup=false + exclude-all extraction rules)
 - [ ] Verify no sensitive files are exported via backup/debug tooling
 - [x] Delete local audio only after explicit server acknowledgement + recovery window (enforced in `SegmentLifecycle`)
-- [ ] Secure-delete semantics documented honestly; do not promise physical flash erasure
+- [x] Secure-delete semantics documented honestly; do not promise physical flash erasure (SECURITY.md)
 
 ## Storage pressure
 
-- [ ] Track free disk space
+- [x] Track free disk space
 - [x] Define warning threshold (`StoragePolicy`, provisional values)
 - [x] Define hard-stop threshold (`StoragePolicy`, provisional values)
-- [ ] Surface storage problems before recording fails
+- [x] Surface storage problems before recording fails (health + "storage left"; start refused and capture stopped at the hard stop)
 - [ ] Test device-low-storage conditions
 - [x] Bound local pending-upload storage (warn over budget; never delete unacknowledged audio)
 
 ## Capture health
 
-- [ ] Last segment successfully persisted
-- [ ] Current session duration
-- [ ] Pending upload duration
-- [ ] Watch connectivity
-- [ ] Available storage health
-- [ ] Interruption indicator
-- [ ] Battery/thermal telemetry in debug/internal builds
+- [x] Last segment successfully persisted ("Last saved")
+- [x] Current session duration (shown as saved audio, which never counts gaps)
+- [x] Pending upload duration ("Only on this phone")
+- [ ] Watch connectivity (health input wired as NOT_PAIRED; Data Layer is Phase 3)
+- [x] Available storage health
+- [x] Interruption indicator (headline, problem text, alert notification)
+- [x] Battery/thermal telemetry in debug/internal builds (`DebugTelemetry`)
 - [x] Never show "Recording" unless capture is actually healthy (`CaptureHealthEvaluator` + `CaptureStatusPresenter`)
 
 ## Endurance / device matrix

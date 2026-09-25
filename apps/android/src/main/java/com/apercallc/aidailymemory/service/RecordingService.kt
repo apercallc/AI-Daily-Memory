@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.capture.EffectHandler
+import com.apercallc.aidailymemory.platform.DebugTelemetry
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.CaptureSignal
@@ -98,6 +99,7 @@ class RecordingService : Service(), EffectHandler {
             container.controller.attach(this)
             recoveryJob = container.recoveryScheduler.start(scope)
             scope.launch { watchIndicator() }
+            scope.launch { DebugTelemetry(applicationContext).sampleWhileRunning() }
         }
         enterForeground()
         pendingCommands++

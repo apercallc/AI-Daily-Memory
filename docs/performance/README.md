@@ -2,6 +2,8 @@
 
 Store measured performance results here.
 
+Open Phase 0 measurement debt: [PHASE0_CAPTURE_MEASUREMENTS.md](PHASE0_CAPTURE_MEASUREMENTS.md).
+
 Do not guess production budgets before Phase 0 measurements.
 
 Track at minimum:
