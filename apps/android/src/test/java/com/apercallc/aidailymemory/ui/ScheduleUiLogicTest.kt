@@ -88,6 +88,24 @@ class ScheduleUiLogicTest {
     }
 
     @Test
+    fun `speech shows only once a closed session is fully analyzed`() {
+        fun row(id: String, captured: Long, analyzed: Long) =
+            SessionRow(id, "2026-09-22", "UTC", 0, null, 1_000, captured, analyzed, speechMs = 40_000)
+
+        val sessions = SessionGroups.group(
+            rows = listOf(
+                row("done", captured = 90_000, analyzed = 90_000),
+                row("partial", captured = 90_000, analyzed = 60_000),
+                row("empty", captured = 0, analyzed = 0),
+                row("open", captured = 90_000, analyzed = 90_000),
+            ),
+            openSessionId = "open",
+        ).single().sessions.associate { it.sessionId to it.speechMs }
+
+        assertEquals(mapOf("done" to 40_000L, "partial" to null, "empty" to null, "open" to null), sessions)
+    }
+
+    @Test
     fun `an unknown stored zone falls back instead of crashing the list`() {
         val row = SessionRow("x", "2026-09-22", "Mars/Olympus_Mons", 0, null, null, 0)
 

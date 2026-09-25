@@ -140,6 +140,13 @@ private fun SessionCard(session: SessionItem, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                session.speechMs?.let { speech ->
+                    Text(
+                        text = stringResource(R.string.session_speech, durationText(speech)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Text(
                 text = durationText(session.capturedMs),

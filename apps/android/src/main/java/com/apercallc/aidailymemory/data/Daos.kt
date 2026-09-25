@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -76,7 +77,13 @@ interface SessionDao {
                 WHERE t.session_id = i.session_id) AS lastActivityEpochMs,
             (SELECT COALESCE(SUM(s.duration_ms), 0) FROM audio_segment s
                 WHERE s.session_id = i.session_id
-                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED', 'DELETED')) AS capturedMs
+                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED', 'DELETED')) AS capturedMs,
+            (SELECT COALESCE(SUM(a.total_ms), 0) FROM segment_speech a
+                JOIN audio_segment s ON s.segment_id = a.segment_id
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS analyzedMs,
+            (SELECT COALESCE(SUM(a.speech_ms), 0) FROM segment_speech a
+                JOIN audio_segment s ON s.segment_id = a.segment_id
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs
         FROM session_info i
         WHERE i.memory_day >= :sinceDay
         ORDER BY i.started_at_epoch_ms DESC
@@ -98,4 +105,63 @@ interface MarkerDao {
 
     @Query("SELECT COUNT(*) FROM capture_marker WHERE session_id = :sessionId")
     fun observeCount(sessionId: String): Flow<Int>
+}
+
+@Dao
+interface SpeechDao {
+    /**
+     * Sealed segments not yet analyzed by [analyzer], oldest first. Audio already deleted by
+     * retention can't be analyzed, so DELETED and QUARANTINED rows are skipped.
+     */
+    @Query(
+        """
+        SELECT s.* FROM audio_segment s
+        LEFT JOIN segment_speech a ON a.segment_id = s.segment_id AND a.analyzer = :analyzer
+        WHERE a.segment_id IS NULL AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED')
+        ORDER BY s.start_occurred_at_epoch_ms, s.sequence
+        LIMIT :limit
+        """,
+    )
+    suspend fun pending(analyzer: String, limit: Int): List<SegmentEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM audio_segment s
+        LEFT JOIN segment_speech a ON a.segment_id = s.segment_id AND a.analyzer = :analyzer
+        WHERE a.segment_id IS NULL AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED')
+        """,
+    )
+    suspend fun pendingCount(analyzer: String): Int
+
+    /** Replaces any earlier analysis of the segment (a new analyzer version) atomically. */
+    @Transaction
+    suspend fun save(analysis: SegmentSpeechEntity, regions: List<SpeechRegionEntity>) {
+        deleteRegions(analysis.segmentId)
+        upsert(analysis)
+        insertRegions(regions)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(analysis: SegmentSpeechEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertRegions(regions: List<SpeechRegionEntity>)
+
+    @Query("DELETE FROM speech_region WHERE segment_id = :segmentId")
+    suspend fun deleteRegions(segmentId: String)
+
+    @Query("SELECT * FROM segment_speech WHERE segment_id = :segmentId")
+    suspend fun analysis(segmentId: String): SegmentSpeechEntity?
+
+    @Query("SELECT * FROM speech_region WHERE segment_id = :segmentId ORDER BY start_ms")
+    suspend fun regions(segmentId: String): List<SpeechRegionEntity>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(total_ms), 0) AS analyzedMs, COALESCE(SUM(speech_ms), 0) AS speechMs,
+            COALESCE(SUM(padded_ms), 0) AS paddedMs
+        FROM segment_speech WHERE outcome = 'OK' AND analyzed_at_epoch_ms >= :sinceEpochMs
+        """,
+    )
+    suspend fun totalsSince(sinceEpochMs: Long): SpeechTotals
 }

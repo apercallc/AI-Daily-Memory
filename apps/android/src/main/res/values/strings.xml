@@ -114,6 +114,8 @@
     <string name="day_today">Today</string>
     <string name="day_yesterday">Yesterday</string>
     <string name="day_captured">%1$s captured</string>
+    <!-- Detected speech in a session, e.g. "42 min of talk". -->
+    <string name="session_speech">%1$s of talk</string>
     <string name="session_time_range">%1$s – %2$s</string>
     <string name="session_time_open">%1$s – now</string>
     <string name="session_rename_hint">Tap to rename</string>

@@ -18,6 +18,11 @@ data class SessionItem(
     val end: ZonedDateTime?,
     val capturedMs: Long,
     val customTitle: String?,
+    /**
+     * Detected speech, once every captured part of a closed session has been analyzed
+     * (ADR-0015); null until then, so a half-analyzed session never shows a misleading figure.
+     */
+    val speechMs: Long? = null,
 )
 
 data class DayGroup(val day: LocalDate, val sessions: List<SessionItem>) {
@@ -52,6 +57,11 @@ object SessionGroups {
                                 ?.let { Instant.ofEpochMilli(it).atZone(row.zone()) },
                             capturedMs = row.capturedMs,
                             customTitle = row.customTitle,
+                            speechMs = row.speechMs.takeIf {
+                                row.sessionId != openSessionId &&
+                                    row.capturedMs > 0 &&
+                                    row.analyzedMs >= row.capturedMs
+                            },
                         )
                     },
                 )

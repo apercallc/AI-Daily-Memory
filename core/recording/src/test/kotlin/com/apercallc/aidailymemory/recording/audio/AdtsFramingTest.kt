@@ -45,6 +45,16 @@ class AdtsFramingTest {
     }
 
     @Test
+    fun `each complete frame is reported with its offset and size, torn tail excluded`() {
+        val data = stream(count = 3, payload = 10)
+        val frames = mutableListOf<Pair<Int, Int>>()
+
+        AdtsScanner.scan(data, length = data.size - 5) { offset, size -> frames += offset to size }
+
+        assertEquals(listOf(0 to 17, 17 to 17), frames)
+    }
+
+    @Test
     fun `a torn final frame is a bounded loss, not corruption`() {
         val full = stream(count = 3)
         listOf(full.size - 1, full.size - 50, 2 * 107 + 3, 2 * 107 + 1).forEach { cut ->

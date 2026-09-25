@@ -80,8 +80,15 @@ object AdtsScanner {
     /**
      * Walks frame headers in the first [length] bytes of [data]. A torn final frame (the
      * crash case) is not corruption; garbage where a header should start is.
+     *
+     * [onFrame] receives each complete frame's offset and size (header included), in order,
+     * which is how the decoder feeds one access unit at a time.
      */
-    fun scan(data: ByteArray, length: Int = data.size): AdtsScan {
+    fun scan(
+        data: ByteArray,
+        length: Int = data.size,
+        onFrame: (offset: Int, size: Int) -> Unit = { _, _ -> },
+    ): AdtsScan {
         require(length in 0..data.size) { "length outside buffer" }
         var position = 0
         var frames = 0
@@ -107,6 +114,7 @@ object AdtsScanner {
             }
             if (frameLength > remaining) break // torn tail
             if (sampleRate == null) sampleRate = AdtsHeaderWriter.SAMPLE_RATES[rateIndex]
+            onFrame(position, frameLength)
             frames++
             position += frameLength
         }

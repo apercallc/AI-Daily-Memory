@@ -41,7 +41,7 @@ class CaptureDatabaseMigrationTest {
             ApplicationProvider.getApplicationContext(),
             CaptureDatabase::class.java,
             TEST_DB,
-        ).addMigrations(CaptureDatabase.MIGRATION_1_2).allowMainThreadQueries().build()
+        ).addMigrations(*CaptureDatabase.migrations()).allowMainThreadQueries().build()
         val row = db.openHelper.readableDatabase
             .query("SELECT status FROM recording_transition WHERE revision = 1")
         row.use {

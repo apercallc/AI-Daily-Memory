@@ -3,6 +3,9 @@ package com.apercallc.aidailymemory
 import android.content.Context
 import android.media.AudioManager
 import android.util.Log
+import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
+import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
+import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
 import com.apercallc.aidailymemory.capture.AudioCaptureEngine
 import com.apercallc.aidailymemory.capture.CaptureHealthTracker
 import com.apercallc.aidailymemory.capture.CaptureOverview
@@ -239,6 +242,12 @@ class AppContainer(context: Context) {
         SessionRegistry(database.sessions(), rhythm = { settings.rhythm.value })
     }
 
+    /** Charging-time speech analysis (ADR-0015); shadow mode until Phase 1 uploads. */
+    val speechAnalyzer: SpeechAnalyzer by lazy {
+        SpeechAnalyzer(segments, database.speech(), MediaCodecAacDecoder())
+    }
+    val speechScheduler = SpeechAnalysisScheduler(app)
+
     /** One presenter output for the app screen and the notification. */
     val statusModels: Flow<CaptureStatusModel?> by lazy {
         combine(controller.state, health.overview) { state, overview ->
@@ -260,11 +269,18 @@ class AppContainer(context: Context) {
     fun restoreOnProcessStart() {
         controller.restore()
         appScope.launch { sessions.observe(controller.state) }
-        // Retention (ADR-0013) runs at start and whenever a session completes.
+        // Retention (ADR-0013) and speech-analysis scheduling (ADR-0015) run at start and
+        // whenever a session completes.
         appScope.launch {
             controller.awaitRestored()
             applyRetention()
-            controller.state.collect { if (it.status == RecordingStatus.COMPLETED) applyRetention() }
+            speechScheduler.schedule()
+            controller.state.collect {
+                if (it.status == RecordingStatus.COMPLETED) {
+                    applyRetention()
+                    speechScheduler.schedule()
+                }
+            }
         }
         // Once a day has started, "good morning, start your day" is stale.
         appScope.launch {

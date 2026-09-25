@@ -169,21 +169,34 @@ class SegmentStore(
         return deleted
     }
 
-    private suspend fun recoverSealed(entity: SegmentEntity, file: File): SegmentEntity? {
+    /**
+     * The decrypted, fully valid ADTS stream of a sealed segment, or null when the file is gone
+     * (retention), fails authentication, or doesn't parse cleanly. Never partial audio.
+     */
+    fun readAudio(entity: SegmentEntity): ByteArray? {
+        val file = File(directory, entity.fileName).takeIf { it.isFile } ?: return null
+        return decryptValid(entity, file)
+    }
+
+    private fun decryptValid(entity: SegmentEntity, file: File): ByteArray? {
         val plaintext = try {
             cipher().decrypting(file.inputStream(), entity.segmentId).use { it.readBytes() }
         } catch (e: IOException) {
             // Includes authentication failures: a tampered or torn ciphertext is not audio.
-            logFailure(TAG, "segment_recovery_unreadable", e, warning = true)
-            null
+            logFailure(TAG, "segment_unreadable", e, warning = true)
+            return null
         } catch (e: GeneralSecurityException) {
-            logFailure(TAG, "segment_recovery_unreadable", e, warning = true)
-            null
-        } ?: return deleteAndForget(file)
-        val scan = AdtsScanner.scan(plaintext)
-        if (scan.corrupt || scan.validBytes != plaintext.size || scan.completeFrames == 0) {
-            return deleteAndForget(file)
+            logFailure(TAG, "segment_unreadable", e, warning = true)
+            return null
         }
+        val scan = AdtsScanner.scan(plaintext)
+        val valid = !scan.corrupt && scan.validBytes == plaintext.size && scan.completeFrames > 0
+        return plaintext.takeIf { valid }
+    }
+
+    private suspend fun recoverSealed(entity: SegmentEntity, file: File): SegmentEntity? {
+        val plaintext = decryptValid(entity, file) ?: return deleteAndForget(file)
+        val scan = AdtsScanner.scan(plaintext)
         val sha256 = MessageDigest.getInstance("SHA-256").digest(plaintext)
             .joinToString("") { "%02x".format(it) }
         Log.i(TAG, "segment_recovered_after_crash")

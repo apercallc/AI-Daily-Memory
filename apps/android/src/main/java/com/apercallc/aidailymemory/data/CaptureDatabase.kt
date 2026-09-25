@@ -20,8 +20,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SegmentEntity::class,
         MarkerEntity::class,
         SessionInfoEntity::class,
+        SegmentSpeechEntity::class,
+        SpeechRegionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -29,13 +31,17 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun segments(): SegmentDao
     abstract fun markers(): MarkerDao
     abstract fun sessions(): SessionDao
+    abstract fun speech(): SpeechDao
 
     companion object {
         const val NAME = "capture.db"
 
+        /** Every migration, in order. Tests open old databases with exactly this list. */
+        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+
         fun open(context: Context): CaptureDatabase =
             Room.databaseBuilder(context.applicationContext, CaptureDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(*migrations())
                 .build()
 
         /**
@@ -62,6 +68,27 @@ abstract class CaptureDatabase : RoomDatabase() {
                         "MIN(occurred_at_epoch_ms), NULL " +
                         "FROM recording_transition WHERE session_id IS NOT NULL " +
                         "GROUP BY session_id",
+                )
+            }
+        }
+    
+        /** Adds speech analysis (ADR-0015). New tables only; nothing existing changes. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `segment_speech` (" +
+                        "`segment_id` TEXT NOT NULL, `analyzer` TEXT NOT NULL, " +
+                        "`outcome` TEXT NOT NULL, `total_ms` INTEGER NOT NULL, " +
+                        "`speech_ms` INTEGER NOT NULL, `padded_ms` INTEGER NOT NULL, " +
+                        "`region_count` INTEGER NOT NULL, " +
+                        "`analyzed_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `speech_region` (" +
+                        "`segment_id` TEXT NOT NULL, `start_ms` INTEGER NOT NULL, " +
+                        "`end_ms` INTEGER NOT NULL, `speech_ms` INTEGER NOT NULL, " +
+                        "`low_confidence` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`segment_id`, `start_ms`))",
                 )
             }
         }

@@ -203,7 +203,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Measure memory
 - [ ] Measure storage growth
 - [ ] Measure audio gaps
-- [ ] Measure speech-active ratio per recorded hour (VAD in shadow mode; feeds the Gate B cost model)
+- [x] Shadow speech analysis: energy VAD + speech regions (core), charging-time job, per-session talk time, `segment_speech` totals (ADR-0015)
+- [ ] Measure speech-active ratio per recorded hour (VAD in shadow mode; feeds the Gate B cost model) — tooling ready; device runs owed
 - [ ] Record benchmark results in docs/performance/
 
 ### Phase 0 exit gate

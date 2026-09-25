@@ -66,6 +66,27 @@ class SessionMigrationTest {
     }
 
     @Test
+    fun `migrating to v3 adds speech tables and keeps existing rows`() {
+        helper.createDatabase(DB, 2).use { db ->
+            db.execSQL(
+                "INSERT INTO session_info (session_id, memory_day, zone_id, started_at_epoch_ms, " +
+                    "custom_title) VALUES ('a', '2026-09-22', 'UTC', 1000, 'Kept')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(DB, 3, true, CaptureDatabase.MIGRATION_2_3).use { db ->
+            db.query("SELECT custom_title FROM session_info").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("Kept", cursor.getString(0))
+            }
+            db.query("SELECT COUNT(*) FROM segment_speech").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+    }
+
+    @Test
     fun `registry fixes the memory day at start, and renames are validated`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, CaptureDatabase::class.java)

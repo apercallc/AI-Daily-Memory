@@ -138,4 +138,37 @@ data class SessionRow(
     val lastActivityEpochMs: Long?,
     /** Sealed audio only: gaps and torn segments don't count as captured. */
     val capturedMs: Long,
+    /** Captured audio analyzed for speech so far (ADR-0015). */
+    val analyzedMs: Long = 0,
+    /** Detected speech in the analyzed audio. */
+    val speechMs: Long = 0,
 )
+
+/**
+ * Result of analyzing one sealed segment for speech (ADR-0015). Written once per analyzer
+ * version; [outcome] records failures too, so an unreadable segment isn't retried every night.
+ */
+@Entity(tableName = "segment_speech")
+data class SegmentSpeechEntity(
+    @PrimaryKey @ColumnInfo(name = "segment_id") val segmentId: String,
+    val analyzer: String,
+    val outcome: String,
+    @ColumnInfo(name = "total_ms") val totalMs: Long,
+    @ColumnInfo(name = "speech_ms") val speechMs: Long,
+    @ColumnInfo(name = "padded_ms") val paddedMs: Long,
+    @ColumnInfo(name = "region_count") val regionCount: Int,
+    @ColumnInfo(name = "analyzed_at_epoch_ms") val analyzedAtEpochMs: Long,
+)
+
+/** A span of a segment to transcribe, ms from the segment start: [startMs, endMs). */
+@Entity(tableName = "speech_region", primaryKeys = ["segment_id", "start_ms"])
+data class SpeechRegionEntity(
+    @ColumnInfo(name = "segment_id") val segmentId: String,
+    @ColumnInfo(name = "start_ms") val startMs: Long,
+    @ColumnInfo(name = "end_ms") val endMs: Long,
+    @ColumnInfo(name = "speech_ms") val speechMs: Long,
+    @ColumnInfo(name = "low_confidence") val lowConfidence: Boolean,
+)
+
+/** Totals across analyzed segments, for the Gate B cost model (docs/performance). */
+data class SpeechTotals(val analyzedMs: Long, val speechMs: Long, val paddedMs: Long)

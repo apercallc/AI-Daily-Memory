@@ -61,6 +61,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Charging-time speech analysis (ADR-0015). Only the system may bind it. -->
+        <service
+            android:name=".analysis.SpeechAnalysisJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".service.RestartReceiver"
             android:exported="false">
