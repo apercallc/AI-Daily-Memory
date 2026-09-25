@@ -1,0 +1,616 @@
+{
+  "$defs": {
+    "ActionItem": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": "possible",
+          "enum": [
+            "confirmed",
+            "likely",
+            "possible"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "due": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "owner": {
+          "default": "me",
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence"
+      ],
+      "title": "ActionItem",
+      "type": "object"
+    },
+    "Commitment": {
+      "additionalProperties": false,
+      "description": "A promise between people. `i_owe`: the user promised; `owed_to_me`: someone promised them.",
+      "properties": {
+        "confidence": {
+          "default": "possible",
+          "enum": [
+            "confirmed",
+            "likely",
+            "possible"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "counterpart": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Counterpart",
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "i_owe",
+            "owed_to_me"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "due": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence",
+        "direction",
+        "counterpart"
+      ],
+      "title": "Commitment",
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "first_start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Start"
+        },
+        "gaps": {
+          "items": {
+            "$ref": "#/$defs/Gap"
+          },
+          "maxItems": 200,
+          "title": "Gaps",
+          "type": "array"
+        },
+        "last_end": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last End"
+        },
+        "pending_minutes": {
+          "default": 0,
+          "maximum": 1440,
+          "minimum": 0,
+          "title": "Pending Minutes",
+          "type": "integer"
+        },
+        "recorded_minutes": {
+          "maximum": 1440,
+          "minimum": 0,
+          "title": "Recorded Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded_minutes"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "Decision": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": "possible",
+          "enum": [
+            "confirmed",
+            "likely",
+            "possible"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "Where an item came from. Resolves to transcript segments; the quote is optional context.",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "maxLength": 280,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "session_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "at"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Gap": {
+      "additionalProperties": false,
+      "description": "A span inside the day that was not recorded, and why. Shown so absence isn't mistaken\nfor silence.",
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "reason": {
+          "enum": [
+            "quiet_time",
+            "paused",
+            "interrupted",
+            "not_captured"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "reason"
+      ],
+      "title": "Gap",
+      "type": "object"
+    },
+    "Highlight": {
+      "additionalProperties": false,
+      "description": "A moment the user marked. User input, so it needs no confidence.",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "maxLength": 280,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 280,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "session_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "at"
+      ],
+      "title": "Highlight",
+      "type": "object"
+    },
+    "Moment": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "text"
+      ],
+      "title": "Moment",
+      "type": "object"
+    },
+    "Note": {
+      "additionalProperties": false,
+      "description": "An idea or an open question.",
+      "properties": {
+        "confidence": {
+          "default": "possible",
+          "enum": [
+            "confirmed",
+            "likely",
+            "possible"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence"
+      ],
+      "title": "Note",
+      "type": "object"
+    },
+    "SessionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "key_moments": {
+          "items": {
+            "$ref": "#/$defs/Moment"
+          },
+          "maxItems": 20,
+          "title": "Key Moments",
+          "type": "array"
+        },
+        "session_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "title",
+        "start",
+        "end",
+        "timezone"
+      ],
+      "title": "SessionSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://apercallc.com/ai-daily-memory/contracts/daily-report.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action_items": {
+      "items": {
+        "$ref": "#/$defs/ActionItem"
+      },
+      "maxItems": 50,
+      "title": "Action Items",
+      "type": "array"
+    },
+    "commitments": {
+      "items": {
+        "$ref": "#/$defs/Commitment"
+      },
+      "maxItems": 50,
+      "title": "Commitments",
+      "type": "array"
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/Decision"
+      },
+      "maxItems": 50,
+      "title": "Decisions",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "headline": {
+      "anyOf": [
+        {
+          "maxLength": 280,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Headline"
+    },
+    "highlights": {
+      "items": {
+        "$ref": "#/$defs/Highlight"
+      },
+      "maxItems": 100,
+      "title": "Highlights",
+      "type": "array"
+    },
+    "ideas": {
+      "items": {
+        "$ref": "#/$defs/Note"
+      },
+      "maxItems": 50,
+      "title": "Ideas",
+      "type": "array"
+    },
+    "memory_day": {
+      "format": "date",
+      "title": "Memory Day",
+      "type": "string"
+    },
+    "open_questions": {
+      "items": {
+        "$ref": "#/$defs/Note"
+      },
+      "maxItems": 50,
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "people": {
+      "items": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "People",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sessions": {
+      "items": {
+        "$ref": "#/$defs/SessionSummary"
+      },
+      "maxItems": 50,
+      "title": "Sessions",
+      "type": "array"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "summary": {
+      "items": {
+        "maxLength": 280,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 6,
+      "title": "Summary",
+      "type": "array"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "type": "string"
+    },
+    "topics": {
+      "items": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Topics",
+      "type": "array"
+    }
+  },
+  "required": [
+    "memory_day",
+    "timezone",
+    "generated_at",
+    "status",
+    "coverage"
+  ],
+  "title": "DailyReport",
+  "type": "object"
+}
