@@ -97,9 +97,10 @@ class ClipUploader(
             currentCoroutineContext().ensureActive()
             val analysis = speech.analysis(segment.segmentId)
             if (analysis == null || analysis.regionCount == 0) {
-                // No speech: nothing to decrypt or upload. The segment stays SEALED; what
-                // no-speech audio means for retention is a separate, explicit decision.
+                // No speech: nothing to decrypt or upload, so nothing to protect with a server
+                // round trip. Acknowledge locally now so AudioRetention governs it (ADR-0017).
                 clips.plan(ClipPlanEntity(segment.segmentId, NO_SPEECH, now()), emptyList())
+                store.markTranscribed(segment, now())
                 continue
             }
             val audio = store.readAudio(segment)
@@ -130,6 +131,8 @@ class ClipUploader(
             }
             val outcome = if (planned.isEmpty()) EMPTY else PLANNED
             clips.plan(ClipPlanEntity(segment.segmentId, outcome, now()), planned)
+            // Same reasoning as NO_SPEECH: the planner found nothing worth uploading (ADR-0017).
+            if (planned.isEmpty()) store.markTranscribed(segment, now())
         }
     }
 

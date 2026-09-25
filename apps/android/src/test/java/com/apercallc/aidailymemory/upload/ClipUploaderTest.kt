@@ -200,8 +200,23 @@ class ClipUploaderTest {
         assertTrue(api.creates.isEmpty())
         assertEquals(0, run.remaining)
         assertEquals(ClipUploader.NO_SPEECH, db.clips().planFor(segment.segmentId)?.outcome)
-        // "No speech detected" is not "transcript stored": the audio isn't released.
-        assertEquals(SegmentState.SEALED.name, stateOf(segment))
+        // Nothing was ever going to be uploaded, so nothing to wait on: acknowledged locally
+        // and governed by AudioRetention like any other audio (ADR-0017).
+        assertEquals(SegmentState.ACKNOWLEDGED.name, stateOf(segment))
+    }
+
+    @Test
+    fun `a segment whose speech regions plan no clips is also acknowledged locally`() = runTest {
+        // A region entirely past the segment's own duration (6.4 s): regionCount is 1, but it
+        // rounds to zero frames once clamped, so the planner produces zero clips.
+        val segment = analyzed(10_000L to 10_030L)
+
+        val run = uploader().run()
+
+        assertTrue(api.creates.isEmpty())
+        assertEquals(0, run.remaining)
+        assertEquals(ClipUploader.EMPTY, db.clips().planFor(segment.segmentId)?.outcome)
+        assertEquals(SegmentState.ACKNOWLEDGED.name, stateOf(segment))
     }
 
     @Test
