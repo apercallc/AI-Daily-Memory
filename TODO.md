@@ -489,29 +489,35 @@ Goal: prove reliable Android capture before building AI infrastructure.
 ## MCP
 
 - [x] Directory scaffold
-- [ ] API keys and MCP require a cloud storage mode; key creation offers the opt-in (ADR-0014)
-- [ ] Read-only initial server
-- [ ] ask_memory
-- [ ] search_memory
-- [ ] get_day
-- [ ] get_timeline
-- [ ] get_decisions
-- [ ] get_action_items
-- [ ] get_daily_report (returns contracts/daily-report.v1.schema.json)
-- [ ] get_commitments
-- [ ] get_highlights
-- [ ] Per-user authorization
-- [ ] Bounded result sizes
-- [ ] No direct database access
-- [ ] No bulk transcript export by default
-- [ ] Transcript text returned as bounded, clearly quoted fields (prompt-injection hygiene for the user's agent)
+- [x] API keys and MCP require a cloud storage mode (GET /v1/reports 403 `cloud_storage_required`
+  for non-full_cloud accounts, surfaced as a clear tool error); key creation still offers no
+  opt-in UI — full_cloud is today only reachable via the storage-mode switch, not a
+  dedicated "connect MCP" flow
+- [x] Read-only initial server (interfaces/mcp, FastMCP, stdio transport)
+- [ ] ask_memory (needs semantic recall — Gate F, not crossed; would be speculative to build)
+- [ ] search_memory (same as ask_memory)
+- [x] get_day
+- [x] get_timeline
+- [x] get_decisions
+- [x] get_action_items
+- [x] get_daily_report
+- [x] get_commitments
+- [ ] get_highlights (no highlight data is populated yet — Phase 2's Highlights are unchecked)
+- [x] Per-user authorization (the backend's own bearer-token scoping; MCP adds nothing new here)
+- [x] Bounded result sizes (inherits the report contract's own list caps, ≤50 items each)
+- [x] No direct database access (the MCP server's only dependency is the backend HTTP API)
+- [x] No bulk transcript export by default (no tool ever returns transcript_segments)
+- [ ] Transcript text returned as bounded, clearly quoted fields (prompt-injection hygiene for the user's agent) — moot today: no tool returns transcript text at all
 - [ ] Audit sensitive tool access
-- [ ] API-key authentication for user-owned third-party clients
-- [ ] Key scopes (read-only initially) and least-privilege defaults
-- [ ] Key creation / rotation / revocation UI and API
+- [x] API-key authentication for user-owned third-party clients (existing `kind="api"` tokens,
+  `memory:read` scope by default)
+- [x] Key scopes (read-only initially) and least-privilege defaults (API_KEY_SCOPES, app/auth.py)
+- [ ] Key creation / rotation / revocation UI and API (still admin-CLI or self-service-signup
+  device tokens only; no dedicated API-key management surface)
 - [ ] Per-key and per-user rate limits
-- [ ] Key stored only as a secure hash
-- [ ] MCP transport auth (authenticate the calling user, never a shared service key)
+- [x] Key stored only as a secure hash (SHA-256, app/auth.py — predates this task)
+- [x] MCP transport auth (authenticate the calling user, never a shared service key — one MCP
+  process per account, that account's own API key from its own environment)
 
 ## CLI
 

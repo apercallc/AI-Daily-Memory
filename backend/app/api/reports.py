@@ -2,7 +2,11 @@
 
     GET /v1/reports/{memory_day}   the assembled report for that day, or 404 before it exists
 
-Read-only: reports are always rebuilt from `memory_items` by extraction, never edited here.
+Read-only: reports are always rebuilt from `memory_items` by extraction, never edited here. A
+report only ever exists for a `full_cloud` account (ADR-0019), so a non-full_cloud caller gets a
+clear 403 rather than an indistinguishable-from-just-not-generated-yet 404 (TODO.md Phase 5:
+"API keys and MCP require a cloud storage mode") — the entitlement check server-authoritative
+clients (MCP, the CLI, third-party API keys) are meant to rely on, per AGENTS.md rule 3.
 """
 
 from datetime import date
@@ -14,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.db import get_session
-from app.db.models import DailyReportRow
+from app.db.models import DailyReportRow, User
 from app.errors import ErrorResponse, error_response
 
 router = APIRouter(tags=["reports"])
@@ -26,6 +30,13 @@ _ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s
 
 @router.get("/reports/{memory_day}", responses=_ERRORS)
 async def get_report(memory_day: date, session: Session, reader: Reader) -> dict[str, object]:
+    mode = await session.scalar(select(User.storage_mode).where(User.id == reader.user_id))
+    if mode != "full_cloud":
+        return error_response(  # type: ignore[return-value]
+            403,
+            "Daily reports need full-cloud storage mode.",
+            code="cloud_storage_required",
+        )
     row = await session.scalar(
         select(DailyReportRow).where(
             DailyReportRow.user_id == reader.user_id,
