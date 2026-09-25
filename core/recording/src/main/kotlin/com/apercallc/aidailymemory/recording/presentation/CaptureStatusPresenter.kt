@@ -35,6 +35,11 @@ data class CaptureStatusModel(
     val primaryAction: PrimaryAction,
     val canStop: Boolean,
     val canMark: Boolean,
+    /**
+     * INTERRUPTED only: the user may ask to reopen the microphone ("tap to resume"). Pause stays
+     * the primary action because the engine may still recover by itself.
+     */
+    val canRetry: Boolean,
     val problem: CaptureProblem?,
     val issues: List<HealthIssue>,
 )
@@ -77,6 +82,7 @@ object CaptureStatusPresenter {
             },
             canStop = status in STOPPABLE,
             canMark = status == RecordingStatus.RECORDING && !capturingFailed,
+            canRetry = status == RecordingStatus.INTERRUPTED,
             problem = state.problem,
             issues = health.issues,
         )

@@ -157,8 +157,13 @@ object RecordingStateMachine {
 
             // Never straight to RECORDING: after a restart the service may be gone, so the
             // engine must confirm audio is flowing (`Started`) before we claim capture.
-            RecordingCommand.Resume ->
-                current.moveToIf(status == RecordingStatus.PAUSED, RecordingStatus.RESUMING)
+            // From INTERRUPTED this is the user's "try again" (e.g. "tap to resume" after a
+            // reboot, which the engine may never recover from by itself).
+            RecordingCommand.Resume -> when (status) {
+                RecordingStatus.PAUSED, RecordingStatus.INTERRUPTED ->
+                    current.moveTo(RecordingStatus.RESUMING)
+                else -> null
+            }
 
             RecordingCommand.Stop -> when (status) {
                 RecordingStatus.STARTING,
@@ -230,8 +235,11 @@ object RecordingStateMachine {
                 event.sessionId == current.sessionId &&
                     (status == RecordingStatus.STARTING || status == RecordingStatus.RECORDING)
             RecordingCommand.Pause -> status == RecordingStatus.PAUSED
+            // While the engine is already recovering, a user resume adds nothing.
             RecordingCommand.Resume ->
-                status == RecordingStatus.RESUMING || status == RecordingStatus.RECORDING
+                status == RecordingStatus.RESUMING ||
+                    status == RecordingStatus.RECORDING ||
+                    status == RecordingStatus.RECOVERING
             RecordingCommand.Stop ->
                 status == RecordingStatus.STOPPING || status == RecordingStatus.COMPLETED
             RecordingCommand.Reset -> status == RecordingStatus.IDLE

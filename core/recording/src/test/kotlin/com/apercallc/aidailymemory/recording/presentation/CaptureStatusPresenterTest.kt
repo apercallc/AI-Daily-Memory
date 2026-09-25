@@ -110,4 +110,11 @@ class CaptureStatusPresenterTest {
         )
         assertEquals(setOf(RecordingStatus.RECORDING), markable)
     }
+
+    @Test
+    fun `only an interrupted session offers a user retry`() {
+        val retryable = RecordingStatus.entries.filter { present(it).canRetry }.toSet()
+
+        assertEquals(setOf(RecordingStatus.INTERRUPTED), retryable)
+    }
 }

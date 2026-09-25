@@ -71,6 +71,7 @@ class RecordingStateMachineTest {
         (RESUMING to RecordingCommand.Stop) to STOPPING,
         (PAUSED to RecordingCommand.Stop) to STOPPING,
         (INTERRUPTED to recoveryStarted) to RECOVERING,
+        (INTERRUPTED to RecordingCommand.Resume) to RESUMING,
         (INTERRUPTED to RecordingCommand.Pause) to PAUSED,
         (INTERRUPTED to RecordingCommand.Stop) to STOPPING,
         (RECOVERING to recovered) to RECORDING,
@@ -88,6 +89,7 @@ class RecordingStateMachineTest {
         PAUSED to RecordingCommand.Pause,
         RECORDING to RecordingCommand.Resume,
         RESUMING to RecordingCommand.Resume,
+        RECOVERING to RecordingCommand.Resume,
         STOPPING to RecordingCommand.Stop,
         COMPLETED to RecordingCommand.Stop,
         IDLE to RecordingCommand.Reset,
@@ -233,6 +235,19 @@ class RecordingStateMachineTest {
         assertEquals(INTERRUPTED, failed.status)
         assertEquals(sessionA, failed.sessionId)
         assertEquals(CaptureProblem.FOREGROUND_START_NOT_ALLOWED, failed.problem)
+    }
+
+    @Test
+    fun `user resume after a reboot interruption waits for the engine before recording`() {
+        val rebooted = stateIn(INTERRUPTED).copy(problem = CaptureProblem.DEVICE_REBOOTED)
+
+        val resuming = RecordingStateMachine.reduce(rebooted, RecordingCommand.Resume).state
+        assertEquals(RESUMING, resuming.status)
+        assertNull(resuming.problem)
+
+        val recording = RecordingStateMachine.reduce(resuming, started).state
+        assertEquals(RECORDING, recording.status)
+        assertEquals(sessionA, recording.sessionId)
     }
 
     @Test
