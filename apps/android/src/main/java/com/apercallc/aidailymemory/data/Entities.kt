@@ -172,3 +172,26 @@ data class SpeechRegionEntity(
 
 /** Totals across analyzed segments, for the Gate B cost model (docs/performance). */
 data class SpeechTotals(val analyzedMs: Long, val speechMs: Long, val paddedMs: Long)
+
+/**
+ * One planned upload clip (ADR-0015): frames [firstFrame, endFrame) of a segment. [clipId] is
+ * a client UUIDv7 and the server-side upload id, so every protocol step is retry-safe.
+ */
+@Entity(
+    tableName = "clip_upload",
+    indices = [Index(value = ["segment_id", "first_frame"], unique = true), Index("state")],
+)
+data class ClipUploadEntity(
+    @PrimaryKey @ColumnInfo(name = "clip_id") val clipId: String,
+    @ColumnInfo(name = "segment_id") val segmentId: String,
+    @ColumnInfo(name = "first_frame") val firstFrame: Int,
+    @ColumnInfo(name = "end_frame") val endFrame: Int,
+    @ColumnInfo(name = "offset_ms") val offsetMs: Long,
+    @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    @ColumnInfo(name = "byte_size") val byteSize: Long,
+    val sha256: String,
+    /** PENDING until the server has verified the bytes (RECEIVED); FAILED is terminal. */
+    val state: String,
+    val attempts: Int,
+    @ColumnInfo(name = "last_error") val lastError: String?,
+)

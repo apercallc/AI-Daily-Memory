@@ -55,7 +55,7 @@ class SpeechAnalysisJobService : JobService() {
             } finally {
                 jobFinished(params, false)
             }
-            if (more) container.speechScheduler.schedule()
+            if (more) container.speechScheduler.schedule() else container.afterSpeechAnalysis()
         }
         return true
     }

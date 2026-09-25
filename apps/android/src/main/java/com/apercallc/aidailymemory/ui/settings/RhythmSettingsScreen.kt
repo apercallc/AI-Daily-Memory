@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.net.LinkInput
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.schedule.QuietWindow
@@ -71,6 +72,9 @@ fun RhythmSettingsScreen(
     onRhythmChange: (DailyRhythm) -> Unit,
     onRetentionChange: (AudioRetention) -> Unit,
     modifier: Modifier = Modifier,
+    account: AccountUi? = null,
+    onConnect: (String, String) -> LinkInput = { _, _ -> LinkInput.InvalidUrl },
+    onDisconnect: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(
@@ -85,6 +89,10 @@ fun RhythmSettingsScreen(
         QuietSection(rhythm, onRhythmChange)
         HorizontalDivider()
         AudioSection(retention, bytesPerHour, onRetentionChange)
+        account?.let {
+            HorizontalDivider()
+            AccountSection(it, onConnect, onDisconnect)
+        }
     }
 }
 

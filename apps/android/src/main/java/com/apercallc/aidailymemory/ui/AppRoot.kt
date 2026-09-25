@@ -100,6 +100,7 @@ private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
 private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val rhythm by viewModel.rhythm.collectAsStateWithLifecycle()
     val retention by viewModel.retention.collectAsStateWithLifecycle()
+    val account by viewModel.account.collectAsStateWithLifecycle()
     // Recomputed on a slow tick too, so "Next: …" never shows a time that already passed.
     val next by produceState<NextChange?>(initialValue = null, rhythm) {
         while (true) {
@@ -116,6 +117,9 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
             showUnreadableNotice = viewModel.hadUnreadableRhythm,
             onRhythmChange = viewModel::updateRhythm,
             onRetentionChange = viewModel::updateRetention,
+            account = account,
+            onConnect = viewModel::connect,
+            onDisconnect = viewModel::disconnect,
             modifier = modifier,
         )
     }

@@ -22,8 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SessionInfoEntity::class,
         SegmentSpeechEntity::class,
         SpeechRegionEntity::class,
+        ClipUploadEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -32,12 +33,13 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun markers(): MarkerDao
     abstract fun sessions(): SessionDao
     abstract fun speech(): SpeechDao
+    abstract fun clips(): ClipDao
 
     companion object {
         const val NAME = "capture.db"
 
         /** Every migration, in order. Tests open old databases with exactly this list. */
-        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         fun open(context: Context): CaptureDatabase =
             Room.databaseBuilder(context.applicationContext, CaptureDatabase::class.java, NAME)
@@ -89,6 +91,28 @@ abstract class CaptureDatabase : RoomDatabase() {
                         "`end_ms` INTEGER NOT NULL, `speech_ms` INTEGER NOT NULL, " +
                         "`low_confidence` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`segment_id`, `start_ms`))",
+                )
+            }
+        }
+    
+        /** Adds the clip upload queue (ADR-0015, Phase 1). New table only. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `clip_upload` (" +
+                        "`clip_id` TEXT NOT NULL, `segment_id` TEXT NOT NULL, " +
+                        "`first_frame` INTEGER NOT NULL, `end_frame` INTEGER NOT NULL, " +
+                        "`offset_ms` INTEGER NOT NULL, `duration_ms` INTEGER NOT NULL, " +
+                        "`byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, " +
+                        "`state` TEXT NOT NULL, `attempts` INTEGER NOT NULL, " +
+                        "`last_error` TEXT, PRIMARY KEY(`clip_id`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_clip_upload_segment_id_first_frame` " +
+                        "ON `clip_upload` (`segment_id`, `first_frame`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_clip_upload_state` ON `clip_upload` (`state`)",
                 )
             }
         }

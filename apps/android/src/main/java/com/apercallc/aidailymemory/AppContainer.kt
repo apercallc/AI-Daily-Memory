@@ -6,6 +6,10 @@ import android.util.Log
 import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
 import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
 import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
+import com.apercallc.aidailymemory.net.HttpUploadApi
+import com.apercallc.aidailymemory.net.LinkStore
+import com.apercallc.aidailymemory.upload.ClipUploader
+import com.apercallc.aidailymemory.upload.UploadScheduler
 import com.apercallc.aidailymemory.capture.AudioCaptureEngine
 import com.apercallc.aidailymemory.capture.CaptureHealthTracker
 import com.apercallc.aidailymemory.capture.CaptureOverview
@@ -247,6 +251,42 @@ class AppContainer(context: Context) {
         SpeechAnalyzer(segments, database.speech(), MediaCodecAacDecoder())
     }
     val speechScheduler = SpeechAnalysisScheduler(app)
+
+    /** Account link (encrypted device token). Absent until the user connects. */
+    val links: LinkStore by lazy {
+        LinkStore(
+            app.getSharedPreferences(LinkStore.FILE_NAME, Context.MODE_PRIVATE),
+            aead = { linkAead },
+        )
+    }
+    private val linkAead by lazy { LinkStore.keystoreAead(app) }
+
+    val uploadScheduler = UploadScheduler(app)
+
+    /** Phase 1 uploads (ADR-0015); runs only while linked, charging, on unmetered networks. */
+    val clipUploader: ClipUploader by lazy {
+        ClipUploader(
+            store = segments,
+            segments = database.segments(),
+            clips = database.clips(),
+            speech = database.speech(),
+            api = HttpUploadApi(),
+            link = { links.link.value },
+            ids = ids,
+        )
+    }
+
+    /** New speech analysis may have produced clips; upload them on the next good window. */
+    fun afterSpeechAnalysis() {
+        if (links.isLinked) uploadScheduler.schedule()
+    }
+
+    /** The server refused the token: stop trying and ask the user to reconnect. */
+    fun onLinkRejected() {
+        Log.w(TAG, "account_link_rejected")
+        links.clear(rejected = true)
+        uploadScheduler.cancel()
+    }
 
     /** One presenter output for the app screen and the notification. */
     val statusModels: Flow<CaptureStatusModel?> by lazy {

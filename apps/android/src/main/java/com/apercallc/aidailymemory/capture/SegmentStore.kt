@@ -169,6 +169,9 @@ class SegmentStore(
         return deleted
     }
 
+    /** Every clip of this segment is on the server and verified (ADR-0015). */
+    suspend fun markUploaded(entity: SegmentEntity): SegmentEntity = apply(entity, SegmentEvent.UploadCompleted)
+
     /**
      * The decrypted, fully valid ADTS stream of a sealed segment, or null when the file is gone
      * (retention), fails authentication, or doesn't parse cleanly. Never partial audio.

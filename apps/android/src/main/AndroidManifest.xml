@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Short, timed partial wake locks while an automatic recovery retry is pending. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Uploads to the user's own account backend (HTTPS only; cleartext is disabled). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
@@ -64,6 +67,12 @@
         <!-- Charging-time speech analysis (ADR-0015). Only the system may bind it. -->
         <service
             android:name=".analysis.SpeechAnalysisJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Clip uploads while charging on unmetered networks (ADR-0015). System-bound only. -->
+        <service
+            android:name=".upload.UploadJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

@@ -187,4 +187,17 @@
     <string name="next_end_day">Next: the day ends at %1$s</string>
     <string name="next_reminder">Next: morning reminder at %1$s</string>
     <string name="schedule_unreadable">Your previous schedule couldn\'t be read, so none is active. Set it again below.</string>
+    <!-- Account link (Phase 1 uploads) -->
+    <string name="account_title">Account</string>
+    <string name="account_explainer">Connect your account to turn speech into transcripts and your daily report. Only speech clips are sent, and only while charging on Wi-Fi.</string>
+    <string name="account_rejected">Your account connection was signed out. Connect again with a new device token.</string>
+    <string name="account_url">Server address</string>
+    <string name="account_token">Device token</string>
+    <string name="account_url_invalid">Enter an https:// address.</string>
+    <string name="account_token_invalid">That doesn\'t look like a device token (it starts with adm_).</string>
+    <string name="account_save_failed">Couldn\'t store the token securely on this phone. Nothing was saved.</string>
+    <string name="account_connect">Connect</string>
+    <string name="account_connected">Connected to %1$s</string>
+    <string name="account_upload_rules">Speech clips upload while charging on Wi-Fi. Audio stays on this phone until its transcript is stored.</string>
+    <string name="account_disconnect">Disconnect</string>
 </resources>

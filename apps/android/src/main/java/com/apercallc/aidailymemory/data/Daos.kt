@@ -165,3 +165,52 @@ interface SpeechDao {
     )
     suspend fun totalsSince(sinceEpochMs: Long): SpeechTotals
 }
+
+@Dao
+interface ClipDao {
+    /** Analyzed segments with speech whose clips haven't been planned yet. */
+    @Query(
+        """
+        SELECT s.* FROM audio_segment s
+        JOIN segment_speech a ON a.segment_id = s.segment_id AND a.outcome = 'OK'
+        WHERE s.state = 'SEALED'
+            AND NOT EXISTS (SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id)
+        ORDER BY s.start_occurred_at_epoch_ms, s.sequence
+        LIMIT :limit
+        """,
+    )
+    suspend fun unplanned(limit: Int): List<SegmentEntity>
+
+    /** Idempotent: planning the same segment twice keeps the first plan (and its clip ids). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun plan(clips: List<ClipUploadEntity>)
+
+    @Query("SELECT * FROM clip_upload WHERE state = 'PENDING' ORDER BY segment_id, first_frame LIMIT :limit")
+    suspend fun pending(limit: Int): List<ClipUploadEntity>
+
+    @Update
+    suspend fun update(clip: ClipUploadEntity)
+
+    @Query("SELECT * FROM clip_upload WHERE segment_id = :segmentId ORDER BY first_frame")
+    suspend fun forSegment(segmentId: String): List<ClipUploadEntity>
+
+    /**
+     * Sealed, analyzed segments whose every clip the server has verified, or which had no
+     * speech to upload at all: ready for UploadCompleted.
+     */
+    @Query(
+        """
+        SELECT s.* FROM audio_segment s
+        JOIN segment_speech a ON a.segment_id = s.segment_id AND a.outcome = 'OK'
+        WHERE s.state = 'SEALED'
+            AND (a.region_count = 0 OR EXISTS (SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id))
+            AND NOT EXISTS (
+                SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id AND c.state != 'RECEIVED'
+            )
+        """,
+    )
+    suspend fun fullyUploaded(): List<SegmentEntity>
+
+    @Query("SELECT COUNT(*) FROM clip_upload WHERE state = 'PENDING'")
+    suspend fun pendingCount(): Int
+}

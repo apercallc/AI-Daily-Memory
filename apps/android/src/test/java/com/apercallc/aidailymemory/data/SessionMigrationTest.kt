@@ -87,6 +87,18 @@ class SessionMigrationTest {
     }
 
     @Test
+    fun `migrating to v4 adds the clip upload queue`() {
+        helper.createDatabase(DB, 3).close()
+
+        helper.runMigrationsAndValidate(DB, 4, true, CaptureDatabase.MIGRATION_3_4).use { db ->
+            db.query("SELECT COUNT(*) FROM clip_upload").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+    }
+
+    @Test
     fun `registry fixes the memory day at start, and renames are validated`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, CaptureDatabase::class.java)
