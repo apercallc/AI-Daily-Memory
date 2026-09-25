@@ -44,6 +44,9 @@ android {
     lint {
         abortOnError = true
         warningsAsErrors = true
+        // Version-drift checks depend on what was published upstream today, not on this
+        // change, so they would turn main red without a commit. Dependabot owns upgrades.
+        disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable")
         checkDependencies = true
     }
 
