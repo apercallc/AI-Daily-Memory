@@ -271,6 +271,10 @@ PostgreSQL
 
 Do not allow MCP to query the database directly.
 
+MCP and the public API serve only server-held data. Users in the default "On this phone" storage
+mode must opt into a cloud mode before creating an API key
+([ADR-0014](docs/adr/0014-where-memory-lives.md)).
+
 Initial read-only MCP tools may include:
 
 ```text
@@ -520,6 +524,9 @@ Requirements:
 - introduce aggressive filtering only after testing
 
 Missing one important sentence is more damaging than transcribing a small amount of extra audio.
+
+Concrete design (proposed): [ADR-0015](docs/adr/0015-speech-gating-and-night-processing.md) —
+gate on speech, not importance; VAD runs at night on the charger, not on the recording hot path.
 
 ---
 
@@ -815,7 +822,9 @@ Corrections are stored separately from original transcript evidence.
 
 # Speaker Handling
 
-Do not build voice biometrics for the MVP.
+Proposed in [ADR-0016](docs/adr/0016-owner-voice-attribution.md): the account owner may enroll
+their own voice (explicit consent, embedding kept on the phone only) so turns are labeled Me vs
+others. Never build voiceprints for anyone else.
 
 Start with:
 
@@ -1405,6 +1414,9 @@ Use Architecture Decision Records for decisions that are expensive to reverse.
 | [0011](docs/adr/0011-quick-note-and-markers.md) | Quick Note and highlights are markers inside a session |
 | [0012](docs/adr/0012-daily-rhythm.md) | Daily rhythm: sleep schedule, quiet times, memory days, daily report |
 | [0013](docs/adr/0013-opt-in-local-audio-retention.md) | Transcripts by default; opt-in, local-only audio keeping |
+| [0014](docs/adr/0014-where-memory-lives.md) | Proposed: memory on the phone by default; cloud modes opt-in; API/MCP needs a cloud mode |
+| [0015](docs/adr/0015-speech-gating-and-night-processing.md) | Proposed: transcribe speech only; VAD + clip upload at night on the charger |
+| [0016](docs/adr/0016-owner-voice-attribution.md) | Proposed: on-device owner voice (Me vs others) for action-item attribution |
 
 ---
 

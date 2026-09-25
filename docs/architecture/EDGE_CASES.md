@@ -171,6 +171,26 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | "Hide silent notifications" enabled | Indicator channel is default importance (silent sound), so it stays visible |
 | Duplicate Start tap | Ignored instead of a false "action not available" |
 
+## 9. Where memory lives, speech, and speakers (ADR-0014/0015/0016, proposed)
+
+Speech and speaker cases are listed in ADR-0015 and ADR-0016. This section covers storage and
+data rights.
+
+| Edge case | Designed behavior |
+| --- | --- |
+| Phone lost or reset in "On this phone" mode | Data is gone except Drive exports. Onboarding says so, and the app shows "last saved to Drive" |
+| User creates an API key while in "On this phone" | Blocked with an explanation, and offered "Reports in my cloud account" |
+| Phone offline longer than the transient hold (7 days) | Bundle is crypto-shredded. The audio is still unacknowledged on the phone and is re-uploaded |
+| Crash between bundle download and ack | Ack happens only after verify + persist. The re-download is idempotent by day and bundle ID |
+| Switch cloud to phone mid-download | Server deletes only after the phone reports a verified, complete copy |
+| Two phones on one account in "On this phone" mode | v1 allows one capture phone per account. A second phone must use a cloud mode |
+| Drive token revoked, Drive full, or Drive offline | Export is marked failed, retried with backoff, and the user is notified once. The report stays on the phone |
+| User edits the report in Drive | Never read back. Drive is a copy, not the source of truth |
+| Subscription lapses | Data already on the phone or in the cloud stays readable and exportable. Only new processing stops, and audio waits under normal retention |
+| Processing error mid-day | Job dead-letters with a reason. The phone's audio is still unacknowledged, so the next night retries |
+| Transcript text in logs or crash reports | Forbidden by the logging rules. Providers are zero-retention and no-training |
+| Other people's voices | No voiceprints, ever. They're anonymous per conversation, and names are text labels |
+
 ## Open
 
 - ✅ Quick Note model: a marker window inside the active session (ADR-0011).

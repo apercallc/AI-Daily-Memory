@@ -68,8 +68,8 @@ self-service data export. Three more rules follow from that:
 - **ADRs:** any decision that reverses a recorded one (offline-first, temporary raw
   audio, evidence-backed memory, single query service, client IDs/time model,
   append-safe encrypted segments, watch protocol + shared applicationId, backend as sole
-  DB client, mic service lifecycle, markers, daily rhythm, audio retention —
-  ADR-0001…0013) requires a new ADR first, not a
+  DB client, mic service lifecycle, markers, daily rhythm, audio retention, where memory
+  lives, speech gating, owner voice — ADR-0001…0016) requires a new ADR first, not a
   silent change.
 
 ## Build and verify

@@ -278,6 +278,32 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Delete temporary cloud audio only after verified transcript persistence
 - [ ] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
 
+## Speech gating + night processing (ADR-0015, proposed)
+
+- [ ] Labeled day-audio set (speech / no speech / media / whisper / pocket) for VAD tuning
+- [ ] Night WorkManager job: charging + unmetered, deadline fallback at wake + 2 h, "late" flag
+- [ ] Measure MediaCodec decode + VAD throughput on the device matrix (docs/performance)
+- [ ] Energy gate then Silero VAD (ONNX Runtime, stable); pre/post-roll, gap merge as config
+- [ ] Cut clips on ADTS frame boundaries; clip carries segment_id + offset
+- [ ] VAD failure falls back to the energy gate (more audio, never less); capture-health event
+- [ ] High-fidelity setting (all non-silent audio)
+- [ ] Coverage states: not recording / no speech / not yet processed / over plan limit
+- [ ] Plan daily speech-minute limit enforced server-side; overflow kept locally, shown as a gap
+- [ ] "Muffled" capture-health signal (phone in pocket/bag)
+
+## Storage modes (ADR-0014, proposed)
+
+- [ ] Account storage mode: On this phone (default) / Reports in cloud / Full cloud memory
+- [ ] Transient processing hold: until device ack, max 7 days, then crypto-shred
+- [ ] Day bundle encrypted to a per-device Keystore public key (Tink)
+- [ ] Invariant test: local audio deleted only after its transcript is persisted where the user's data lives
+- [ ] Expired bundle -> unacknowledged audio re-uploaded (no silent loss)
+- [ ] Cross-day context packet (open action items) sent by the phone with the night job
+- [ ] Mode switch phone -> cloud (from now / include history), idempotent by client IDs
+- [ ] Mode switch cloud -> phone: download, verify, then server delete; never delete first
+- [ ] Onboarding copy: "stored only on your phone" vs "never leaves your phone" (processing is cloud)
+- [ ] "Last saved to Drive" indicator; phone-loss warning in phone-only mode
+
 ### Phase 1 exit gate
 
 - [ ] Every acknowledged upload becomes a transcript or an explicit recoverable/terminal failure.
@@ -325,11 +351,27 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Generate the report at bedtime (ReportTiming.dueAt) from structured memory + evidence
 - [ ] Deliver it at wake time (ReportTiming.deliverAt); "partial" while audio is pending
 - [ ] Report screen in the app; share as Markdown (Google Drive via the share sheet)
+- [ ] Optional nightly auto-save to Drive from the phone (`drive.file`, on-device auth; server never holds Drive tokens)
 - [ ] Build from structured memory + evidence
 - [ ] Avoid summary-of-summary drift
 - [ ] Link important items to source timestamps
 - [ ] Regenerate when extraction version changes
 - [ ] Bound LLM context
+
+## Owner voice attribution (ADR-0016, proposed)
+
+- [ ] Legal review: biometric consent (BIPA / CUBI / WA / GDPR Art. 9), published retention schedule
+- [ ] Consent screen; enrollment behind device unlock; delete anytime
+- [ ] Enrollment (~45 s, quality checks), embedding encrypted on device, excluded from backup/export
+- [ ] On-device speaker-embedding model: size, speed, battery measured at night
+- [ ] Owner spans (ME / NOT_ME / UNSURE) uploaded as metadata only
+- [ ] Map diarization clusters to Me by overlap-weighted vote; short turns inherit cluster label
+- [ ] Not-enrolled path: "Someone", report still complete
+- [ ] Extraction: owner + direction (i_committed / asked_of_me / i_asked / they_committed) + confidence
+- [ ] Report contract v1.1 (additive): Your to-dos / Waiting on others / Not sure who
+- [ ] Speaker flip stored as a correction; re-derives affected items
+- [ ] Measure false-Me and missed-Me rates on a real-conditions labeled set
+- [ ] Never store voiceprints for anyone but the enrolled owner (test + review checklist)
 
 ## AI evaluation
 
@@ -423,6 +465,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 ## MCP
 
 - [x] Directory scaffold
+- [ ] API keys and MCP require a cloud storage mode; key creation offers the opt-in (ADR-0014)
 - [ ] Read-only initial server
 - [ ] ask_memory
 - [ ] search_memory
