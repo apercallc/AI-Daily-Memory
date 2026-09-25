@@ -1,5 +1,6 @@
 package com.apercallc.aidailymemory.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +36,10 @@ import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStateMachine
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.Transition
 import java.util.UUID
+
+private const val TAG = "AiDailyMemoryApp"
 
 @Composable
 fun AiDailyMemoryApp() {
@@ -43,8 +47,14 @@ fun AiDailyMemoryApp() {
     // (TODO.md "Wire state machine to Android service").
     var state by remember { mutableStateOf(RecordingState.Initial) }
     fun dispatch(vararg events: RecordingEvent) {
-        state = events.fold(state) { current, event ->
-            RecordingStateMachine.reduce(current, event).state
+        for (event in events) {
+            val result = RecordingStateMachine.reduce(state, event)
+            if (result is Transition.Rejected) {
+                // No silent failure: the service will surface this in capture health.
+                Log.w(TAG, "Rejected ${result.event} in ${result.state.status}")
+                return
+            }
+            state = result.state
         }
     }
     val status = state.status
@@ -76,11 +86,14 @@ fun AiDailyMemoryApp() {
                     when (status) {
                         RecordingStatus.IDLE,
                         RecordingStatus.COMPLETED,
-                        -> dispatch(
+                        -> {
                             // Simulated: real IDs are UUIDv7 from the session repository (ADR-0006).
-                            RecordingCommand.Start(SessionId(UUID.randomUUID().toString())),
-                            CaptureSignal.Started,
-                        )
+                            val sessionId = SessionId(UUID.randomUUID().toString())
+                            dispatch(
+                                RecordingCommand.Start(sessionId),
+                                CaptureSignal.Started(sessionId),
+                            )
+                        }
 
                         RecordingStatus.RECORDING -> dispatch(RecordingCommand.Pause)
                         RecordingStatus.PAUSED -> dispatch(RecordingCommand.Resume)
@@ -121,7 +134,11 @@ fun AiDailyMemoryApp() {
             if (status == RecordingStatus.RECORDING || status == RecordingStatus.PAUSED) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { dispatch(RecordingCommand.Stop, CaptureSignal.Stopped) },
+                    onClick = {
+                        state.sessionId?.let { sessionId ->
+                            dispatch(RecordingCommand.Stop, CaptureSignal.Stopped(sessionId))
+                        }
+                    },
                 ) {
                     Text("End Session")
                 }

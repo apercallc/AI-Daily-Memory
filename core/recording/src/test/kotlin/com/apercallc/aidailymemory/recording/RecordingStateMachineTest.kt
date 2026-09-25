@@ -18,29 +18,46 @@ class RecordingStateMachineTest {
     private val sessionA = SessionId("session-a")
     private val sessionB = SessionId("session-b")
 
+    /** Start for the session the test states are in (a retry). */
+    private val startSame = RecordingCommand.Start(sessionA)
+
+    /** Start for a different session. */
     private val start = RecordingCommand.Start(sessionB)
-    private val startFailed = CaptureSignal.StartFailed(CaptureProblem.PERMISSION_DENIED)
-    private val interrupted = CaptureSignal.Interrupted(CaptureProblem.MICROPHONE_UNAVAILABLE)
+
+    // Signals for the session the test states are in.
+    private val started = CaptureSignal.Started(sessionA)
+    private val startFailed = CaptureSignal.StartFailed(sessionA, CaptureProblem.PERMISSION_DENIED)
+    private val interrupted =
+        CaptureSignal.Interrupted(sessionA, CaptureProblem.MICROPHONE_UNAVAILABLE)
+    private val recoveryStarted = CaptureSignal.RecoveryStarted(sessionA)
+    private val recovered = CaptureSignal.Recovered(sessionA)
+    private val stopped = CaptureSignal.Stopped(sessionA)
 
     private val allEvents: List<RecordingEvent> = listOf(
+        startSame,
         start,
         RecordingCommand.Pause,
         RecordingCommand.Resume,
         RecordingCommand.Stop,
         RecordingCommand.Reset,
-        CaptureSignal.Started,
+        started,
         startFailed,
         interrupted,
-        CaptureSignal.RecoveryStarted,
-        CaptureSignal.Recovered,
-        CaptureSignal.Stopped,
+        recoveryStarted,
+        recovered,
+        stopped,
     )
+
+    /** Transitions allowed to change the session id. */
+    private val sessionChanging = setOf(startSame, start, startFailed, RecordingCommand.Reset)
 
     /** The complete legal transition table. Anything not listed must not change state. */
     private val legal: Map<Pair<RecordingStatus, RecordingEvent>, RecordingStatus> = mapOf(
+        (IDLE to startSame) to STARTING,
         (IDLE to start) to STARTING,
+        (COMPLETED to startSame) to STARTING,
         (COMPLETED to start) to STARTING,
-        (STARTING to CaptureSignal.Started) to RECORDING,
+        (STARTING to started) to RECORDING,
         (STARTING to startFailed) to IDLE,
         (STARTING to RecordingCommand.Stop) to STOPPING,
         (RECORDING to RecordingCommand.Pause) to PAUSED,
@@ -48,21 +65,21 @@ class RecordingStateMachineTest {
         (RECORDING to RecordingCommand.Stop) to STOPPING,
         (PAUSED to RecordingCommand.Resume) to RECORDING,
         (PAUSED to RecordingCommand.Stop) to STOPPING,
-        (INTERRUPTED to CaptureSignal.RecoveryStarted) to RECOVERING,
+        (INTERRUPTED to recoveryStarted) to RECOVERING,
         (INTERRUPTED to RecordingCommand.Pause) to PAUSED,
         (INTERRUPTED to RecordingCommand.Stop) to STOPPING,
-        (RECOVERING to CaptureSignal.Recovered) to RECORDING,
+        (RECOVERING to recovered) to RECORDING,
         (RECOVERING to interrupted) to INTERRUPTED,
         (RECOVERING to RecordingCommand.Pause) to PAUSED,
         (RECOVERING to RecordingCommand.Stop) to STOPPING,
-        (STOPPING to CaptureSignal.Stopped) to COMPLETED,
+        (STOPPING to stopped) to COMPLETED,
         (COMPLETED to RecordingCommand.Reset) to IDLE,
     )
 
     /** Duplicate commands whose intent already holds: acknowledged, not errors. */
     private val idempotent: Set<Pair<RecordingStatus, RecordingEvent>> = setOf(
-        STARTING to start,
-        RECORDING to start,
+        STARTING to startSame,
+        RECORDING to startSame,
         PAUSED to RecordingCommand.Pause,
         RECORDING to RecordingCommand.Resume,
         STOPPING to RecordingCommand.Stop,
@@ -96,6 +113,9 @@ class RecordingStateMachineTest {
                         assertEquals(expected, applied.state.status, "$key")
                         assertEquals(current, applied.previous, "$key")
                         assertEquals(current.revision + 1, applied.state.revision, "$key")
+                        if (event !in sessionChanging) {
+                            assertEquals(current.sessionId, applied.state.sessionId, "$key")
+                        }
                     }
                     key in idempotent -> {
                         assertIs<Transition.Ignored>(result, "$key")
@@ -109,6 +129,47 @@ class RecordingStateMachineTest {
                 assertEquals(event, result.event, "$key")
             }
         }
+    }
+
+    @Test
+    fun `signals from another session are rejected in every state`() {
+        val otherSession = SessionId("stale-session")
+        val foreignSignals = listOf(
+            CaptureSignal.Started(otherSession),
+            CaptureSignal.StartFailed(otherSession, CaptureProblem.UNKNOWN),
+            CaptureSignal.Interrupted(otherSession, CaptureProblem.UNKNOWN),
+            CaptureSignal.RecoveryStarted(otherSession),
+            CaptureSignal.Recovered(otherSession),
+            CaptureSignal.Stopped(otherSession),
+        )
+
+        RecordingStatus.entries.forEach { status ->
+            foreignSignals.forEach { signal ->
+                val current = stateIn(status)
+                val result = RecordingStateMachine.reduce(current, signal)
+                assertIs<Transition.Rejected>(result, "$status + $signal")
+                assertEquals(current, result.state)
+            }
+        }
+    }
+
+    @Test
+    fun `start for a different session while one is active is rejected, not ignored`() {
+        listOf(STARTING, RECORDING).forEach { status ->
+            assertIs<Transition.Rejected>(RecordingStateMachine.reduce(stateIn(status), start))
+            assertIs<Transition.Ignored>(RecordingStateMachine.reduce(stateIn(status), startSame))
+        }
+    }
+
+    @Test
+    fun `stopping an interrupted session keeps the cause through completion`() {
+        val stopping =
+            RecordingStateMachine.reduce(stateIn(INTERRUPTED), RecordingCommand.Stop).state
+        val completed = RecordingStateMachine.reduce(stopping, stopped).state
+
+        assertEquals(CaptureProblem.PHONE_CALL, stopping.problem)
+        assertEquals(COMPLETED, completed.status)
+        assertEquals(CaptureProblem.PHONE_CALL, completed.problem)
     }
 
     @Test
@@ -144,20 +205,20 @@ class RecordingStateMachineTest {
         assertEquals(CaptureProblem.MICROPHONE_UNAVAILABLE, interruptedState.problem)
 
         val recovering = RecordingStateMachine
-            .reduce(interruptedState, CaptureSignal.RecoveryStarted).state
+            .reduce(interruptedState, recoveryStarted).state
         assertEquals(CaptureProblem.MICROPHONE_UNAVAILABLE, recovering.problem)
 
-        val recovered = RecordingStateMachine.reduce(recovering, CaptureSignal.Recovered).state
-        assertEquals(RECORDING, recovered.status)
-        assertNull(recovered.problem)
-        assertEquals(sessionA, recovered.sessionId)
+        val resumed = RecordingStateMachine.reduce(recovering, recovered).state
+        assertEquals(RECORDING, resumed.status)
+        assertNull(resumed.problem)
+        assertEquals(sessionA, resumed.sessionId)
     }
 
     @Test
     fun `failed recovery re-enters interrupted with the new cause`() {
         val next = RecordingStateMachine.reduce(
             stateIn(RECOVERING),
-            CaptureSignal.Interrupted(CaptureProblem.STORAGE_LOW),
+            CaptureSignal.Interrupted(sessionA, CaptureProblem.STORAGE_LOW),
         ).state
 
         assertEquals(INTERRUPTED, next.status)
@@ -183,16 +244,16 @@ class RecordingStateMachineTest {
     @Test
     fun `revision increases by one per applied transition across a full session`() {
         val events = listOf(
-            RecordingCommand.Start(sessionA),
-            CaptureSignal.Started,
+            startSame,
+            started,
             RecordingCommand.Pause,
             RecordingCommand.Pause, // duplicate from a watch retry
             RecordingCommand.Resume,
             interrupted,
-            CaptureSignal.RecoveryStarted,
-            CaptureSignal.Recovered,
+            recoveryStarted,
+            recovered,
             RecordingCommand.Stop,
-            CaptureSignal.Stopped,
+            stopped,
         )
 
         val final = events.fold(RecordingState.Initial) { state, event ->

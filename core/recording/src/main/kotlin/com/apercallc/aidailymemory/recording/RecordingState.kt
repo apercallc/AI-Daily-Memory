@@ -37,7 +37,8 @@ value class SessionId(val value: String) {
  * Snapshot of the recording domain.
  *
  * [revision] increases by exactly one on every applied transition. It orders persisted
- * transitions and lets the watch discard stale state snapshots (ADR-0008).
+ * transitions and lets the watch discard stale state snapshots (ADR-0008). It must be
+ * restored from the persisted journal after process death, never restarted from zero.
  */
 data class RecordingState(
     val status: RecordingStatus,
@@ -70,14 +71,26 @@ sealed interface RecordingCommand : RecordingEvent {
     data object Reset : RecordingCommand
 }
 
-/** Fact reported by the capture engine. Never sent by the watch. */
+/**
+ * Fact reported by the capture engine. Never sent by the watch. Each signal names the
+ * session it belongs to, so a late callback from a previous session is rejected instead of
+ * being applied to the current one.
+ */
 sealed interface CaptureSignal : RecordingEvent {
-    data object Started : CaptureSignal
-    data class StartFailed(val problem: CaptureProblem) : CaptureSignal
-    data class Interrupted(val problem: CaptureProblem) : CaptureSignal
-    data object RecoveryStarted : CaptureSignal
-    data object Recovered : CaptureSignal
-    data object Stopped : CaptureSignal
+    val sessionId: SessionId
+
+    data class Started(override val sessionId: SessionId) : CaptureSignal
+    data class StartFailed(
+        override val sessionId: SessionId,
+        val problem: CaptureProblem,
+    ) : CaptureSignal
+    data class Interrupted(
+        override val sessionId: SessionId,
+        val problem: CaptureProblem,
+    ) : CaptureSignal
+    data class RecoveryStarted(override val sessionId: SessionId) : CaptureSignal
+    data class Recovered(override val sessionId: SessionId) : CaptureSignal
+    data class Stopped(override val sessionId: SessionId) : CaptureSignal
 }
 
 sealed interface Transition {
@@ -108,6 +121,9 @@ sealed interface Transition {
 object RecordingStateMachine {
     fun reduce(current: RecordingState, event: RecordingEvent): Transition {
         val status = current.status
+        if (event is CaptureSignal && event.sessionId != current.sessionId) {
+            return Transition.Rejected(current, event)
+        }
         val next: RecordingState? = when (event) {
             is RecordingCommand.Start -> when (status) {
                 RecordingStatus.IDLE, RecordingStatus.COMPLETED ->
@@ -134,7 +150,7 @@ object RecordingStateMachine {
                 RecordingStatus.PAUSED,
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
-                -> current.moveTo(RecordingStatus.STOPPING)
+                -> current.moveTo(RecordingStatus.STOPPING, current.problem)
                 else -> null
             }
 
@@ -143,7 +159,7 @@ object RecordingStateMachine {
                 else -> null
             }
 
-            CaptureSignal.Started ->
+            is CaptureSignal.Started ->
                 current.moveToIf(status == RecordingStatus.STARTING, RecordingStatus.RECORDING)
 
             is CaptureSignal.StartFailed -> when (status) {
@@ -158,17 +174,21 @@ object RecordingStateMachine {
                 else -> null
             }
 
-            CaptureSignal.RecoveryStarted -> when (status) {
+            is CaptureSignal.RecoveryStarted -> when (status) {
                 RecordingStatus.INTERRUPTED ->
                     current.moveTo(RecordingStatus.RECOVERING, current.problem)
                 else -> null
             }
 
-            CaptureSignal.Recovered ->
+            is CaptureSignal.Recovered ->
                 current.moveToIf(status == RecordingStatus.RECOVERING, RecordingStatus.RECORDING)
 
-            CaptureSignal.Stopped ->
-                current.moveToIf(status == RecordingStatus.STOPPING, RecordingStatus.COMPLETED)
+            // A session that ended after an interruption keeps the cause for the summary.
+            is CaptureSignal.Stopped -> when (status) {
+                RecordingStatus.STOPPING ->
+                    current.moveTo(RecordingStatus.COMPLETED, current.problem)
+                else -> null
+            }
         }
 
         return when {
@@ -177,15 +197,18 @@ object RecordingStateMachine {
                 state = next.copy(revision = current.revision + 1),
                 event = event,
             )
-            isAlreadySatisfied(status, event) -> Transition.Ignored(current, event)
+            isAlreadySatisfied(current, event) -> Transition.Ignored(current, event)
             else -> Transition.Rejected(current, event)
         }
     }
 
-    private fun isAlreadySatisfied(status: RecordingStatus, event: RecordingEvent): Boolean =
-        when (event) {
+    private fun isAlreadySatisfied(current: RecordingState, event: RecordingEvent): Boolean {
+        val status = current.status
+        return when (event) {
+            // Only a retry of the same start is a duplicate; a different session is a conflict.
             is RecordingCommand.Start ->
-                status == RecordingStatus.STARTING || status == RecordingStatus.RECORDING
+                event.sessionId == current.sessionId &&
+                    (status == RecordingStatus.STARTING || status == RecordingStatus.RECORDING)
             RecordingCommand.Pause -> status == RecordingStatus.PAUSED
             RecordingCommand.Resume -> status == RecordingStatus.RECORDING
             RecordingCommand.Stop ->
@@ -193,6 +216,7 @@ object RecordingStateMachine {
             RecordingCommand.Reset -> status == RecordingStatus.IDLE
             is CaptureSignal -> false
         }
+    }
 
     private fun RecordingState.moveTo(
         status: RecordingStatus,

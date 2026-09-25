@@ -35,7 +35,12 @@ state (AGENTS.md). Two constraints shape this:
   (`Applied` / `Ignored` / `Rejected`) and the resulting `revision`. Repeated
   `command_id`s return the cached outcome.
 - **Staleness:** the watch discards snapshots with a `revision` lower than the one it has
-  shown. Because `revision` only increases (reducer invariant), ordering is total.
+  shown. The reducer only ever increments `revision`, and the phone restores it from the
+  persisted transition journal after process death or reboot. It never restarts at 0, so
+  ordering is total across restarts. If the journal is lost (app data cleared), the phone
+  sends a snapshot flagged `reset`, and the watch accepts it unconditionally.
+- **Session scoping:** capture signals carry the `sessionId`. The reducer rejects a late
+  signal from a previous session instead of applying it to the current one.
 - **Timeout UX:** after a timeout without acknowledgement the watch shows "Not confirmed"
   and the last acknowledged state. It never flips the UI optimistically.
 
