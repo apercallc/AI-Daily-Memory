@@ -23,20 +23,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.apercallc.aidailymemory.recording.CaptureSignal
+import com.apercallc.aidailymemory.recording.RecordingCommand
 import com.apercallc.aidailymemory.recording.RecordingEvent
+import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStateMachine
 import com.apercallc.aidailymemory.recording.RecordingStatus
+import com.apercallc.aidailymemory.recording.SessionId
+import java.util.UUID
 
 @Composable
 fun AiDailyMemoryApp() {
-    val machine = remember { RecordingStateMachine() }
-    var status by rememberSaveable { mutableStateOf(RecordingStatus.IDLE) }
+    // Phase 0 shell: state lives here only until the recorder service owns it
+    // (TODO.md "Wire state machine to Android service").
+    var state by remember { mutableStateOf(RecordingState.Initial) }
+    fun dispatch(vararg events: RecordingEvent) {
+        state = events.fold(state) { current, event ->
+            RecordingStateMachine.reduce(current, event).state
+        }
+    }
+    val status = state.status
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -62,21 +73,18 @@ fun AiDailyMemoryApp() {
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    status = when (status) {
+                    when (status) {
                         RecordingStatus.IDLE,
                         RecordingStatus.COMPLETED,
-                        -> machine.reduce(
-                            if (status == RecordingStatus.COMPLETED) {
-                                machine.reduce(status, RecordingEvent.Reset)
-                            } else {
-                                status
-                            },
-                            RecordingEvent.Start,
-                        ).let { machine.reduce(it, RecordingEvent.Started) }
+                        -> dispatch(
+                            // Simulated: real IDs are UUIDv7 from the session repository (ADR-0006).
+                            RecordingCommand.Start(SessionId(UUID.randomUUID().toString())),
+                            CaptureSignal.Started,
+                        )
 
-                        RecordingStatus.RECORDING -> machine.reduce(status, RecordingEvent.Pause)
-                        RecordingStatus.PAUSED -> machine.reduce(status, RecordingEvent.Resume)
-                        else -> status
+                        RecordingStatus.RECORDING -> dispatch(RecordingCommand.Pause)
+                        RecordingStatus.PAUSED -> dispatch(RecordingCommand.Resume)
+                        else -> Unit
                     }
                 },
             ) {
@@ -113,10 +121,7 @@ fun AiDailyMemoryApp() {
             if (status == RecordingStatus.RECORDING || status == RecordingStatus.PAUSED) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        status = machine.reduce(status, RecordingEvent.Stop)
-                            .let { machine.reduce(it, RecordingEvent.Stopped) }
-                    },
+                    onClick = { dispatch(RecordingCommand.Stop, CaptureSignal.Stopped) },
                 ) {
                     Text("End Session")
                 }
