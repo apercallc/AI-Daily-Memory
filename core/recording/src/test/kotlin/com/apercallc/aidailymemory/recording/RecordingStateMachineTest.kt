@@ -11,9 +11,11 @@ import com.apercallc.aidailymemory.recording.RecordingStatus.STARTING
 import com.apercallc.aidailymemory.recording.RecordingStatus.STOPPING
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class RecordingStateMachineTest {
     private val sessionA = SessionId("session-a")
@@ -47,6 +49,16 @@ class RecordingStateMachineTest {
         recoveryStarted,
         recovered,
         stopped,
+        RecordingCommand.ScheduledPause,
+        RecordingCommand.ScheduledResume,
+        RecordingCommand.ScheduledStop,
+    )
+
+    /** Schedule commands are never rejected: when they don't apply, they are ignored. */
+    private val scheduleCommands = setOf(
+        RecordingCommand.ScheduledPause,
+        RecordingCommand.ScheduledResume,
+        RecordingCommand.ScheduledStop,
     )
 
     /** Transitions allowed to change the session id. */
@@ -80,6 +92,16 @@ class RecordingStateMachineTest {
         (RECOVERING to RecordingCommand.Stop) to STOPPING,
         (STOPPING to stopped) to COMPLETED,
         (COMPLETED to RecordingCommand.Reset) to IDLE,
+        (RECORDING to RecordingCommand.ScheduledPause) to PAUSED,
+        (RESUMING to RecordingCommand.ScheduledPause) to PAUSED,
+        (INTERRUPTED to RecordingCommand.ScheduledPause) to PAUSED,
+        (RECOVERING to RecordingCommand.ScheduledPause) to PAUSED,
+        (STARTING to RecordingCommand.ScheduledStop) to STOPPING,
+        (RECORDING to RecordingCommand.ScheduledStop) to STOPPING,
+        (PAUSED to RecordingCommand.ScheduledStop) to STOPPING,
+        (RESUMING to RecordingCommand.ScheduledStop) to STOPPING,
+        (INTERRUPTED to RecordingCommand.ScheduledStop) to STOPPING,
+        (RECOVERING to RecordingCommand.ScheduledStop) to STOPPING,
     )
 
     /** Duplicate commands whose intent already holds: acknowledged, not errors. */
@@ -125,7 +147,7 @@ class RecordingStateMachineTest {
                             assertEquals(current.sessionId, applied.state.sessionId, "$key")
                         }
                     }
-                    key in idempotent -> {
+                    key in idempotent || event in scheduleCommands -> {
                         assertIs<Transition.Ignored>(result, "$key")
                         assertEquals(current, result.state, "$key")
                     }
@@ -318,5 +340,68 @@ class RecordingStateMachineTest {
     @Test
     fun `session id must not be blank`() {
         assertFailsWith<IllegalArgumentException> { SessionId(" ") }
+    }
+}
+
+class ScheduledTransitionsTest {
+    private val session = SessionId("s")
+
+    private fun state(status: RecordingStatus, bySchedule: Boolean = false) =
+        RecordingState(status, session, revision = 3, problem = null, pausedBySchedule = bySchedule)
+
+    private fun reduce(state: RecordingState, event: RecordingEvent) =
+        RecordingStateMachine.reduce(state, event)
+
+    @Test
+    fun `a schedule pause is marked and resumes on its own`() {
+        val paused = reduce(state(RECORDING), RecordingCommand.ScheduledPause).state
+        assertEquals(PAUSED, paused.status)
+        assertTrue(paused.pausedBySchedule)
+
+        val resuming = reduce(paused, RecordingCommand.ScheduledResume)
+        assertEquals(RESUMING, assertIs<Transition.Applied>(resuming).state.status)
+        assertFalse(resuming.state.pausedBySchedule)
+    }
+
+    @Test
+    fun `the schedule never resumes a pause the user made`() {
+        val userPaused = state(PAUSED)
+
+        assertIs<Transition.Ignored>(reduce(userPaused, RecordingCommand.ScheduledResume))
+        // A schedule pause arriving while the user already paused keeps it the user's pause.
+        assertIs<Transition.Ignored>(reduce(userPaused, RecordingCommand.ScheduledPause))
+    }
+
+    @Test
+    fun `pausing during quiet time turns it into the user's pause`() {
+        val converted = reduce(state(PAUSED, bySchedule = true), RecordingCommand.Pause)
+
+        val applied = assertIs<Transition.Applied>(converted)
+        assertEquals(PAUSED, applied.state.status)
+        assertFalse(applied.state.pausedBySchedule)
+        assertIs<Transition.Ignored>(reduce(applied.state, RecordingCommand.ScheduledResume))
+    }
+
+    @Test
+    fun `the user can resume during quiet time and the schedule does not re-pause`() {
+        val resumed = reduce(state(PAUSED, bySchedule = true), RecordingCommand.Resume).state
+        assertEquals(RESUMING, resumed.status)
+
+        val recording = reduce(resumed, CaptureSignal.Started(session)).state
+        // The window-end resume later is a no-op, not an error.
+        assertIs<Transition.Ignored>(reduce(recording, RecordingCommand.ScheduledResume))
+    }
+
+    @Test
+    fun `leaving a schedule pause any other way clears the mark`() {
+        val stopped = reduce(state(PAUSED, bySchedule = true), RecordingCommand.ScheduledStop).state
+
+        assertEquals(STOPPING, stopped.status)
+        assertFalse(stopped.pausedBySchedule)
+    }
+
+    @Test
+    fun `only a paused state can carry the schedule mark`() {
+        assertFailsWith<IllegalArgumentException> { state(RECORDING, bySchedule = true) }
     }
 }

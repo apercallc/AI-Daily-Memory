@@ -117,4 +117,23 @@ class CaptureStatusPresenterTest {
 
         assertEquals(setOf(RecordingStatus.INTERRUPTED), retryable)
     }
+
+    @Test
+    fun `a schedule pause reads as quiet time, still offers resume, and never shows red`() {
+        val quiet = RecordingState(
+            RecordingStatus.PAUSED,
+            SessionId("s"),
+            revision = 3,
+            problem = null,
+            pausedBySchedule = true,
+        )
+
+        val model = CaptureStatusPresenter.present(quiet, CaptureHealth.Unknown)
+
+        assertEquals(Headline.QUIET_TIME, model.headline)
+        assertEquals(StatusTone.PAUSED, model.tone)
+        assertEquals(PrimaryAction.RESUME, model.primaryAction)
+        assertTrue(model.canStop)
+        assertFalse(model.canMark)
+    }
 }

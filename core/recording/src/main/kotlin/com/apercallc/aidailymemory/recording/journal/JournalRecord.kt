@@ -37,6 +37,8 @@ sealed interface RestoredState {
 }
 
 object JournalCodec {
+    private const val SCHEDULED_PAUSE_CAUSE = "command:ScheduledPause"
+
     fun encode(transition: Transition.Applied): JournalRecord = JournalRecord(
         revision = transition.state.revision,
         status = transition.state.status.name,
@@ -59,6 +61,13 @@ object JournalCodec {
             )
         } catch (_: IllegalArgumentException) {
             null
+        }?.let { state ->
+            // Derived, not stored: the newest record is the schedule pause itself exactly
+            // while that pause holds, so the flag survives process death without a column.
+            state.copy(
+                pausedBySchedule = state.status == RecordingStatus.PAUSED &&
+                    latest.cause == SCHEDULED_PAUSE_CAUSE,
+            )
         }
         return decoded?.let(RestoredState::Intact) ?: RestoredState.Corrupt(
             state = RecordingState.Initial.copy(
@@ -75,6 +84,9 @@ object JournalCodec {
         RecordingCommand.Resume -> "command:Resume"
         RecordingCommand.Stop -> "command:Stop"
         RecordingCommand.Reset -> "command:Reset"
+        RecordingCommand.ScheduledPause -> SCHEDULED_PAUSE_CAUSE
+        RecordingCommand.ScheduledResume -> "command:ScheduledResume"
+        RecordingCommand.ScheduledStop -> "command:ScheduledStop"
         is CaptureSignal.Started -> "signal:Started"
         is CaptureSignal.StartFailed -> "signal:StartFailed"
         is CaptureSignal.Interrupted -> "signal:Interrupted"

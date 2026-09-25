@@ -25,7 +25,12 @@ class JournalCodecTest {
             CaptureSignal.Interrupted(session, CaptureProblem.PHONE_CALL),
             CaptureSignal.RecoveryStarted(session),
             CaptureSignal.Recovered(session),
-            RecordingCommand.Stop,
+            RecordingCommand.ScheduledPause,
+            RecordingCommand.ScheduledResume,
+            CaptureSignal.Started(session),
+            RecordingCommand.ScheduledPause,
+            RecordingCommand.Pause, // becomes the user's pause
+            RecordingCommand.ScheduledStop,
             CaptureSignal.Stopped(session),
             RecordingCommand.Reset,
         )
@@ -38,6 +43,21 @@ class JournalCodecTest {
             assertEquals(RestoredState.Intact(applied.state), JournalCodec.restore(record))
             state = applied.state
         }
+    }
+
+    @Test
+    fun `a schedule pause survives process death, a user pause never turns into one`() {
+        val bySchedule = JournalCodec.restore(
+            JournalRecord(9, "PAUSED", "s", null, "command:ScheduledPause"),
+        )
+        val byUser = JournalCodec.restore(JournalRecord(9, "PAUSED", "s", null, "command:Pause"))
+        // A schedule-pause cause on a non-paused record can't mark it (and must not throw).
+        val odd = JournalCodec.restore(JournalRecord(9, "RECORDING", "s", null, "command:ScheduledPause"))
+
+        assertEquals(true, bySchedule.state.pausedBySchedule)
+        assertEquals(false, byUser.state.pausedBySchedule)
+        assertIs<RestoredState.Intact>(odd)
+        assertEquals(false, odd.state.pausedBySchedule)
     }
 
     @Test
@@ -86,6 +106,9 @@ class JournalCodecTest {
             CaptureSignal.RecoveryStarted(session),
             CaptureSignal.Recovered(session),
             CaptureSignal.Stopped(session),
+            RecordingCommand.ScheduledPause,
+            RecordingCommand.ScheduledResume,
+            RecordingCommand.ScheduledStop,
         )
         val causes = events.map(JournalCodec::causeOf)
 

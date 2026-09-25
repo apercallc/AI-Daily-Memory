@@ -17,6 +17,9 @@ enum class Headline {
     /** RECORDING in the state machine, but health says audio is not being saved. */
     NOT_CAPTURING,
     PAUSED,
+
+    /** Paused by the daily rhythm (quiet time); resumes by itself when it ends. */
+    QUIET_TIME,
     RESUMING,
     INTERRUPTED,
     RECOVERING,
@@ -59,7 +62,8 @@ object CaptureStatusPresenter {
             RecordingStatus.STARTING -> Headline.STARTING
             RecordingStatus.RECORDING ->
                 if (capturingFailed) Headline.NOT_CAPTURING else Headline.RECORDING
-            RecordingStatus.PAUSED -> Headline.PAUSED
+            RecordingStatus.PAUSED ->
+                if (state.pausedBySchedule) Headline.QUIET_TIME else Headline.PAUSED
             RecordingStatus.RESUMING -> Headline.RESUMING
             RecordingStatus.INTERRUPTED -> Headline.INTERRUPTED
             RecordingStatus.RECOVERING -> Headline.RECOVERING
@@ -93,7 +97,7 @@ object CaptureStatusPresenter {
         Headline.RECOVERING -> StatusTone.WARNING
         Headline.RECORDING ->
             if (health.level == HealthLevel.WARNING) StatusTone.WARNING else StatusTone.RECORDING
-        Headline.PAUSED -> StatusTone.PAUSED
+        Headline.PAUSED, Headline.QUIET_TIME -> StatusTone.PAUSED
         // Not capturing yet, so never the recording color.
         Headline.STARTING,
         Headline.RESUMING,

@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.recording.segment
 
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -98,6 +99,34 @@ class SegmentLifecycleTest {
                 assertIs<SegmentTransition.Rejected>(it).reason,
             )
         }
+    }
+
+    @Test
+    fun `kept audio outlives the recovery window until the user's setting allows deletion`() {
+        val acknowledged = inState(SegmentState.ACKNOWLEDGED) // acknowledged at 1_000
+        val day = 24 * 60 * 60_000L
+        fun delete(now: Long, retention: AudioRetention) =
+            lifecycle.reduce(acknowledged, SegmentEvent.RetentionDelete(now, retention))
+
+        assertIs<SegmentTransition.Applied>(delete(1_000 + window, AudioRetention.TRANSCRIPT_ONLY))
+        assertEquals(
+            SegmentRejection.RETAINED_BY_USER,
+            assertIs<SegmentTransition.Rejected>(delete(1_000 + window, AudioRetention.KEEP_7_DAYS)).reason,
+        )
+        assertIs<SegmentTransition.Applied>(delete(1_000 + 7 * day, AudioRetention.KEEP_7_DAYS))
+        assertEquals(
+            SegmentRejection.RETAINED_BY_USER,
+            assertIs<SegmentTransition.Rejected>(
+                delete(Long.MAX_VALUE, AudioRetention.KEEP_UNTIL_DELETED),
+            ).reason,
+        )
+        // No setting shortens the recovery window.
+        assertEquals(
+            SegmentRejection.RECOVERY_WINDOW_OPEN,
+            assertIs<SegmentTransition.Rejected>(delete(1_000, AudioRetention.TRANSCRIPT_ONLY)).reason,
+        )
+        // The user can always delete kept audio themselves.
+        assertIs<SegmentTransition.Applied>(lifecycle.reduce(acknowledged, SegmentEvent.UserDelete))
     }
 
     @Test

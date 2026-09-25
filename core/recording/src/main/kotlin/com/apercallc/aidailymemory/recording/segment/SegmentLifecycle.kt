@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.recording.segment
 
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.storage.AudioRetention
 
 /** Device-side lifecycle of one local audio segment (ADR-0007). */
 enum class SegmentState {
@@ -67,8 +68,14 @@ sealed interface SegmentEvent {
     data object UploadCompleted : SegmentEvent
     data class ServerAcknowledged(val sha256: String, val atEpochMs: Long) : SegmentEvent
 
-    /** Automatic cleanup. Only allowed once the retention policy permits it. */
-    data class RetentionDelete(val nowEpochMs: Long) : SegmentEvent
+    /**
+     * Automatic cleanup. Only allowed once the server has acknowledged the audio and both the
+     * recovery window and the user's [retention] setting (ADR-0013) have passed.
+     */
+    data class RetentionDelete(
+        val nowEpochMs: Long,
+        val retention: AudioRetention = AudioRetention.Default,
+    ) : SegmentEvent
 
     /** Explicit user deletion (a user right). Allowed in any state except while writing. */
     data object UserDelete : SegmentEvent
@@ -79,6 +86,9 @@ enum class SegmentRejection {
     CHECKSUM_MISMATCH,
     NOT_ACKNOWLEDGED,
     RECOVERY_WINDOW_OPEN,
+
+    /** The user chose to keep audio longer (or until they delete it). */
+    RETAINED_BY_USER,
     STILL_WRITING,
 }
 
@@ -131,7 +141,7 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
 
             is SegmentEvent.ServerAcknowledged -> acknowledge(segment, event)
 
-            is SegmentEvent.RetentionDelete -> retentionDelete(segment, event.nowEpochMs)
+            is SegmentEvent.RetentionDelete -> retentionDelete(segment, event)
 
             SegmentEvent.UserDelete -> when (state) {
                 SegmentState.WRITING ->
@@ -182,7 +192,10 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
         else -> SegmentTransition.Rejected(segment, SegmentRejection.INVALID_IN_STATE)
     }
 
-    private fun retentionDelete(segment: AudioSegment, nowEpochMs: Long): SegmentTransition =
+    private fun retentionDelete(
+        segment: AudioSegment,
+        event: SegmentEvent.RetentionDelete,
+    ): SegmentTransition =
         when (segment.state) {
             SegmentState.DELETED -> SegmentTransition.Ignored(segment)
             // Quarantined bytes are not usable audio; they can go once reported.
@@ -190,11 +203,15 @@ class SegmentLifecycle(private val recoveryWindowMs: Long) {
                 SegmentTransition.Applied(deleted(segment))
             SegmentState.ACKNOWLEDGED -> {
                 val acknowledgedAt = checkNotNull(segment.acknowledgedAtEpochMs)
+                val keepForMs = event.retention.keepForMs
                 // If the wall clock went backwards, the window just lasts longer, which is safe.
-                if (nowEpochMs - acknowledgedAt >= recoveryWindowMs) {
-                    SegmentTransition.Applied(deleted(segment))
-                } else {
-                    SegmentTransition.Rejected(segment, SegmentRejection.RECOVERY_WINDOW_OPEN)
+                val age = event.nowEpochMs - acknowledgedAt
+                when {
+                    age < recoveryWindowMs ->
+                        SegmentTransition.Rejected(segment, SegmentRejection.RECOVERY_WINDOW_OPEN)
+                    keepForMs == null || age < keepForMs ->
+                        SegmentTransition.Rejected(segment, SegmentRejection.RETAINED_BY_USER)
+                    else -> SegmentTransition.Applied(deleted(segment))
                 }
             }
             else -> SegmentTransition.Rejected(segment, SegmentRejection.NOT_ACKNOWLEDGED)

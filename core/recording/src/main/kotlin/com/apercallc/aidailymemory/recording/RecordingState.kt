@@ -52,14 +52,21 @@ value class SessionId(val value: String) {
  * [revision] increases by exactly one on every applied transition. It orders persisted
  * transitions and lets the watch discard stale state snapshots (ADR-0008). It must be
  * restored from the persisted journal after process death, never restarted from zero.
+ *
+ * [pausedBySchedule] is true only for a pause the daily rhythm made (quiet time, ADR-0012).
+ * Only such a pause is ever resumed automatically; a pause the user made never is.
  */
 data class RecordingState(
     val status: RecordingStatus,
     val sessionId: SessionId?,
     val revision: Long,
     val problem: CaptureProblem?,
+    val pausedBySchedule: Boolean = false,
 ) {
     init {
+        require(!pausedBySchedule || status == RecordingStatus.PAUSED) {
+            "only a PAUSED state can be paused by the schedule"
+        }
         // Every non-idle state belongs to a session; this also rejects corrupt persisted state.
         require((status == RecordingStatus.IDLE) == (sessionId == null)) {
             "sessionId must be null exactly when status is IDLE (status=$status)"
@@ -90,6 +97,19 @@ sealed interface RecordingCommand : RecordingEvent {
     data object Resume : RecordingCommand
     data object Stop : RecordingCommand
     data object Reset : RecordingCommand
+
+    /**
+     * From the daily rhythm (ADR-0012), never from a person. Schedule commands are never
+     * rejected: when they don't apply (nothing is recording, the user already paused) they
+     * are ignored, so a schedule tick can't produce an error the user didn't cause.
+     */
+    data object ScheduledPause : RecordingCommand
+
+    /** Resumes only a pause the schedule made. */
+    data object ScheduledResume : RecordingCommand
+
+    /** Bedtime: ends the session like Stop. */
+    data object ScheduledStop : RecordingCommand
 }
 
 /**
@@ -161,8 +181,26 @@ object RecordingStateMachine {
                 RecordingStatus.INTERRUPTED,
                 RecordingStatus.RECOVERING,
                 -> current.moveTo(RecordingStatus.PAUSED)
+                // Pausing during quiet time makes it the user's pause: when quiet time ends,
+                // it stays paused.
+                RecordingStatus.PAUSED ->
+                    current.moveToIf(current.pausedBySchedule, RecordingStatus.PAUSED)
                 else -> null
             }
+
+            RecordingCommand.ScheduledPause -> when (status) {
+                RecordingStatus.RECORDING,
+                RecordingStatus.RESUMING,
+                RecordingStatus.INTERRUPTED,
+                RecordingStatus.RECOVERING,
+                -> current.moveTo(RecordingStatus.PAUSED).copy(pausedBySchedule = true)
+                else -> null
+            }
+
+            RecordingCommand.ScheduledResume -> current.moveToIf(
+                status == RecordingStatus.PAUSED && current.pausedBySchedule,
+                RecordingStatus.RESUMING,
+            )
 
             // Never straight to RECORDING: after a restart the service may be gone, so the
             // engine must confirm audio is flowing (`Started`) before we claim capture.
@@ -174,7 +212,7 @@ object RecordingStateMachine {
                 else -> null
             }
 
-            RecordingCommand.Stop -> when (status) {
+            RecordingCommand.Stop, RecordingCommand.ScheduledStop -> when (status) {
                 RecordingStatus.STARTING,
                 RecordingStatus.RECORDING,
                 RecordingStatus.PAUSED,
@@ -244,6 +282,11 @@ object RecordingStateMachine {
                 event.sessionId == current.sessionId &&
                     (status == RecordingStatus.STARTING || status == RecordingStatus.RECORDING)
             RecordingCommand.Pause -> status == RecordingStatus.PAUSED
+            // Schedule commands never produce a rejection (see ScheduledPause).
+            RecordingCommand.ScheduledPause,
+            RecordingCommand.ScheduledResume,
+            RecordingCommand.ScheduledStop,
+            -> true
             // While the engine is already recovering, a user resume adds nothing.
             RecordingCommand.Resume ->
                 status == RecordingStatus.RESUMING ||
@@ -259,7 +302,7 @@ object RecordingStateMachine {
     private fun RecordingState.moveTo(
         status: RecordingStatus,
         problem: CaptureProblem? = null,
-    ): RecordingState = copy(status = status, problem = problem)
+    ): RecordingState = copy(status = status, problem = problem, pausedBySchedule = false)
 
     private fun RecordingState.moveToIf(
         condition: Boolean,
