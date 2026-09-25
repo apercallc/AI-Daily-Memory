@@ -19,7 +19,9 @@ Because we record real conversations, two product-level rules outrank everything
 1. **Never design anything that hides recording state.** Recording indicators and
    pause/stop controls are product requirements (see SECURITY.md).
 2. **Evidence is immutable; derived AI output is always correctable.** Transcripts
-   are never rewritten; corrections are stored separately.
+   are never rewritten; corrections are stored separately. Immutable is not
+   undeletable: user deletion and retention remove evidence and cascade to everything
+   derived from it (ADR-0004 amendment).
 
 The commercial direction (TODO.md Phase 10): release publicly, charge a monthly
 subscription, let users connect their own clients via API/MCP, and support
@@ -45,6 +47,7 @@ self-service data export. Three more rules follow from that:
 | `backend` | FastAPI + Pydantic, Python 3.13, uv-managed. |
 | `interfaces/mcp`, `interfaces/cli` | Future access layers. Must go through the Memory Query Service, never the DB directly. |
 | `docs/adr` | Architecture Decision Records. Read before changing an architectural decision. |
+| `docs/architecture/` | Architecture reviews and their findings/open decisions. |
 | `docs/quality/QUALITY_GATES.md` | Release-quality standards. |
 | `docs/performance/` | Performance evidence process. |
 | `TODO.md` | The executable delivery plan with phase exit gates. **Work comes from here.** |
@@ -63,8 +66,10 @@ self-service data export. Three more rules follow from that:
 - **No infrastructure without a measured need.** Do not add Redis, queues, or
   services "to be safe."
 - **ADRs:** any decision that reverses a recorded one (offline-first, temporary raw
-  audio, evidence-backed memory, single query service) requires a new ADR first,
-  not a silent change.
+  audio, evidence-backed memory, single query service, client IDs/time model,
+  append-safe encrypted segments, watch protocol + shared applicationId, backend as sole
+  DB client, mic service lifecycle — ADR-0001…0010) requires a new ADR first, not a
+  silent change.
 
 ## Build and verify
 
@@ -72,20 +77,20 @@ Gradle wrapper is bootstrapped (Gradle 9.7.1) — use `./gradlew` for all builds
 
 ```bash
 # Full pre-merge gate (unit tests, coverage, Android lint for all modules)
-gradle qualityCheck
+./gradlew qualityCheck
 
 # Per-module
-gradle :core:recording:check          # state machine tests + JaCoCo ≥90% line & branch
-gradle :apps:android:testDebugUnitTest
-gradle :apps:android:lintDebug
-gradle :apps:android:assembleDebug
+./gradlew :core:recording:check          # state machine tests + JaCoCo ≥90% line & branch
+./gradlew :apps:android:testDebugUnitTest
+./gradlew :apps:android:lintDebug
+./gradlew :apps:android:assembleDebug
 
 # Backend (Python 3.13, uv)
 cd backend
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy app
+uv run mypy app tests
 uv run pytest                        # coverage fail-under 90, branch coverage on
 uv run pip-audit
 ```

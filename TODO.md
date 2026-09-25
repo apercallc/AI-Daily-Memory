@@ -46,8 +46,9 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [x] Create ADR directory and first architecture decision
 - [x] Add security-conscious .gitignore
 - [x] Add PR template and contributing guide
-- [ ] Generate and commit Gradle wrapper using Gradle 9.7.1
-- [ ] Generate and commit backend uv.lock
+- [x] Generate and commit Gradle wrapper using Gradle 9.7.1
+- [x] Generate and commit backend uv.lock
+- [x] CI uses the wrapper and fails on a stale uv.lock (`uv sync --locked`)
 - [ ] Verify fresh clone builds on macOS, Linux, and CI
 - [ ] Enable main-branch protection
 - [ ] Require CI before merge
@@ -78,6 +79,12 @@ This file turns the architecture in README.md into an executable delivery plan.
 
 Goal: prove reliable Android capture before building AI infrastructure.
 
+## Early hardware spike (do first — it shapes the service design)
+
+- [ ] Verify mic foreground-service start/resume from background on the target phone (ADR-0010)
+- [ ] Verify Pause-keeps-service + Resume from notification works with screen off
+- [ ] Verify what a background-blocked microphone delivers (exception vs digital silence)
+
 ## Permissions / foreground service
 
 - [ ] Implement microphone permission education and request flow
@@ -90,22 +97,33 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Ensure foreground service enters foreground within platform timeout
 - [ ] Handle app background / screen-off behavior
 - [ ] Handle OEM-specific battery restrictions without misleading the user
+- [ ] Pause keeps the foreground service running with the mic closed (ADR-0010)
 
 ## Recording state machine
 
 - [x] Create pure deterministic state machine
 - [x] Unit-test legal transitions
 - [x] Unit-test invalid transitions
+- [x] Reducer returns Applied / Ignored / Rejected instead of throwing (a bad event cannot crash the service)
+- [x] Session identity, monotonic revision, and capture-problem reason in state
+- [x] Exhaustive status × event matrix test
+- [x] Separate user commands from capture-engine signals (watch may only send commands)
 - [ ] Wire state machine to Android service
-- [ ] Persist state transitions before side effects where necessary
+- [ ] Persist state transitions (append-only journal keyed by revision) before dependent side effects
 - [ ] Recover persisted session state after process death
-- [ ] Recover after phone reboot when appropriate
-- [ ] Ensure watch state always reflects acknowledged phone state
+- [ ] After reboot: never auto-start; post "tap to resume" notification and record the gap (ADR-0010)
 - [ ] Add state-machine property/fuzz tests if transition count expands materially
+
+## Local persistence, identity, time
+
+- [ ] Room with exported schema and migration tests from the first entity
+- [ ] UUIDv7 generator for client-created IDs (ADR-0006)
+- [ ] Record occurred_at (UTC), timezone, UTC offset, local_date, elapsedRealtime + boot id on every captured record (ADR-0006)
+- [ ] Decide Quick Note model: marked window inside an active session vs. short standalone session (open product decision)
 
 ## Audio capture
 
-- [ ] Select initial capture format after device benchmark
+- [ ] Select initial capture format after device benchmark, among append-safe containers only (Ogg/Opus or AAC-ADTS; not MP4 — ADR-0007)
 - [ ] Implement short crash-resistant local segments
 - [ ] Add monotonic sequence IDs
 - [ ] Add checksums
@@ -116,14 +134,16 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Handle another app taking microphone focus
 - [ ] Detect audio gaps
 - [ ] Detect corrupt or zero-byte segments
+- [ ] Detect sustained digital silence (blocked mic) and report it as an interruption
 - [ ] Never mark uncaptured time as successfully recorded
 
 ## Local security
 
-- [ ] Encrypt local temporary audio
-- [ ] Protect keys with Android Keystore
+- [ ] Encrypt local temporary audio with Tink streaming AEAD (not deprecated security-crypto; ADR-0007)
+- [ ] Protect keys with Android Keystore (no user-auth requirement, or capture fails while locked)
+- [ ] No capture before first unlock after reboot (credential-encrypted storage)
 - [ ] Define key rotation / invalidation behavior
-- [ ] Disable Android backup of sensitive app data
+- [x] Disable Android backup of sensitive app data (allowBackup=false + exclude-all extraction rules)
 - [ ] Verify no sensitive files are exported via backup/debug tooling
 - [ ] Delete local audio only after explicit server acknowledgement + recovery policy
 - [ ] Secure-delete semantics documented honestly; do not promise physical flash erasure
@@ -167,6 +187,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Measure memory
 - [ ] Measure storage growth
 - [ ] Measure audio gaps
+- [ ] Measure speech-active ratio per recorded hour (VAD in shadow mode; feeds the Gate B cost model)
 - [ ] Record benchmark results in docs/performance/
 
 ### Phase 0 exit gate
@@ -181,11 +202,15 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 - [x] FastAPI health endpoint scaffold
 - [x] Strict Python lint/type/test scaffold
+- [x] Typed settings from the environment; API docs/OpenAPI hidden outside development/test
 - [ ] Define API versioning policy (/v1)
 - [ ] Generate OpenAPI document in CI
 - [ ] Validate breaking API changes
 - [ ] Add request IDs / correlation IDs
 - [ ] Add structured redacted logging
+- [ ] User-scoped schema from the first migration: user_id on every user-owned table, cascading FKs (ADR-0009)
+- [ ] Backend is the only DB client; Supabase Data API disabled, RLS deny-all backstop (ADR-0009)
+- [ ] Separate DB roles: migration owner, app (DML only), read-only
 - [ ] Add auth once multi-user testing starts
 - [ ] Add per-user authorization checks
 - [ ] Add rate limiting before public exposure
@@ -204,6 +229,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Expired signed URL handling
 - [ ] Quota checks
 - [ ] Temporary object lifecycle policy
+- [ ] Object keys prefixed users/{user_id}/ for isolation and prefix deletion
+- [ ] Same idempotency key with a different checksum is a hard, operator-visible error (ADR-0006)
 
 ## Processing jobs
 
@@ -218,6 +245,9 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ## Transcription
 
+- [ ] Per user-day cost model from Phase 0 speech-ratio measurements (Gate B input)
+- [ ] Provider terms reviewed: no training on customer data, bounded retention, DPA, region
+- [ ] Recording-consent legal review (all-party-consent jurisdictions) before any non-developer user
 - [ ] Choose one provider for MVP
 - [ ] Abstract provider behind a thin interface
 - [ ] Preserve timestamps
@@ -229,6 +259,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Evaluate noisy/distant speech
 - [ ] Evaluate multiple speakers
 - [ ] Delete temporary cloud audio only after verified transcript persistence
+- [ ] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
 
 ### Phase 1 exit gate
 
@@ -259,6 +290,8 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Confidence/review state
 - [ ] Extraction/model/prompt version metadata
 - [ ] Never rewrite source transcript
+- [ ] Treat transcript text as untrusted model input: delimit as data, schema-validate output, no tool access
+- [ ] Memory items cite evidence many-to-many (memory_item_evidence)
 
 ## Human correction
 
@@ -295,8 +328,12 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 # Phase 3 — Wear OS
 
-- [ ] Create Wear OS application module
-- [ ] Pair communication using Wear OS Data Layer
+- [x] Create Wear OS application module (scaffold)
+- [x] Watch shares the phone applicationId and debug suffix (Data Layer requirement; ADR-0008)
+- [ ] Wear module depends on core/recording for shared command/state types
+- [ ] Pair communication using Wear OS Data Layer (commands via MessageClient, state via DataClient; ADR-0008)
+- [ ] Ensure watch state always reflects acknowledged phone state (revision-ordered snapshots)
+- [ ] Command IDs deduplicated on the phone; retries return the cached outcome
 - [ ] Start
 - [ ] Pause
 - [ ] Resume
@@ -378,6 +415,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [ ] Bounded result sizes
 - [ ] No direct database access
 - [ ] No bulk transcript export by default
+- [ ] Transcript text returned as bounded, clearly quoted fields (prompt-injection hygiene for the user's agent)
 - [ ] Audit sensitive tool access
 - [ ] API-key authentication for user-owned third-party clients
 - [ ] Key scopes (read-only initially) and least-privilege defaults
