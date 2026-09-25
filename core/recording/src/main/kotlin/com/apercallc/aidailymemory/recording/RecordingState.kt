@@ -19,6 +19,7 @@ enum class CaptureProblem {
     FOREGROUND_START_NOT_ALLOWED,
     STORAGE_LOW,
     PROCESS_RESTARTED,
+    DEVICE_REBOOTED,
     UNKNOWN,
 }
 
@@ -46,6 +47,14 @@ data class RecordingState(
     val revision: Long,
     val problem: CaptureProblem?,
 ) {
+    init {
+        // Every non-idle state belongs to a session; this also rejects corrupt persisted state.
+        require((status == RecordingStatus.IDLE) == (sessionId == null)) {
+            "sessionId must be null exactly when status is IDLE (status=$status)"
+        }
+        require(revision >= 0) { "revision must not be negative" }
+    }
+
     companion object {
         val Initial = RecordingState(
             status = RecordingStatus.IDLE,

@@ -266,6 +266,19 @@ class RecordingStateMachineTest {
     }
 
     @Test
+    fun `state rejects a session id that contradicts its status`() {
+        assertFailsWith<IllegalArgumentException> {
+            RecordingState(IDLE, sessionA, revision = 0, problem = null)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            RecordingState(RECORDING, sessionId = null, revision = 0, problem = null)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            RecordingState(IDLE, sessionId = null, revision = -1, problem = null)
+        }
+    }
+
+    @Test
     fun `session id must not be blank`() {
         assertFailsWith<IllegalArgumentException> { SessionId(" ") }
     }
