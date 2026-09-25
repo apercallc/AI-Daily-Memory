@@ -29,6 +29,9 @@ enum class NextUpload {
     /** Transient trouble: let the system retry with exponential backoff. */
     BACKOFF,
 
+    /** Uploads are done but transcripts are still being made: check back after a while. */
+    LATER,
+
     /** The token was refused: forget it and ask the user to reconnect. */
     SIGN_OUT,
 }
@@ -38,17 +41,29 @@ enum class NextUpload {
  * run that moved something forward. Anything else waits for backoff or for a new trigger.
  */
 object UploadPolicy {
-    fun next(received: Int, remaining: Int, stoppedBy: UploadStop?, crashed: Boolean): NextUpload {
-        require(received >= 0 && remaining >= 0) { "counts must not be negative" }
+    /**
+     * @param received clips the server accepted in this run
+     * @param remaining clips or segments still to upload
+     * @param awaiting clips on the server whose transcripts haven't reached the phone yet
+     */
+    fun next(
+        received: Int,
+        remaining: Int,
+        stoppedBy: UploadStop?,
+        crashed: Boolean,
+        awaiting: Int = 0,
+    ): NextUpload {
+        require(received >= 0 && remaining >= 0 && awaiting >= 0) { "counts must not be negative" }
         return when {
             crashed -> NextUpload.BACKOFF
             stoppedBy == UploadStop.UNAUTHORIZED -> NextUpload.SIGN_OUT
             stoppedBy == UploadStop.NOT_LINKED -> NextUpload.NONE
             stoppedBy != null -> NextUpload.BACKOFF
-            remaining == 0 -> NextUpload.NONE
-            received > 0 -> NextUpload.NOW
+            remaining > 0 && received > 0 -> NextUpload.NOW
             // Work remains but nothing moved (only retries pending): don't hammer the server.
-            else -> NextUpload.BACKOFF
+            remaining > 0 -> NextUpload.BACKOFF
+            awaiting > 0 -> NextUpload.LATER
+            else -> NextUpload.NONE
         }
     }
 }

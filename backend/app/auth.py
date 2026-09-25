@@ -14,11 +14,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Final, Literal
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Database, get_session
-from app.db.models import AccessToken
+from app.db.models import AccessToken, AudioUpload, DeviceKey, SealedDelivery
 
 TOKEN_PREFIX: Final = "adm_"  # noqa: S105 - a public prefix, not a secret
 Scope = Literal["upload:write", "memory:read"]
@@ -135,7 +135,11 @@ def require(scope: Scope) -> Callable[..., Awaitable[Principal]]:
 
 
 async def revoke_token(session: AsyncSession, user_id: uuid.UUID, token_id: uuid.UUID) -> bool:
-    """Revokes one of the user's own tokens. Returns False if it isn't theirs or is gone."""
+    """Revokes one of the user's own tokens and everything bound to it: its device key and any
+    transcripts sealed to that key (they could only have been opened with it). Clips waiting
+    on that key are marked failed so the phone, once reconnected, uploads them again. Returns
+    False if the token isn't theirs or is already revoked."""
+    now = datetime.now(UTC)
     result = await session.execute(
         update(AccessToken)
         .where(
@@ -143,6 +147,26 @@ async def revoke_token(session: AsyncSession, user_id: uuid.UUID, token_id: uuid
             AccessToken.user_id == user_id,
             AccessToken.revoked_at.is_(None),
         )
-        .values(revoked_at=datetime.now(UTC)),
+        .values(revoked_at=now),
     )
-    return bool(getattr(result, "rowcount", 0))
+    if not getattr(result, "rowcount", 0):
+        return False
+    keys = (
+        await session.scalars(
+            update(DeviceKey)
+            .where(DeviceKey.token_id == token_id, DeviceKey.revoked_at.is_(None))
+            .values(revoked_at=now)
+            .returning(DeviceKey.id),
+        )
+    ).all()
+    if keys:
+        await session.execute(delete(SealedDelivery).where(SealedDelivery.device_key_id.in_(keys)))
+        await session.execute(
+            update(AudioUpload)
+            .where(
+                AudioUpload.device_key_id.in_(keys),
+                AudioUpload.state.in_(("pending", "received", "transcribed")),
+            )
+            .values(state="failed", failure_code="device_key_revoked"),
+        )
+    return True

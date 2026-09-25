@@ -38,6 +38,7 @@ import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
+import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.settings.NextChange
 import com.apercallc.aidailymemory.ui.settings.AccountActions
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
@@ -46,7 +47,7 @@ import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.Instant
 import java.time.ZoneId
 
-enum class AppScreen { CAPTURE, SESSIONS, SETTINGS }
+enum class AppScreen { CAPTURE, SESSIONS, SETTINGS, TRANSCRIPT }
 
 private const val NEXT_CHANGE_REFRESH_MS = 30_000L
 
@@ -62,8 +63,12 @@ fun AppRoot(
     permissions: Permissions,
 ) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.CAPTURE) }
-    BackHandler(enabled = screen != AppScreen.CAPTURE) { screen = AppScreen.CAPTURE }
-    val back = { screen = AppScreen.CAPTURE }
+    var openSession by rememberSaveable { mutableStateOf<String?>(null) }
+    var openTitle by rememberSaveable { mutableStateOf("") }
+    val back = {
+        screen = if (screen == AppScreen.TRANSCRIPT) AppScreen.SESSIONS else AppScreen.CAPTURE
+    }
+    BackHandler(enabled = screen != AppScreen.CAPTURE) { back() }
 
     when (screen) {
         AppScreen.CAPTURE -> AiDailyMemoryApp(
@@ -72,13 +77,30 @@ fun AppRoot(
             onOpenSessions = { screen = AppScreen.SESSIONS },
             onOpenSettings = { screen = AppScreen.SETTINGS },
         )
-        AppScreen.SESSIONS -> SessionsRoute(sessions(), onBack = back)
+        AppScreen.SESSIONS -> SessionsRoute(sessions(), onBack = back) { id, title ->
+            openSession = id
+            openTitle = title
+            screen = AppScreen.TRANSCRIPT
+        }
         AppScreen.SETTINGS -> SettingsRoute(settings(), onBack = back)
+        AppScreen.TRANSCRIPT -> {
+            val id = openSession
+            if (id != null) {
+                TranscriptRoute(sessions(), id, openTitle, onBack = back)
+            } else {
+                // Nothing to show (state lost): fall back to the list, outside composition.
+                LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+            }
+        }
     }
 }
 
 @Composable
-private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
+private fun SessionsRoute(
+    viewModel: SessionsViewModel,
+    onBack: () -> Unit,
+    onOpen: (sessionId: String, title: String) -> Unit,
+) {
     val days by viewModel.days.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshToday() }
@@ -87,13 +109,23 @@ private fun SessionsRoute(viewModel: SessionsViewModel, onBack: () -> Unit) {
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
-    SecondaryScreen(R.string.sessions_title, onBack, snackbar) { modifier ->
+    SecondaryScreen(stringResource(R.string.sessions_title), onBack, snackbar) { modifier ->
         SessionsScreen(
             days = days,
             today = today,
             onRename = viewModel::rename,
             modifier = modifier,
+            onOpen = onOpen,
         )
+    }
+}
+
+@Composable
+private fun TranscriptRoute(viewModel: SessionsViewModel, sessionId: String, title: String, onBack: () -> Unit) {
+    val lines by remember(sessionId) { viewModel.transcript(sessionId) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    SecondaryScreen(title.ifEmpty { stringResource(R.string.transcript_title) }, onBack, snackbar = null) { modifier ->
+        TranscriptScreen(lines = lines, modifier = modifier)
     }
 }
 
@@ -109,7 +141,7 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
             delay(NEXT_CHANGE_REFRESH_MS)
         }
     }
-    SecondaryScreen(R.string.nav_settings, onBack, snackbar = null) { modifier ->
+    SecondaryScreen(stringResource(R.string.nav_settings), onBack, snackbar = null) { modifier ->
         RhythmSettingsScreen(
             rhythm = rhythm,
             retention = retention,
@@ -134,7 +166,7 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun SecondaryScreen(
-    @StringRes title: Int,
+    title: String,
     onBack: () -> Unit,
     snackbar: SnackbarHostState?,
     content: @Composable (Modifier) -> Unit,
@@ -160,7 +192,7 @@ private fun SecondaryScreen(
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 ) { Text(stringResource(R.string.nav_back)) }
                 Text(
-                    text = stringResource(title),
+                    text = title,
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.semantics { heading() },
                 )

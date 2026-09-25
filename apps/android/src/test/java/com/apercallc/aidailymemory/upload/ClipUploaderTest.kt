@@ -76,6 +76,8 @@ class ClipUploaderTest {
 
         override fun complete(link: ServerLink, uploadId: String): UploadState =
             onComplete(uploadId).also { completes += uploadId }
+
+        override fun status(link: ServerLink, uploadId: String): String? = "received"
     }
 
     private var since = 0L
@@ -217,6 +219,21 @@ class ClipUploaderTest {
         since = 0 // the user chose to include what was already recorded
         uploader().run()
         assertEquals(1, api.creates.size)
+    }
+
+    @Test
+    fun `clips planned under an earlier consent never upload under a later link`() = runTest {
+        analyzed(0L to 500L)
+        api.onCreate = { throw IOException("offline") }
+        uploader().run() // planned with the backlog allowed, then went offline
+        api.onCreate = { UploadState("received", null) }
+        since = System.currentTimeMillis() + 60_000 // reconnected without the backlog
+
+        val run = uploader().run()
+
+        assertEquals(0, run.received)
+        assertEquals(0, run.remaining)
+        assertTrue(api.creates.isEmpty()) // never sent under the new link
     }
 
     @Test

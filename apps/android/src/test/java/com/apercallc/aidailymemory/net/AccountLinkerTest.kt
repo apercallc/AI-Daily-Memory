@@ -49,8 +49,16 @@ class AccountLinkerTest {
             .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
     }
 
-    private fun linker(store: LinkStore = links) =
-        AccountLinker(store, api, onLinked = { linked++ }, onUnlinked = { unlinked++ }, now = { 42L })
+    private var revokeRetries = 0
+
+    private fun linker(store: LinkStore = links) = AccountLinker(
+        store,
+        api,
+        onLinked = { linked++ },
+        onUnlinked = { unlinked++ },
+        onRevokePending = { revokeRetries++ },
+        now = { 42L },
+    )
 
     @Before
     fun setUp() {
@@ -122,13 +130,42 @@ class AccountLinkerTest {
     }
 
     @Test
-    fun `an offline revoke still disconnects`() {
+    fun `an offline revoke still disconnects, is remembered, and is retried later`() {
         linker().connect(url, token, false)
         api.onRevoke = { throw IOException("offline") }
 
         linker().disconnect()
 
         assertFalse(links.isLinked)
+        assertTrue(links.revokePending.value)
+        assertEquals(1, revokeRetries)
+        assertEquals(false, linker().retryPendingRevoke())
+
+        api.onRevoke = {}
+        assertTrue(linker().retryPendingRevoke())
+        assertFalse(links.revokePending.value)
+        assertEquals(listOf("me", "revoke", "revoke", "revoke"), api.calls)
+    }
+
+    @Test
+    fun `a token the server already refuses counts as revoked`() {
+        linker().connect(url, token, false)
+        api.onRevoke = { throw ApiException(401, "unauthorized") }
+
+        linker().disconnect()
+
+        assertFalse(links.revokePending.value)
+        assertEquals(0, revokeRetries)
+    }
+
+    @Test
+    fun `a server error keeps the revoke pending`() {
+        linker().connect(url, token, false)
+        api.onRevoke = { throw ApiException(503, "service_unavailable") }
+
+        linker().disconnect()
+
+        assertTrue(links.revokePending.value)
     }
 
     @Test

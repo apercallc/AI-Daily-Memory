@@ -25,6 +25,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
 import java.security.GeneralSecurityException
 import java.security.MessageDigest
+import java.security.ProviderException
 
 /** Audio format of a segment; recorded on every row so later decoding never guesses. */
 data class SegmentFormat(val codec: String, val sampleRateHz: Int, val channelCount: Int)
@@ -130,8 +131,16 @@ class SegmentStore(
         val stale = dao.inState(SegmentState.WRITING.name)
         var lost = 0
         for (entity in stale) {
-            val recovered = File(directory, entity.fileName).takeIf { it.isFile }
-                ?.let { recoverSealed(entity, it) }
+            val file = File(directory, entity.fileName).takeIf { it.isFile }
+            val recovered = file?.let {
+                when (val read = decrypt(entity, it)) {
+                    // The Keystore is briefly unusable: leave the row WRITING and the file in
+                    // place, so the next restore tries again. Never delete real audio for this.
+                    SegmentRead.Unavailable -> continue
+                    SegmentRead.Corrupt -> deleteAndForget(it)
+                    is SegmentRead.Audio -> sealRecovered(entity, it, read.bytes)
+                }
+            }
             if (recovered?.state != SegmentState.SEALED.name) {
                 abandon(entity)
                 lost++
@@ -169,6 +178,16 @@ class SegmentStore(
         return deleted
     }
 
+    /**
+     * Every clip of this segment has its transcript stored on this phone (ADR-0014): the audio
+     * has served its purpose, and the retention setting may now delete it after the recovery
+     * window. The segment's own checksum is what the acknowledgement is recorded against.
+     */
+    suspend fun markTranscribed(entity: SegmentEntity, nowEpochMs: Long): SegmentEntity {
+        val sha256 = entity.sha256 ?: return entity
+        return apply(entity, SegmentEvent.ServerAcknowledged(sha256, nowEpochMs))
+    }
+
     /** Every clip of this segment is on the server and verified (ADR-0015). */
     suspend fun markUploaded(entity: SegmentEntity): SegmentEntity = apply(entity, SegmentEvent.UploadCompleted)
 
@@ -178,27 +197,37 @@ class SegmentStore(
      */
     fun readAudio(entity: SegmentEntity): ByteArray? {
         val file = File(directory, entity.fileName).takeIf { it.isFile } ?: return null
-        return decryptValid(entity, file)
+        return (decrypt(entity, file) as? SegmentRead.Audio)?.bytes
     }
 
-    private fun decryptValid(entity: SegmentEntity, file: File): ByteArray? {
+    /** What reading a sealed file gave: audio, proof it isn't audio, or "try again later". */
+    private sealed interface SegmentRead {
+        class Audio(val bytes: ByteArray) : SegmentRead
+        data object Corrupt : SegmentRead
+        data object Unavailable : SegmentRead
+    }
+
+    private fun decrypt(entity: SegmentEntity, file: File): SegmentRead {
         val plaintext = try {
             cipher().decrypting(file.inputStream(), entity.segmentId).use { it.readBytes() }
         } catch (e: IOException) {
             // Includes authentication failures: a tampered or torn ciphertext is not audio.
             logFailure(TAG, "segment_unreadable", e, warning = true)
-            return null
+            return SegmentRead.Corrupt
         } catch (e: GeneralSecurityException) {
             logFailure(TAG, "segment_unreadable", e, warning = true)
-            return null
+            return SegmentRead.Corrupt
+        } catch (e: ProviderException) {
+            // A Keystore hiccup says nothing about the file: it may be perfectly good audio.
+            logFailure(TAG, "segment_keystore_failure", e, warning = true)
+            return SegmentRead.Unavailable
         }
         val scan = AdtsScanner.scan(plaintext)
         val valid = !scan.corrupt && scan.validBytes == plaintext.size && scan.completeFrames > 0
-        return plaintext.takeIf { valid }
+        return if (valid) SegmentRead.Audio(plaintext) else SegmentRead.Corrupt
     }
 
-    private suspend fun recoverSealed(entity: SegmentEntity, file: File): SegmentEntity? {
-        val plaintext = decryptValid(entity, file) ?: return deleteAndForget(file)
+    private suspend fun sealRecovered(entity: SegmentEntity, file: File, plaintext: ByteArray): SegmentEntity {
         val scan = AdtsScanner.scan(plaintext)
         val sha256 = MessageDigest.getInstance("SHA-256").digest(plaintext)
             .joinToString("") { "%02x".format(it) }

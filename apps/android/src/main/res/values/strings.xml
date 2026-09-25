@@ -118,7 +118,12 @@
     <string name="session_speech">%1$s of talk</string>
     <string name="session_time_range">%1$s – %2$s</string>
     <string name="session_time_open">%1$s – now</string>
-    <string name="session_rename_hint">Tap to rename</string>
+    <string name="session_open_hint">Open transcript</string>
+    <string name="transcript_title">Transcript</string>
+    <string name="session_rename">Rename</string>
+    <string name="transcript_empty">No transcript yet. Speech is transcribed while your phone charges on Wi-Fi, once your account is connected.</string>
+    <!-- A speaker label from transcription, e.g. "Speaker A". -->
+    <string name="transcript_speaker">Speaker %1$s</string>
     <string name="part_early_morning">Early morning</string>
     <string name="part_morning">Morning</string>
     <string name="part_afternoon">Afternoon</string>
@@ -210,4 +215,5 @@
     </plurals>
     <string name="account_retry_uploads">Try again</string>
     <string name="account_disconnect">Disconnect</string>
+    <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
 </resources>

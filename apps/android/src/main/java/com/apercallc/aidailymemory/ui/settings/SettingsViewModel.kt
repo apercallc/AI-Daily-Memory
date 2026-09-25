@@ -10,7 +10,6 @@ import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
-import com.apercallc.aidailymemory.net.AccountLinker
 import com.apercallc.aidailymemory.net.ConnectError
 import java.time.Instant
 import java.time.ZoneId
@@ -55,28 +54,23 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateRetention(retention: AudioRetention) = settings.setRetention(retention)
 
-    private val linker = AccountLinker(
-        links = container.links,
-        api = container.accountApi,
-        onLinked = container.uploadScheduler::schedule,
-        onUnlinked = container.uploadScheduler::cancel,
-    )
+    private val linker = container.accountLinker
     private val connecting = MutableStateFlow(false)
     private val connectError = MutableStateFlow<ConnectError?>(null)
 
     val account: StateFlow<AccountUi> = combine(
-        container.links.link,
-        container.links.problem,
+        combine(container.links.link, container.links.problem, container.links.revokePending, ::Triple),
         connecting,
         connectError,
         container.database.clips().observeProblems(),
-    ) { link, problem, busy, error, problems ->
+    ) { (link, problem, revokePending), busy, error, problems ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
             problem = problem,
             connecting = busy,
             error = error,
             uploadProblems = problems,
+            revokePending = revokePending,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 

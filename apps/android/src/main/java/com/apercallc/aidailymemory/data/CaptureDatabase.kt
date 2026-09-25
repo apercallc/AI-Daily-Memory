@@ -24,8 +24,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SpeechRegionEntity::class,
         ClipUploadEntity::class,
         ClipPlanEntity::class,
+        TranscriptEntity::class,
+        TranscriptSpanEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -35,12 +37,13 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun sessions(): SessionDao
     abstract fun speech(): SpeechDao
     abstract fun clips(): ClipDao
+    abstract fun transcripts(): TranscriptDao
 
     companion object {
         const val NAME = "capture.db"
 
         /** Every migration, in order. Tests open old databases with exactly this list. */
-        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         fun open(context: Context): CaptureDatabase =
             Room.databaseBuilder(context.applicationContext, CaptureDatabase::class.java, NAME)
@@ -119,6 +122,29 @@ abstract class CaptureDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `clip_plan` (" +
                         "`segment_id` TEXT NOT NULL, `outcome` TEXT NOT NULL, " +
                         "`planned_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
+                )
+            }
+        }
+    
+        /** Adds delivered transcripts (ADR-0014). New tables only. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `transcript` (" +
+                        "`upload_id` TEXT NOT NULL, `segment_id` TEXT NOT NULL, " +
+                        "`offset_ms` INTEGER NOT NULL, `provider` TEXT NOT NULL, " +
+                        "`model` TEXT NOT NULL, `language` TEXT, " +
+                        "`received_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`upload_id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_transcript_segment_id` ON `transcript` (`segment_id`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `transcript_span` (" +
+                        "`upload_id` TEXT NOT NULL, `idx` INTEGER NOT NULL, " +
+                        "`start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, " +
+                        "`text` TEXT NOT NULL, `speaker` TEXT, `confidence` REAL, " +
+                        "PRIMARY KEY(`upload_id`, `idx`))",
                 )
             }
         }

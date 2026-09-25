@@ -102,9 +102,25 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_sealed_deliveries_user_id"), "sealed_deliveries", ["user_id"], unique=False
     )
+    # The uploading device's key: its transcript is sealed to exactly this key.
+    op.add_column("audio_uploads", sa.Column("device_key_id", sa.UUID(), nullable=True))
+    op.create_foreign_key(
+        op.f("fk_audio_uploads_device_key_id_device_keys"),
+        "audio_uploads",
+        "device_keys",
+        ["device_key_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint(
+        op.f("fk_audio_uploads_device_key_id_device_keys"),
+        "audio_uploads",
+        type_="foreignkey",
+    )
+    op.drop_column("audio_uploads", "device_key_id")
     op.execute("UPDATE audio_uploads SET state = 'transcribed' WHERE state = 'delivered'")
     op.drop_constraint(op.f("ck_audio_uploads_state"), "audio_uploads", type_="check")
     op.create_check_constraint(

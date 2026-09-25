@@ -62,7 +62,7 @@ class ScheduleScreensTest {
         }
 
         compose.onNodeWithText("Today").assertExists()
-        compose.onNodeWithText("Afternoon").performClick()
+        compose.onNodeWithText("Rename").performClick()
         compose.onNodeWithText("Name").performTextInput("x".repeat(61))
         compose.onNodeWithText("Keep it to 60 characters or fewer.").assertExists()
         compose.onNodeWithText("Save").assertIsNotEnabled()

@@ -116,6 +116,15 @@ class AccountSectionTest {
     }
 
     @Test
+    fun `a revoke still waiting for the network is shown`() {
+        show(AccountUi(revokePending = true))
+
+        compose.onNodeWithText(
+            "Your previous connection will be revoked on the server as soon as this phone is online.",
+        ).assertExists()
+    }
+
+    @Test
     fun `host display never shows paths or credentials`() {
         assertEquals("api.example", hostOf("https://api.example/v1?x=1"))
         assertEquals("not a url", hostOf("not a url"))

@@ -70,7 +70,7 @@ class ClipUploader(
         var failed = 0
         var stop: UploadStop? = null
         val audio = AudioCache(store, segments)
-        for (clip in clips.pending(limit)) {
+        for (clip in clips.pending(since, limit)) {
             currentCoroutineContext().ensureActive()
             when (val outcome = upload(server, clip, audio)) {
                 Outcome.Received -> received++
@@ -83,7 +83,7 @@ class ClipUploader(
             }
         }
         for (segment in clips.fullyUploaded()) store.markUploaded(segment)
-        val remaining = clips.pendingCount() + clips.unplannedCount(since)
+        val remaining = clips.pendingCount(since) + clips.unplannedCount(since)
         Log.i(TAG, "clip_upload_batch received=$received failed=$failed remaining=$remaining stop=$stop")
         UploadRun(received, failed, remaining, stop)
     }
@@ -261,8 +261,16 @@ class ClipUploader(
         private const val HTTP_SERVER_ERROR = 500
         private val DONE_STATES = setOf("received", "transcribed", "delivered")
 
-        /** Integrity mismatches and a concurrent create settle on a later attempt. */
-        private val RETRYABLE_CODES = setOf("upload_integrity_failed", "upload_missing", "conflict")
+        /**
+         * Integrity mismatches, a concurrent create, and a device key not registered yet all
+         * settle on a later attempt.
+         */
+        private val RETRYABLE_CODES = setOf(
+            "upload_integrity_failed",
+            "upload_missing",
+            "conflict",
+            "device_key_required",
+        )
 
         /** Frame start offsets, plus the end of the last frame as a sentinel. */
         internal fun frameOffsets(audio: ByteArray): IntArray {

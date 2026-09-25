@@ -211,8 +211,39 @@ interface ClipDao {
     @Query("SELECT * FROM clip_plan WHERE segment_id = :segmentId")
     suspend fun planFor(segmentId: String): ClipPlanEntity?
 
-    @Query("SELECT * FROM clip_upload WHERE state = 'PENDING' ORDER BY segment_id, first_frame LIMIT :limit")
-    suspend fun pending(limit: Int): List<ClipUploadEntity>
+    /**
+     * Clips waiting to upload, from audio captured at or after [sinceEpochMs] only: a clip
+     * planned under an earlier link (with its own consent) never uploads under a new one.
+     */
+    @Query(
+        """
+        SELECT c.* FROM clip_upload c
+        JOIN audio_segment s ON s.segment_id = c.segment_id
+        WHERE c.state = 'PENDING' AND s.start_occurred_at_epoch_ms >= :sinceEpochMs
+        ORDER BY c.segment_id, c.first_frame
+        LIMIT :limit
+        """,
+    )
+    suspend fun pending(sinceEpochMs: Long, limit: Int): List<ClipUploadEntity>
+
+    /** Received clips whose transcripts haven't arrived, oldest first: checked with the server. */
+    @Query(
+        """
+        SELECT c.* FROM clip_upload c
+        WHERE c.state = 'RECEIVED'
+            AND NOT EXISTS (SELECT 1 FROM transcript t WHERE t.upload_id = c.clip_id)
+        ORDER BY c.clip_id
+        LIMIT :limit
+        """,
+    )
+    suspend fun awaiting(limit: Int): List<ClipUploadEntity>
+
+    /** The server no longer has this clip's upload: upload it again under a new id. */
+    @Query(
+        "UPDATE clip_upload SET clip_id = :newId, state = 'PENDING', attempts = attempts + 1, " +
+            "last_error = 'server_lost' WHERE clip_id = :oldId AND state = 'RECEIVED'",
+    )
+    suspend fun requeue(oldId: String, newId: String)
 
     @Update
     suspend fun update(clip: ClipUploadEntity)
@@ -240,8 +271,14 @@ interface ClipDao {
     )
     suspend fun fullyUploaded(): List<SegmentEntity>
 
-    @Query("SELECT COUNT(*) FROM clip_upload WHERE state = 'PENDING'")
-    suspend fun pendingCount(): Int
+    @Query(
+        """
+        SELECT COUNT(*) FROM clip_upload c
+        JOIN audio_segment s ON s.segment_id = c.segment_id
+        WHERE c.state = 'PENDING' AND s.start_occurred_at_epoch_ms >= :sinceEpochMs
+        """,
+    )
+    suspend fun pendingCount(sinceEpochMs: Long): Int
 
     /** Clips that gave up plus segments that couldn't be read: shown to the user. */
     @Query(
@@ -262,4 +299,63 @@ interface ClipDao {
 
     @Query("DELETE FROM clip_plan WHERE outcome = 'UNREADABLE'")
     suspend fun forgetUnreadablePlans()
+}
+
+@Dao
+interface TranscriptDao {
+    /** Stores a delivered transcript once; a redelivery of the same upload changes nothing. */
+    @Transaction
+    suspend fun store(transcript: TranscriptEntity, spans: List<TranscriptSpanEntity>) {
+        if (insert(transcript) != -1L) insertSpans(spans)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(transcript: TranscriptEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSpans(spans: List<TranscriptSpanEntity>)
+
+    @Query("SELECT COUNT(*) FROM transcript WHERE upload_id = :uploadId")
+    suspend fun count(uploadId: String): Int
+
+    /**
+     * Uploaded segments whose every clip now has its transcript on this phone: their audio has
+     * served its purpose, so they can be acknowledged (ADR-0014 invariant).
+     */
+    @Query(
+        """
+        SELECT s.* FROM audio_segment s
+        JOIN clip_plan p ON p.segment_id = s.segment_id AND p.outcome = 'PLANNED'
+        WHERE s.state = 'UPLOADED'
+            AND NOT EXISTS (
+                SELECT 1 FROM clip_upload c WHERE c.segment_id = s.segment_id
+                    AND NOT EXISTS (SELECT 1 FROM transcript t WHERE t.upload_id = c.clip_id)
+            )
+        """,
+    )
+    suspend fun segmentsWithAllTranscripts(): List<SegmentEntity>
+
+    /** Clips the server has but whose transcripts haven't arrived yet. */
+    @Query(
+        """
+        SELECT COUNT(*) FROM clip_upload c
+        WHERE c.state = 'RECEIVED'
+            AND NOT EXISTS (SELECT 1 FROM transcript t WHERE t.upload_id = c.clip_id)
+        """,
+    )
+    suspend fun awaitingCount(): Int
+
+    @Query(
+        """
+        SELECT x.upload_id AS uploadId, x.idx AS idx,
+            (s.start_occurred_at_epoch_ms + t.offset_ms + x.start_ms) AS startEpochMs,
+            s.start_timezone AS zoneId, x.text AS text, x.speaker AS speaker
+        FROM transcript_span x
+        JOIN transcript t ON t.upload_id = x.upload_id
+        JOIN audio_segment s ON s.segment_id = t.segment_id
+        WHERE s.session_id = :sessionId
+        ORDER BY startEpochMs, x.upload_id, x.idx
+        """,
+    )
+    fun observeSession(sessionId: String): Flow<List<TranscriptLine>>
 }

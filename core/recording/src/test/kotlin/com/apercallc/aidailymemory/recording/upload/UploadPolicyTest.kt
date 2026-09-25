@@ -41,8 +41,15 @@ class UploadPolicyTest {
     }
 
     @Test
+    fun `transcripts still being made mean check back later, uploads first`() {
+        assertEquals(NextUpload.LATER, UploadPolicy.next(0, 0, null, crashed = false, awaiting = 3))
+        assertEquals(NextUpload.NOW, UploadPolicy.next(2, 1, null, crashed = false, awaiting = 3))
+    }
+
+    @Test
     fun `negative counts are rejected`() {
         assertFailsWith<IllegalArgumentException> { UploadPolicy.next(-1, 0, null, false) }
         assertFailsWith<IllegalArgumentException> { UploadPolicy.next(0, -1, null, false) }
+        assertFailsWith<IllegalArgumentException> { UploadPolicy.next(0, 0, null, false, awaiting = -1) }
     }
 }

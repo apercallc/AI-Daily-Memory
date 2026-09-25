@@ -48,6 +48,8 @@ fun SessionsScreen(
     today: LocalDate,
     onRename: (sessionId: String, input: String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens a session's transcript, with the title as shown on its card. */
+    onOpen: (sessionId: String, title: String) -> Unit = { _, _ -> },
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
@@ -68,7 +70,11 @@ fun SessionsScreen(
             else -> days.forEach { group ->
                 item(key = group.day.toString()) { DayHeader(group, today) }
                 items(group.sessions, key = { it.sessionId }) { session ->
-                    SessionCard(session, onClick = { renaming = session.sessionId })
+                    SessionCard(
+                        session,
+                        onOpen = { title -> onOpen(session.sessionId, title) },
+                        onRename = { renaming = session.sessionId },
+                    )
                 }
             }
         }
@@ -109,19 +115,20 @@ private fun DayHeader(group: DayGroup, today: LocalDate) {
 }
 
 @Composable
-private fun SessionCard(session: SessionItem, onClick: () -> Unit) {
+private fun SessionCard(session: SessionItem, onOpen: (title: String) -> Unit, onRename: () -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     val range = session.end?.let {
         stringResource(R.string.session_time_range, times(session.start), times(it))
     } ?: stringResource(R.string.session_time_open, times(session.start))
-    val renameHint = stringResource(R.string.session_rename_hint)
+    val openHint = stringResource(R.string.session_open_hint)
+    val title = sessionTitleText(session.title)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = spacing.minTouchTarget)
-            .clickable(onClickLabel = renameHint, role = Role.Button, onClick = onClick),
+            .clickable(onClickLabel = openHint, role = Role.Button, onClick = { onOpen(title) }),
     ) {
         Row(
             modifier = Modifier.padding(spacing.lg),
@@ -130,7 +137,7 @@ private fun SessionCard(session: SessionItem, onClick: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = sessionTitleText(session.title),
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -148,10 +155,16 @@ private fun SessionCard(session: SessionItem, onClick: () -> Unit) {
                     )
                 }
             }
-            Text(
-                text = durationText(session.capturedMs),
-                style = MaterialTheme.typography.labelLarge,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = durationText(session.capturedMs),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                TextButton(
+                    onClick = onRename,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.session_rename)) }
+            }
         }
     }
 }

@@ -186,4 +186,54 @@ class HttpUploadApiTest {
         respond = { 200 to "{}" }
         assertFailsWith<IOException> { api.complete(ServerLink(base, token), "u1") }
     }
+
+    @Test
+    fun `delivery calls use the documented wire format`() {
+        val ciphertext = byteArrayOf(1, 2, 3, 4)
+        respond = { exchange ->
+            when ("${exchange.requestMethod} ${exchange.requestURI.path}") {
+                "GET /v1/deliveries" -> 200 to JSONObject().put(
+                    "deliveries",
+                    org.json.JSONArray().put(
+                        JSONObject()
+                            .put("delivery_id", "d1")
+                            .put("upload_id", "u1")
+                            .put("ciphertext", java.util.Base64.getEncoder().encodeToString(ciphertext))
+                            .put("expires_at", "2026-10-02T00:00:00Z"),
+                    ),
+                ).toString()
+                "POST /v1/deliveries/ack" -> 200 to JSONObject().put("acknowledged", 1).toString()
+                else -> 200 to JSONObject().put("key_id", "k1").toString()
+            }
+        }
+        val link = ServerLink(base, token)
+
+        api.registerKey(link, ByteArray(32) { 7 })
+        val page = api.deliveries(link, 50)
+        val acked = api.acknowledge(link, listOf("d1"))
+
+        assertEquals("PUT /v1/device-key", requests[0].first)
+        assertEquals(
+            java.util.Base64.getEncoder().encodeToString(ByteArray(32) { 7 }),
+            JSONObject(String(requests[0].third)).getString("public_key"),
+        )
+        assertEquals(listOf(SealedDelivery("d1", "u1", ciphertext)), page)
+        assertEquals("GET /v1/deliveries", requests[1].first)
+        assertEquals(1, acked)
+        assertEquals("d1", JSONObject(String(requests[2].third)).getJSONArray("delivery_ids").getString(0))
+    }
+
+    @Test
+    fun `status is null when the server has no such upload for us`() {
+        respond = { exchange ->
+            if (exchange.requestURI.path.endsWith("/known")) {
+                200 to JSONObject().put("state", "transcribed").toString()
+            } else {
+                404 to """{"error":{"code":"not_found","message":"x"}}"""
+            }
+        }
+
+        assertEquals("transcribed", api.status(ServerLink(base, token), "known"))
+        assertEquals(null, api.status(ServerLink(base, token), "other"))
+    }
 }

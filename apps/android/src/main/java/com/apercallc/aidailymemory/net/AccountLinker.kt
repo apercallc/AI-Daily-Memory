@@ -20,6 +20,8 @@ class AccountLinker(
     private val api: AccountApi,
     private val onLinked: () -> Unit,
     private val onUnlinked: () -> Unit,
+    /** The server revoke didn't go through: arrange a retry when online. */
+    private val onRevokePending: () -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     fun connect(url: String, token: String, includeBacklog: Boolean): ConnectError? {
@@ -53,12 +55,29 @@ class AccountLinker(
 
     fun disconnect() {
         val link = links.link.value ?: return
-        links.clear()
+        links.clearKeepingForRevoke(link)
         onUnlinked()
-        try {
-            api.revokeCurrent(link)
+        if (!retryPendingRevoke()) onRevokePending()
+    }
+
+    /**
+     * Revokes a disconnected token on the server. True when nothing is left pending: revoked
+     * now, already invalid, or nothing to do. False means try again when online.
+     */
+    fun retryPendingRevoke(): Boolean {
+        val pending = links.pendingRevoke() ?: return true
+        return try {
+            api.revokeCurrent(pending)
+            links.revokeDone()
+            true
+        } catch (e: ApiException) {
+            // Already revoked or expired: the goal is met.
+            val gone = e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN
+            if (gone) links.revokeDone() else logFailure(TAG, "account_revoke_failed", e, warning = true)
+            gone
         } catch (e: IOException) {
             logFailure(TAG, "account_revoke_failed", e, warning = true)
+            false
         }
     }
 

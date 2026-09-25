@@ -23,9 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.db import get_session
-from app.db.models import AudioUpload, DeviceKey, SealedDelivery
+from app.db.models import AccessToken, AudioUpload, DeviceKey, SealedDelivery
 from app.errors import ErrorResponse, error_response
-from app.sealing import public_key
+from app.sealing import seal
 
 logger = logging.getLogger("app.deliveries")
 router = APIRouter(tags=["deliveries"])
@@ -78,36 +78,35 @@ async def active_key(session: AsyncSession, token_id: uuid.UUID) -> DeviceKey | 
 
 @router.put("/device-key", response_model=DeviceKeyOut, responses=_ERRORS)
 async def register_device_key(
-    body: DeviceKeyIn, session: Session, device: Device
+    body: DeviceKeyIn,
+    session: Session,
+    device: Device,
 ) -> DeviceKeyOut | Response:
+    """One key per device token, for the token's lifetime. There is no rotation: a phone that
+    lost its key has also lost its sealed token (both live behind the Keystore), so it
+    reconnects with a new token. Refusing rotation means a stolen token can't redirect the
+    victim's transcripts to a key the thief controls."""
     try:
         raw = base64.b64decode(body.public_key, validate=True)
-        public_key(raw)
+        # A trial seal rejects low-order and otherwise unusable points up front.
+        seal(raw, uuid.uuid4(), {})
     except (binascii.Error, ValueError):
-        return error_response(422, "Not an X25519 public key.", code="invalid_public_key")
+        return error_response(422, "Not a usable X25519 public key.", code="invalid_public_key")
 
+    # Serialize registrations for this token (the partial unique index would otherwise 500).
+    await session.execute(
+        select(AccessToken.id).where(AccessToken.id == device.token_id).with_for_update(),
+    )
     current = await active_key(session, device.token_id)
-    if current is not None and current.public_key == raw:
-        return DeviceKeyOut(key_id=current.id)
     if current is not None:
-        # Rotation: the old key is gone from the phone, so anything sealed to it can never be
-        # opened. Drop those copies and mark their clips failed so the phone uploads again.
-        lost = (
-            await session.scalars(
-                delete(SealedDelivery)
-                .where(SealedDelivery.device_key_id == current.id)
-                .returning(SealedDelivery.upload_id),
-            )
-        ).all()
-        if lost:
-            await session.execute(
-                update(AudioUpload)
-                .where(AudioUpload.id.in_(lost), AudioUpload.state == "transcribed")
-                .values(state="failed", failure_code="device_key_rotated"),
-            )
-        current.revoked_at = datetime.now(UTC)
-        await session.flush()
-        logger.info("device_key_rotated", extra={"lost_deliveries": len(lost)})
+        if current.public_key == raw:
+            return DeviceKeyOut(key_id=current.id)
+        logger.warning("device_key_mismatch", extra={"token_id": str(device.token_id)})
+        return error_response(
+            409,
+            "This device already has a key. Reconnect with a new device token to change it.",
+            code="device_key_mismatch",
+        )
     key = DeviceKey(user_id=device.user_id, token_id=device.token_id, public_key=raw)
     session.add(key)
     await session.commit()

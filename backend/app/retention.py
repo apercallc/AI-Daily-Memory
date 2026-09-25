@@ -27,6 +27,9 @@ logger = logging.getLogger("app.retention")
 
 PENDING_GRACE: Final = timedelta(hours=1)
 MAX_HOLD: Final = timedelta(days=7)
+# Finished upload rows say when the user spoke; keep them only as long as duplicate
+# detection needs them, then remove even that metadata (ADR-0014).
+FINISHED_METADATA: Final = timedelta(days=30)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class SweepResult:
     expired: int
     errors: int
     deliveries_expired: int = 0
+    metadata_purged: int = 0
 
 
 async def sweep(
@@ -102,6 +106,7 @@ async def sweep(
         expired=counts["retention_expired"],
         errors=errors,
         deliveries_expired=await _expire_deliveries(sessions, clock),
+        metadata_purged=await _purge_finished(sessions, clock),
     )
     if rows or result.deliveries_expired:
         logger.info(
@@ -156,3 +161,22 @@ async def _expire_deliveries(
             )
         await session.commit()
     return len(uploads)
+
+
+async def _purge_finished(
+    sessions: async_sessionmaker[AsyncSession],
+    clock: datetime | ColumnElement[datetime],
+) -> int:
+    async with sessions() as session:
+        purged = (
+            await session.scalars(
+                delete(AudioUpload)
+                .where(
+                    AudioUpload.state.in_(("delivered", "failed")),
+                    AudioUpload.created_at < clock - FINISHED_METADATA,
+                )
+                .returning(AudioUpload.id),
+            )
+        ).all()
+        await session.commit()
+    return len(purged)

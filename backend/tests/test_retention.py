@@ -135,7 +135,7 @@ async def test_a_failed_delete_leaves_the_row_for_the_next_sweep(
 
 async def test_the_database_clock_is_the_default(database: Database, db: Engine) -> None:
     store = FakeObjectStore()
-    long_ago = datetime.now(UTC) - timedelta(days=30)
+    long_ago = datetime.now(UTC) - timedelta(days=10)
     abandoned, _ = upload(db, store, state="pending", created_at=long_ago)
 
     await sweep(database.sessions, store, url_ttl_seconds=TTL)

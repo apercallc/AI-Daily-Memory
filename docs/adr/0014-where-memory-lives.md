@@ -99,6 +99,28 @@ phone: delete local audio (per ADR-0013 retention)
 - **Fully on-device processing:** not viable for quality and battery on typical phones today;
   revisit when on-device models (e.g. AICore) cover the device matrix.
 
+## Implementation notes (Phase 1, 2026-09-25)
+
+- **Sealed to the uploading device, never "the user's newest key".** Each upload records the
+  device key of the token that created it; its transcript is sealed to exactly that key, so a
+  second phone (or a stolen token) never receives another device's transcripts.
+- **No key rotation under a token.** A token gets one key for its lifetime; a different key is
+  refused (`device_key_mismatch`). A phone that lost its key (Keystore reset) has also lost its
+  sealed token and reconnects with a new token. Revoking a token revokes its key and deletes
+  anything sealed to it; those clips are re-uploaded by the phone.
+- **Phase 1 seals at once.** With no extraction yet there is nothing else to derive, so the
+  transcript is sealed as soon as it exists and the server never stores plaintext. Phase 2
+  holds it only until the day's report is built.
+- **No silent loss, end to end.** The phone keeps a clip's audio until its transcript is stored
+  locally; clips whose transcripts never arrive (failed, expired, unknown to the server) are
+  queued again from that audio.
+- **Finished metadata is purged.** Delivered and failed upload rows (which say when the user
+  spoke) are deleted after 30 days; they are kept that long only for duplicate detection.
+- **Interop is tested both ways**: Python `cryptography` HPKE ↔ Tink `..._AES_256_GCM_RAW`.
+- **Open**: what "no speech detected" means for retention. Today such segments are never
+  called uploaded or transcribed, so their audio stays until the user deletes it; deleting
+  them automatically needs an explicit decision (a missed whisper would be lost).
+
 ## Owner decisions (2026-09-25)
 
 1. Onboarding preselects **"On this phone"**; the user can change it at any time.

@@ -130,6 +130,11 @@ class AudioUpload(Base):
     active_transcript_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("transcripts.id", ondelete="SET NULL", use_alter=True),
     )
+    # Phone storage modes (ADR-0014): the key of the device that uploaded this clip. Its
+    # transcript is sealed to exactly this key, never to another device of the same user.
+    device_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("device_keys.id", ondelete="SET NULL", use_alter=True),
+    )
 
 
 class ProcessingJob(Base):

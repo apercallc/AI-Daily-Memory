@@ -31,6 +31,7 @@ import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -208,6 +209,48 @@ class SegmentStoreTest {
         val sha = MessageDigest.getInstance("SHA-256").digest(plaintext)
             .joinToString("") { "%02x".format(it) }
         assertEquals(sha, row.sha256)
+    }
+
+    @Test
+    fun `a keystore hiccup during recovery never deletes real audio`() = runTest {
+        // Regression: a transient ProviderException used to read as "corrupt", and recovery
+        // deleted the file.
+        val open = crashAfterRename(frames = 20)
+        val good = cipher
+        cipher = SegmentCipher(KeystoreDown)
+
+        assertEquals(0, store.abandonUnfinished())
+        assertEquals(SegmentState.WRITING.name, db.segments().get(open.entity.segmentId)?.state)
+        assertTrue(File(directory, open.entity.fileName).exists())
+        assertNull(store.readAudio(db.segments().get(open.entity.segmentId)!!))
+
+        cipher = good // the Keystore is back: the next restore recovers it
+        assertEquals(0, store.abandonUnfinished())
+        assertEquals(SegmentState.SEALED.name, db.segments().get(open.entity.segmentId)?.state)
+    }
+
+    /** A Keystore that throws the unchecked ProviderException, as real devices sometimes do. */
+    private object KeystoreDown : StreamingAead {
+        private fun down(): Nothing = throw java.security.ProviderException("keystore busy")
+
+        override fun newEncryptingChannel(
+            ciphertextDestination: java.nio.channels.WritableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newSeekableDecryptingChannel(
+            ciphertextSource: java.nio.channels.SeekableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newDecryptingChannel(
+            ciphertextSource: java.nio.channels.ReadableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newEncryptingStream(ciphertextDestination: java.io.OutputStream, associatedData: ByteArray) = down()
+
+        override fun newDecryptingStream(ciphertextSource: java.io.InputStream, associatedData: ByteArray) = down()
     }
 
     @Test

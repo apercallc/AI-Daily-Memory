@@ -7,10 +7,13 @@ import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
 import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
 import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
 import com.apercallc.aidailymemory.net.AccountApi
+import com.apercallc.aidailymemory.net.AccountLinker
+import com.apercallc.aidailymemory.net.DeviceKey
 import com.apercallc.aidailymemory.net.HttpUploadApi
 import com.apercallc.aidailymemory.net.ServerLink
 import com.apercallc.aidailymemory.net.LinkStore
 import com.apercallc.aidailymemory.upload.ClipUploader
+import com.apercallc.aidailymemory.upload.DeliveryReceiver
 import com.apercallc.aidailymemory.upload.UploadScheduler
 import com.apercallc.aidailymemory.capture.AudioCaptureEngine
 import com.apercallc.aidailymemory.capture.CaptureHealthTracker
@@ -268,6 +271,17 @@ class AppContainer(context: Context) {
 
     val uploadScheduler = UploadScheduler(app)
 
+    /** Connect / disconnect (blocking: call on IO). */
+    val accountLinker: AccountLinker by lazy {
+        AccountLinker(
+            links = links,
+            api = backend,
+            onLinked = uploadScheduler::schedule,
+            onUnlinked = uploadScheduler::cancel,
+            onRevokePending = uploadScheduler::scheduleRevoke,
+        )
+    }
+
     /** Phase 1 uploads (ADR-0015); runs only while linked, charging, on unmetered networks. */
     val clipUploader: ClipUploader by lazy {
         ClipUploader(
@@ -279,6 +293,23 @@ class AppContainer(context: Context) {
             link = { links.link.value },
             uploadSinceEpochMs = { links.uploadSinceEpochMs },
             ids = ids,
+        )
+    }
+
+    /** This phone's HPKE key; transcripts for phone storage modes are sealed to it. */
+    private val deviceKey by lazy { DeviceKey.keystore(app) }
+
+    val deliveryReceiver: DeliveryReceiver by lazy {
+        DeliveryReceiver(
+            link = { links.link.value },
+            api = backend,
+            uploads = backend,
+            clips = database.clips(),
+            ids = ids,
+            key = { deviceKey },
+            prefs = app.getSharedPreferences(LinkStore.FILE_NAME, Context.MODE_PRIVATE),
+            transcripts = database.transcripts(),
+            store = segments,
         )
     }
 

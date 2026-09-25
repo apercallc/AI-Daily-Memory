@@ -46,6 +46,8 @@ data class AccountUi(
     val error: ConnectError? = null,
     /** Clips that gave up plus segments that couldn't be read; their audio stays on the phone. */
     val uploadProblems: Int = 0,
+    /** A disconnected token the server hasn't revoked yet. */
+    val revokePending: Boolean = false,
 )
 
 /**
@@ -68,6 +70,7 @@ fun AccountSection(
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() },
         )
+        if (account.revokePending) Status(stringResource(R.string.account_revoke_pending), isError = false)
         if (account.host != null) {
             Connected(account, onDisconnect, onRetryUploads)
         } else {

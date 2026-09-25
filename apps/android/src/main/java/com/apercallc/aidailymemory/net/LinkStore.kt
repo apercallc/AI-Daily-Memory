@@ -47,6 +47,11 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
     private val _problem = MutableStateFlow(LinkProblem.NONE)
     val problem: StateFlow<LinkProblem> = _problem.asStateFlow()
 
+    private val _revokePending = MutableStateFlow(false)
+
+    /** A disconnected token the server hasn't revoked yet (AGENTS rule 4): retried online. */
+    val revokePending: StateFlow<Boolean> = _revokePending.asStateFlow()
+
     @Volatile private var loaded = false
 
     val isLinked: Boolean get() = _link.value != null
@@ -66,6 +71,7 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         if (loaded) return
         loaded = true
         if (prefs.getBoolean(KEY_REJECTED, false)) _problem.value = LinkProblem.REJECTED
+        _revokePending.value = prefs.contains(KEY_REVOKE_TOKEN)
         val url = prefs.getString(KEY_URL, null) ?: return
         val sealed = prefs.getString(KEY_TOKEN, null) ?: return
         try {
@@ -103,6 +109,49 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
     fun clear() = forget(LinkProblem.NONE)
 
     /**
+     * Disconnect: forgets the link for uploads but keeps the token, still sealed, only until
+     * the server has revoked it. If it can't be sealed, it is simply forgotten.
+     */
+    @Synchronized
+    fun clearKeepingForRevoke(link: ServerLink) {
+        try {
+            val sealed = aead().encrypt(link.token.toByteArray(Charsets.UTF_8), REVOKE_AD)
+            prefs.edit {
+                putString(KEY_REVOKE_URL, link.baseUrl)
+                putString(KEY_REVOKE_TOKEN, Base64.encodeToString(sealed, Base64.NO_WRAP))
+            }
+            _revokePending.value = true
+        } catch (e: GeneralSecurityException) {
+            logFailure(TAG, "revoke_keep_failed", e, warning = true)
+        }
+        forget(LinkProblem.NONE)
+    }
+
+    /** The token still waiting for its server-side revoke, if any. */
+    @Synchronized
+    fun pendingRevoke(): ServerLink? {
+        val url = prefs.getString(KEY_REVOKE_URL, null) ?: return null
+        val sealed = prefs.getString(KEY_REVOKE_TOKEN, null) ?: return null
+        return try {
+            ServerLink(url, aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), REVOKE_AD).toString(Charsets.UTF_8))
+        } catch (e: GeneralSecurityException) {
+            // Can't be read any more, so it can't be used either: nothing left to revoke from here.
+            logFailure(TAG, "revoke_unreadable", e, warning = true)
+            revokeDone()
+            null
+        }
+    }
+
+    @Synchronized
+    fun revokeDone() {
+        prefs.edit {
+            remove(KEY_REVOKE_URL)
+            remove(KEY_REVOKE_TOKEN)
+        }
+        _revokePending.value = false
+    }
+
+    /**
      * The server refused [rejected]. Clears only if it is still the stored link, so a run that
      * started with an old token can't wipe a token the user entered since.
      */
@@ -132,6 +181,9 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         private const val KEY_TOKEN = "token_sealed"
         private const val KEY_SINCE = "upload_since_epoch_ms"
         private const val KEY_REJECTED = "rejected"
+        private const val KEY_REVOKE_URL = "revoke_base_url"
+        private const val KEY_REVOKE_TOKEN = "revoke_token_sealed"
+        private val REVOKE_AD = "aidm:server-token:revoke:v1".toByteArray(Charsets.UTF_8)
         private val AD = "aidm:server-token:v1".toByteArray(Charsets.UTF_8)
         private const val KEYSET = "link_keyset"
         private const val KEYSET_PREFS = "link_keys"

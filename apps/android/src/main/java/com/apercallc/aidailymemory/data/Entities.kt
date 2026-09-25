@@ -207,3 +207,39 @@ data class ClipUploadEntity(
     val attempts: Int,
     @ColumnInfo(name = "last_error") val lastError: String?,
 )
+
+/**
+ * A transcript delivered to this phone (ADR-0014): local evidence, inserted once and never
+ * rewritten (ADR-0004). [uploadId] is the clip's upload id; times are ms from the clip start.
+ */
+@Entity(tableName = "transcript", indices = [Index("segment_id")])
+data class TranscriptEntity(
+    @PrimaryKey @ColumnInfo(name = "upload_id") val uploadId: String,
+    @ColumnInfo(name = "segment_id") val segmentId: String,
+    @ColumnInfo(name = "offset_ms") val offsetMs: Long,
+    val provider: String,
+    val model: String,
+    val language: String?,
+    @ColumnInfo(name = "received_at_epoch_ms") val receivedAtEpochMs: Long,
+)
+
+@Entity(tableName = "transcript_span", primaryKeys = ["upload_id", "idx"])
+data class TranscriptSpanEntity(
+    @ColumnInfo(name = "upload_id") val uploadId: String,
+    val idx: Int,
+    @ColumnInfo(name = "start_ms") val startMs: Long,
+    @ColumnInfo(name = "end_ms") val endMs: Long,
+    val text: String,
+    val speaker: String?,
+    val confidence: Double?,
+)
+
+/** One transcript line placed on the wall clock, for the session transcript screen. */
+data class TranscriptLine(
+    val uploadId: String,
+    val idx: Int,
+    val startEpochMs: Long,
+    val zoneId: String,
+    val text: String,
+    val speaker: String?,
+)

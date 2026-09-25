@@ -211,6 +211,25 @@ data rights.
 | Account deletion with partial S3 failures | `DeleteIncompleteError`; never reported as deleted |
 | Users not in full cloud memory | Never transcribed into server storage (bundle path pending, ADR-0014) |
 
+## 11. Phone uploads and sealed delivery (ADR-0014/0015)
+
+| Edge case | Behavior now |
+| --- | --- |
+| Object storage returns 403 (expired URL, clock skew) | Retried; never treated as a signed-out account |
+| Server down or processing disabled | System exponential backoff; the job never spins |
+| Account connected after weeks of recording | Only new audio uploads unless the user ticks "also transcribe what's on this phone" |
+| Reconnected to another account without the backlog | Clips planned under the earlier consent never upload under the new link |
+| Segment unreadable or with no speech | Leaves the queue with a visible outcome; never blocks newer audio |
+| Keystore briefly unavailable | Audio treated as "try later", never as corrupt; crash recovery keeps the file |
+| Two phones on one account | Each receives only its own transcripts (sealed to the uploading device's key) |
+| Stolen device token tries to register its own key | Refused: one key per token for its lifetime |
+| Token revoked with transcripts waiting | Its key and sealed copies are removed; the phone re-uploads after reconnecting |
+| Disconnect while offline | Local link forgotten at once; the server revoke is kept sealed and retried |
+| Transcript expired, failed, or unknown to the server | The phone re-uploads from its kept audio |
+| Ciphertext moved onto another clip | Fails to open (upload id bound as HPKE info); never acknowledged |
+| Unknown payload version or malformed transcript | Not stored, not acknowledged |
+| Audio deletion | Only after every clip of the segment has its transcript on the phone |
+
 ## Open
 
 - ✅ Quick Note model: a marker window inside the active session (ADR-0011).

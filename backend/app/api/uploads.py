@@ -195,15 +195,18 @@ async def _create(
         await store.delete(earlier.object_key)
         await session.execute(delete(AudioUpload).where(AudioUpload.id == earlier.id))
 
-    # Phone storage modes need somewhere to seal the transcript (ADR-0014).
+    # Phone storage modes need somewhere to seal the transcript (ADR-0014): this device's key.
     mode = await session.scalar(select(User.storage_mode).where(User.id == principal.user_id))
-    if mode != "full_cloud" and await active_key(session, principal.token_id) is None:
-        await session.rollback()
-        return error_response(
-            409,
-            "Register this phone's device key before uploading.",
-            code="device_key_required",
-        )
+    device_key = None
+    if mode != "full_cloud":
+        device_key = await active_key(session, principal.token_id)
+        if device_key is None:
+            await session.rollback()
+            return error_response(
+                409,
+                "Register this phone's device key before uploading.",
+                code="device_key_required",
+            )
 
     # Serialize this user's creates so concurrent requests can't all pass the quota check.
     await session.execute(
@@ -236,6 +239,7 @@ async def _create(
         captured_at=body.captured_at,
         state="pending",
         object_key=audio_key(principal.user_id, body.upload_id),
+        device_key_id=device_key.id if device_key else None,
     )
     session.add(row)
     await session.commit()

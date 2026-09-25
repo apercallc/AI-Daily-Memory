@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from app.auth import hash_token, new_token
 from app.db import Database
 from app.jobs import enqueue
 from app.main import create_app
@@ -245,21 +246,118 @@ async def test_other_devices_and_users_never_see_or_ack_a_delivery(
     assert len(client.get("/v1/deliveries", headers=phone.headers).json()["deliveries"]) == 1
 
 
+def test_a_device_key_can_never_be_swapped_under_the_same_token(
+    client: TestClient,
+    phone: Account,
+) -> None:
+    register(client, phone, X25519PrivateKey.generate())
+    thief_key = {"public_key": base64.b64encode(raw_public(X25519PrivateKey.generate())).decode()}
+
+    response = client.put("/v1/device-key", json=thief_key, headers=phone.headers)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "device_key_mismatch"
+
+
+def test_low_order_public_keys_are_rejected(client: TestClient, phone: Account) -> None:
+    zero = {"public_key": base64.b64encode(bytes(32)).decode()}
+
+    assert client.put("/v1/device-key", json=zero, headers=phone.headers).status_code == 422
+
+
+def second_device(db: Engine, phone: Account) -> Account:
+    """Another device token on the same account."""
+    token = new_token()
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO access_tokens (id, user_id, token_hash, kind, scopes, name) "
+                "VALUES (:id, :user, :hash, 'device', :scopes, 'second phone')",
+            ),
+            {
+                "id": uuid.uuid4(),
+                "user": phone.user_id,
+                "hash": hash_token(token),
+                "scopes": ["upload:write", "memory:read"],
+            },
+        )
+    return Account(phone.user_id, token)
+
+
 @pytest.mark.anyio
-async def test_rotating_the_key_drops_unreadable_copies_and_frees_the_clip_for_reupload(
+async def test_each_device_only_ever_receives_its_own_transcripts(
     client: TestClient,
     phone: Account,
     store: FakeObjectStore,
     database: Database,
+    db: Engine,
+) -> None:
+    first_key = X25519PrivateKey.generate()
+    register(client, phone, first_key)
+    other = second_device(db, phone)
+    other_key = X25519PrivateKey.generate()
+    register(client, other, other_key)  # registered later: the "newest" key
+
+    upload_id = await transcribe_one(client, phone, store, database)
+
+    mine = client.get("/v1/deliveries", headers=phone.headers).json()["deliveries"]
+    assert [d["upload_id"] for d in mine] == [upload_id]
+    assert client.get("/v1/deliveries", headers=other.headers).json() == {"deliveries": []}
+    SUITE.decrypt(
+        base64.b64decode(mine[0]["ciphertext"]), first_key, info=info_for(uuid.UUID(upload_id))
+    )
+
+
+@pytest.mark.anyio
+async def test_revoking_a_token_revokes_its_key_and_what_was_sealed_to_it(
+    client: TestClient,
+    phone: Account,
+    store: FakeObjectStore,
+    database: Database,
+    db: Engine,
 ) -> None:
     register(client, phone, X25519PrivateKey.generate())
     upload_id = await transcribe_one(client, phone, store, database)
 
-    register(client, phone, X25519PrivateKey.generate())
+    assert client.delete("/v1/tokens/current", headers=phone.headers).status_code == 204
 
-    assert client.get("/v1/deliveries", headers=phone.headers).json() == {"deliveries": []}
-    status = client.get(f"/v1/uploads/{upload_id}", headers=phone.headers).json()
-    assert status["state"] == "failed"
+    with db.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM sealed_deliveries")).scalar() == 0
+        key_revoked = connection.execute(
+            text("SELECT revoked_at IS NOT NULL FROM device_keys")
+        ).scalar()
+        row = connection.execute(
+            text("SELECT state, failure_code FROM audio_uploads WHERE id = :id"),
+            {"id": uuid.UUID(upload_id)},
+        ).one()
+    assert key_revoked
+    assert tuple(row) == ("failed", "device_key_revoked")
+
+
+@pytest.mark.anyio
+async def test_a_key_revoked_while_transcribing_never_gets_a_sealed_copy(
+    client: TestClient,
+    phone: Account,
+    store: FakeObjectStore,
+    database: Database,
+    db: Engine,
+) -> None:
+    register(client, phone, X25519PrivateKey.generate())
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=phone.headers)
+    upload_id = uuid.UUID(str(body["upload_id"]))
+    store.put(audio_key(phone.user_id, upload_id), AUDIO)
+    client.post(f"/v1/uploads/{upload_id}/complete", headers=phone.headers)
+    with db.begin() as connection:
+        connection.execute(text("UPDATE device_keys SET revoked_at = now()"))
+
+    handler = TranscribeHandler(database.sessions, store, FakeProvider())
+    await Worker(database, {"transcribe": handler}, worker_id="w").run_once()
+
+    with db.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM sealed_deliveries")).scalar() == 0
+        code: str = connection.execute(text("SELECT failure_code FROM audio_uploads")).scalar_one()
+    assert code == "device_key_revoked"
 
 
 @pytest.mark.anyio
@@ -283,6 +381,7 @@ async def test_uncollected_deliveries_expire_and_the_clip_can_be_uploaded_again(
     )
 
     assert result.deliveries_expired == 1
+    assert result.metadata_purged == 0  # the failed row is kept for re-upload matching
     again = clip()
     again.update(
         segment_id=str(body["segment_id"]),
@@ -357,3 +456,78 @@ def test_spans_survive_the_round_trip_with_unicode() -> None:
     assert json.loads(SUITE.decrypt(sealed, key, info=info_for(upload_id))) == {
         "spans": [span.text],
     }
+
+
+@pytest.mark.anyio
+async def test_finished_upload_metadata_is_purged_after_thirty_days(
+    client: TestClient,
+    phone: Account,
+    store: FakeObjectStore,
+    database: Database,
+    db: Engine,
+) -> None:
+    register(client, phone, X25519PrivateKey.generate())
+    await transcribe_one(client, phone, store, database)
+    delivery = client.get("/v1/deliveries", headers=phone.headers).json()["deliveries"][0]
+    client.post(
+        "/v1/deliveries/ack",
+        json={"delivery_ids": [delivery["delivery_id"]]},
+        headers=phone.headers,
+    )
+
+    soon = await sweep(database.sessions, store, url_ttl_seconds=900)
+    later = await sweep(
+        database.sessions,
+        store,
+        url_ttl_seconds=900,
+        now=datetime.now(UTC) + timedelta(days=31),
+    )
+
+    assert soon.metadata_purged == 0
+    assert later.metadata_purged == 1
+    with db.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM audio_uploads")).scalar() == 0
+
+
+def test_a_ciphertext_sealed_by_tink_opens_with_the_backend_suite() -> None:
+    """Reverse interop (the phone's DeviceKeyTest covers backend -> Tink): produced by Tink's
+    HPKE HybridEncrypt on the JVM for this fixed, test-only key."""
+    private = X25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
+    tink_sealed = bytes.fromhex(
+        "45b137ac12e37172f5ef2389b37ee242db8d6928089652a2bb9c69afb0c05c30"
+        "df437062e192e64033f16683e3ac8c3c5fce0a3c253ee548d49b35784749",
+    )
+    upload = uuid.UUID("01890000-0000-7000-8000-000000000001")
+
+    assert SUITE.decrypt(tink_sealed, private, info=info_for(upload)) == b"sealed by tink"
+
+
+@pytest.mark.anyio
+async def test_a_key_that_cannot_be_sealed_to_dead_letters_without_retrying(
+    client: TestClient,
+    phone: Account,
+    store: FakeObjectStore,
+    database: Database,
+    db: Engine,
+) -> None:
+    register(client, phone, X25519PrivateKey.generate())
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=phone.headers)
+    upload_id = uuid.UUID(str(body["upload_id"]))
+    store.put(audio_key(phone.user_id, upload_id), AUDIO)
+    client.post(f"/v1/uploads/{upload_id}/complete", headers=phone.headers)
+    with db.begin() as connection:
+        # Simulates a key that slipped past registration checks (e.g. registered before them).
+        connection.execute(text("UPDATE device_keys SET public_key = :zero"), {"zero": bytes(32)})
+    provider = FakeProvider()
+
+    await Worker(
+        database,
+        {"transcribe": TranscribeHandler(database.sessions, store, provider)},
+        worker_id="w",
+    ).run_once()
+
+    assert provider.calls == 1
+    with db.connect() as connection:
+        job = connection.execute(text("SELECT state, last_error_code FROM processing_jobs")).one()
+    assert tuple(job) == ("dead", "sealing_failed")

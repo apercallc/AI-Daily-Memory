@@ -103,6 +103,18 @@ class SessionMigrationTest {
     }
 
     @Test
+    fun `migrating to v5 adds delivered transcripts`() {
+        helper.createDatabase(DB, 4).close()
+
+        helper.runMigrationsAndValidate(DB, 5, true, CaptureDatabase.MIGRATION_4_5).use { db ->
+            db.query("SELECT COUNT(*) FROM transcript_span").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+    }
+
+    @Test
     fun `registry fixes the memory day at start, and renames are validated`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, CaptureDatabase::class.java)

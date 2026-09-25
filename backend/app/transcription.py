@@ -114,22 +114,24 @@ class TranscribeHandler:
             codec, rate, duration = upload.codec, upload.sample_rate_hz, upload.duration_ms
             clip = (upload.segment_id, upload.offset_ms, upload.captured_at)
             mode = await session.scalar(select(User.storage_mode).where(User.id == job.user_id))
-            # Phone modes (ADR-0014): the transcript is sealed to the phone, never stored in
-            # the clear. Phase 2 will hold it until the day's report is built; until then there
-            # is nothing else to derive, so it is sealed as soon as it exists.
-            device_key = None
-            if mode != "full_cloud":
-                device_key = await session.scalar(
-                    select(DeviceKey)
-                    .where(DeviceKey.user_id == job.user_id, DeviceKey.revoked_at.is_(None))
-                    .order_by(DeviceKey.created_at.desc())
-                    .limit(1),
-                )
+            # Phone modes (ADR-0014): the transcript is sealed to the key of the device that
+            # uploaded the clip, never stored in the clear and never sent to another device.
+            # The key recorded at upload wins over the current mode, so a later mode switch
+            # can't expose a clip uploaded under a phone-only promise. Phase 2 will hold the
+            # transcript until the day's report is built; until then it is sealed at once.
+            device_key = (
+                await session.get(DeviceKey, upload.device_key_id)
+                if upload.device_key_id is not None
+                else None
+            )
 
         if state not in ("received", "transcribed"):
             raise JobError(f"upload_{state}", retryable=False)
-        if state != "transcribed" and mode != "full_cloud" and device_key is None:
-            raise JobError("device_key_missing", retryable=False)
+        if state != "transcribed":
+            if device_key is not None and device_key.revoked_at is not None:
+                raise JobError("device_key_revoked", retryable=False)
+            if device_key is None and mode != "full_cloud":
+                raise JobError("device_key_missing", retryable=False)
 
         if state != "transcribed":
             try:
@@ -157,7 +159,10 @@ class TranscribeHandler:
                     model=self.provider.model,
                     result=result,
                 )
-                sealed = seal(device_key.public_key, job.subject_id, payload)
+                try:
+                    sealed = seal(device_key.public_key, job.subject_id, payload)
+                except ValueError as e:
+                    raise JobError("sealing_failed", retryable=False) from e
                 await self._persist_sealed(job.subject_id, job.user_id, device_key.id, sealed)
 
         # Only after the transcript is committed (ADR-0003): delete the temporary audio. A
@@ -217,6 +222,10 @@ class TranscribeHandler:
             upload = await session.get(AudioUpload, upload_id, with_for_update=True)
             if upload is None or upload.state == "transcribed":
                 return
+            # The token (and so its key) may have been revoked while the provider worked.
+            key = await session.get(DeviceKey, device_key_id, with_for_update=True)
+            if key is None or key.revoked_at is not None:
+                raise JobError("device_key_revoked", retryable=False)
             session.add(
                 SealedDelivery(
                     user_id=user_id,

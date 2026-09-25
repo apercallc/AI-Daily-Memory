@@ -281,6 +281,17 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] Delete temporary cloud audio only after verified transcript persistence
 - [x] Re-transcription creates a new transcript revision; exactly one active revision per segment (ADR-0004 amendment)
 
+## Phone upload client (ADR-0015)
+
+- [x] Frame-aligned speech clips (ClipPlanner) with size + SHA-256, planned once per segment
+- [x] Upload queue (Room) with create -> presigned PUT -> complete; every server error mapped
+- [x] Charging + unmetered job with exponential backoff; pure UploadPolicy in core
+- [x] Connect account (URL + device token, verified via /v1/me), encrypted token storage
+- [x] Backlog consent: only audio recorded after connecting, unless the user opts in
+- [x] Failed uploads and unreadable segments shown with a retry
+- [x] Transcript screen per session (delivered transcripts, local time, speaker labels)
+- [ ] Account sign-in flow (tokens are issued by `python -m app.admin` until then)
+
 ## Speech gating + night processing (ADR-0015)
 
 - [ ] Labeled day-audio set (speech / no speech / media / whisper / pocket) for VAD tuning
@@ -296,11 +307,14 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ## Storage modes (ADR-0014)
 
-- [ ] Account storage mode: On this phone (default) / Reports in cloud / Full cloud memory
-- [ ] Transient processing hold: until device ack, max 7 days, then crypto-shred
-- [ ] Day bundle encrypted to a per-device Keystore public key (Tink)
-- [ ] Invariant test: local audio deleted only after its transcript is persisted where the user's data lives
-- [ ] Expired bundle -> unacknowledged audio re-uploaded (no silent loss)
+- [x] Account storage mode stored per user (phone_only default; reports_cloud; full_cloud)
+- [ ] Storage-mode switching UI + migrations between modes
+- [x] Transient processing hold: sealed copy until the phone acknowledges, max 7 days
+- [x] Transcripts sealed to the uploading device's HPKE key (X25519/HKDF-SHA256/AES-256-GCM; Tink on the phone; interop tested both ways)
+- [x] Invariant: local audio acknowledged (deletable) only after its transcript is stored on the phone
+- [x] Expired, failed, or unknown deliveries -> the phone re-uploads from its kept audio (no silent loss)
+- [x] One device key per token, no rotation; token revocation revokes the key and its sealed copies
+- [x] Disconnect revokes the token server-side; a failed revoke is kept and retried when online
 - [ ] Cross-day context packet (open action items) sent by the phone with the night job
 - [ ] Mode switch phone -> cloud (from now / include history), idempotent by client IDs
 - [ ] Mode switch cloud -> phone: download, verify, then server delete; never delete first
