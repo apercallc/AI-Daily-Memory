@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Daily Memory</string>
+    <string name="tagline">Capture what matters. Keep the evidence. Recall it later.</string>
+    <string name="scaffold_notice">Phase 0 scaffold: controls exercise the recording domain only. No audio is captured yet.</string>
+
+    <string name="status_ready">Ready</string>
+    <string name="status_start_failed">Couldn\'t start recording</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_recording">Recording</string>
+    <string name="status_not_capturing">Not capturing audio</string>
+    <string name="status_paused">Paused</string>
+    <string name="status_interrupted">Recording interrupted</string>
+    <string name="status_recovering">Reconnecting microphone…</string>
+    <string name="status_stopping">Saving…</string>
+    <string name="status_completed">Session saved</string>
+
+    <string name="detail_idle">Ready to start a local recording session.</string>
+    <string name="detail_active">Capture health details will appear here once the recorder service is wired.</string>
+
+    <string name="problem_permission_denied">Microphone permission is off. Allow it in Settings to record.</string>
+    <string name="problem_microphone_unavailable">Another app or the system is using the microphone.</string>
+    <string name="problem_phone_call">Paused for a phone call.</string>
+    <string name="problem_foreground_start_not_allowed">Open the app to start recording. Android doesn\'t allow starting from the background.</string>
+    <string name="problem_storage_low">Storage is almost full. Free up space to keep recording.</string>
+    <string name="problem_process_restarted">The app was closed by the system while recording.</string>
+    <string name="problem_device_rebooted">Your phone restarted while recording.</string>
+    <string name="problem_unknown">Recording stopped unexpectedly.</string>
+
+    <string name="action_start">Start My Day</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_highlight">Highlight</string>
+    <string name="action_quick_note">Quick Note</string>
+    <string name="action_end_session">End Session</string>
+</resources>
