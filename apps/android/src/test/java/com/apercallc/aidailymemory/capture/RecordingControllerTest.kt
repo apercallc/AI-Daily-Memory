@@ -18,6 +18,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -244,6 +245,31 @@ class RecordingControllerTest {
             controller.dispatch(RecordingCommand.Start(session))
             assertEquals(13, journal.records.single().revision)
         }
+
+    @Test
+    fun `a cancelled caller cannot split the journal from the published state`() = runTest {
+        val journal = FakeJournal()
+        val controller = controller(journal)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        controller.attach(
+            recordingHandler("service") { _, _ -> emptyList() }.let { inner ->
+                EffectHandler { effect, state ->
+                    gate.await() // an effect that takes a while (e.g. sealing on close)
+                    inner.execute(effect, state)
+                }
+            },
+        )
+
+        val caller = launch { controller.dispatch(RecordingCommand.Start(session)) }
+        runCurrent()
+        caller.cancel() // e.g. the service was destroyed mid-command
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(RecordingStatus.STARTING, controller.state.value.status)
+        assertEquals(listOf("STARTING"), journal.records.map { it.status })
+        assertTrue("service:OpenMicrophone" in log, "planned effects still ran")
+    }
 
     @Test
     fun `commands wait for the journal to be restored`() = runTest {

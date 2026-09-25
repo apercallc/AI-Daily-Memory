@@ -122,6 +122,36 @@ class RecoverySchedulerTest {
     }
 
     @Test
+    fun `an interruption restored from a previous process is never retried automatically`() =
+        runTest {
+            // The process died during a call; by now the call has ended. Retrying would reopen
+            // the mic without the user: an automatic restart, which ADR-0010 forbids.
+            val restored = JournalRecord(7, "INTERRUPTED", session.value, "PHONE_CALL", "x")
+            val controller = RecordingController(
+                journal = object : TransitionJournal {
+                    override suspend fun latest() =
+                        restored to CaptureTime.of(Instant.EPOCH, ZoneOffset.UTC, 0, "b")
+                    override suspend fun append(record: JournalRecord, time: CaptureTime) = Unit
+                },
+                now = { CaptureTime.of(Instant.EPOCH, ZoneOffset.UTC, 5, "b") },
+                currentBoot = { BootStamp("b", 5) },
+                bootOf = { BootStamp(it.bootId, it.elapsedRealtimeMs) },
+                elapsedRealtimeMs = { 5 },
+                scope = backgroundScope,
+                detached = { _, _ -> emptyList() },
+                beforeRecovery = {},
+            )
+            controller.restore()
+            RecoveryScheduler(controller, policy, { true }, {}, pollMs = 500)
+                .start(backgroundScope)
+
+            advanceTimeBy(60_000)
+
+            assertEquals(RecordingStatus.INTERRUPTED, controller.state.value.status)
+            assertEquals(CaptureProblem.PHONE_CALL, controller.state.value.problem)
+        }
+
+    @Test
     fun `restart interruptions are never auto-recovered`() = runTest {
         val needsUser = mutableListOf<RecordingState>()
         val controller = setUp(needsUser = needsUser)

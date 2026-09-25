@@ -46,6 +46,7 @@ object CaptureStrings {
             R.string.problem_foreground_start_not_allowed
         CaptureProblem.STORAGE_LOW -> R.string.problem_storage_low
         CaptureProblem.ENCRYPTION_UNAVAILABLE -> R.string.problem_encryption_unavailable
+        CaptureProblem.INDICATOR_HIDDEN -> R.string.problem_indicator_hidden
         CaptureProblem.PROCESS_RESTARTED -> R.string.problem_process_restarted
         CaptureProblem.DEVICE_REBOOTED -> R.string.problem_device_rebooted
         CaptureProblem.UNKNOWN -> R.string.problem_unknown

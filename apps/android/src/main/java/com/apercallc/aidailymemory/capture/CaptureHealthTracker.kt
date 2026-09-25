@@ -2,11 +2,15 @@ package com.apercallc.aidailymemory.capture
 
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.platform.StorageMonitor
+import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
 import com.apercallc.aidailymemory.recording.health.CaptureHealthEvaluator
 import com.apercallc.aidailymemory.recording.health.CaptureHealthInputs
 import com.apercallc.aidailymemory.recording.health.WatchLink
+import com.apercallc.aidailymemory.recording.segment.CaptureGap
 import com.apercallc.aidailymemory.recording.segment.CaptureSummary
+import com.apercallc.aidailymemory.recording.segment.GapDetector
+import com.apercallc.aidailymemory.recording.segment.SegmentState
 import com.apercallc.aidailymemory.recording.storage.StorageHealth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +20,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -28,7 +33,14 @@ data class CaptureOverview(
     val health: CaptureHealth,
     val summary: CaptureSummary,
     val storage: StorageHealth,
+    /** Unintended holes in this session's audio (lost, torn, or discontinuous segments). */
+    val gaps: List<CaptureGap> = emptyList(),
+    /** How long ago a segment was last sealed in this boot, or null if none yet. */
+    val lastSavedAgoMs: Long? = null,
 )
+
+/** Sealed segment rows of one session, reduced to what health needs. */
+private data class SessionSegments(val summary: CaptureSummary, val gaps: List<CaptureGap>)
 
 /**
  * Feeds [CaptureHealthEvaluator] from live sources. Runs only while someone is watching
@@ -45,24 +57,46 @@ class CaptureHealthTracker(
     scope: CoroutineScope,
     tickMs: Long = 5_000,
 ) {
-    private val ticks: Flow<Long> = flow {
-        while (true) {
-            emit(elapsedRealtimeMs())
-            delay(tickMs)
-        }
-    }
+    private val gapDetector = GapDetector()
 
-    private val summaries: Flow<CaptureSummary> = controller.state
+    /**
+     * Stall detection needs a clock only while RECORDING. Paused or idle, health changes only
+     * with state or storage writes, so the tracker does not wake the CPU on a timer then.
+     */
+    private val ticks: Flow<Long> = controller.state
+        .map { it.status == RecordingStatus.RECORDING }
+        .distinctUntilChanged()
+        .flatMapLatest { recording ->
+            if (recording) {
+                flow {
+                    while (true) {
+                        emit(elapsedRealtimeMs())
+                        delay(tickMs)
+                    }
+                }
+            } else {
+                flowOf(elapsedRealtimeMs())
+            }
+        }
+
+    private val sessionSegments: Flow<SessionSegments> = controller.state
         .map { it.sessionId?.value }
+        .distinctUntilChanged()
         .flatMapLatest { sessionId ->
             if (sessionId == null) {
-                flowOf(CaptureSummary.Empty)
+                flowOf(SessionSegments(CaptureSummary.Empty, emptyList()))
             } else {
                 segments.observeSession(sessionId).map { rows ->
-                    CaptureSummary.of(rows.map { it.toSegment() })
+                    // Quarantined segments are gaps too: they carry no usable audio.
+                    val usable = rows.filter { it.defect == null && it.state != SegmentState.WRITING.name }
+                    SessionSegments(
+                        summary = CaptureSummary.of(rows.map { it.toSegment() }),
+                        gaps = gapDetector.detect(usable.map { it.toTiming() }),
+                    )
                 }
             }
         }
+        .flowOn(Dispatchers.Default)
 
     private val storageHealth: Flow<StorageHealth> =
         combine(segments.observePendingBytes(), ticks) { pending, _ -> storage.evaluate(pending) }
@@ -72,13 +106,15 @@ class CaptureHealthTracker(
         controller.state,
         controller.statusSinceElapsedMs,
         engineHealth,
-        summaries,
+        sessionSegments,
         storageHealth,
-    ) { state, since, engine, summary, storageNow ->
+    ) { state, since, engine, session, storageNow ->
+        val now = elapsedRealtimeMs()
+        val summary = session.summary
         val health = evaluator.evaluate(
             CaptureHealthInputs(
                 state = state,
-                nowElapsedMs = elapsedRealtimeMs(),
+                nowElapsedMs = now,
                 statusSinceElapsedMs = since,
                 lastSealedSegmentEndElapsedMs = engine.lastSealedElapsedMs,
                 storage = storageNow,
@@ -88,7 +124,13 @@ class CaptureHealthTracker(
                 watch = WatchLink.NOT_PAIRED,
             ),
         )
-        CaptureOverview(health, summary, storageNow)
+        CaptureOverview(
+            health = health,
+            summary = summary,
+            storage = storageNow,
+            gaps = session.gaps,
+            lastSavedAgoMs = engine.lastSealedElapsedMs?.let { now - it },
+        )
     }.stateIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     private companion object {

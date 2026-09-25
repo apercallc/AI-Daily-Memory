@@ -27,11 +27,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Not exported: only this app (UI and its own notification actions) sends commands. -->
+        <!-- Not exported: started only by RecordingService.send from this app. -->
         <service
             android:name=".service.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Notification actions only (explicit PendingIntents); not reachable by other apps. -->
+        <receiver
+            android:name=".service.CommandReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".service.RestartReceiver"

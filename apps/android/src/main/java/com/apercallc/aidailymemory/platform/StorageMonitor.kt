@@ -12,7 +12,7 @@ class StorageMonitor(private val directory: File, private val policy: StoragePol
     fun freeBytes(): Long? = try {
         StatFs(directory.path).availableBytes
     } catch (e: IllegalArgumentException) {
-        Log.w(TAG, "storage_query_failed", e)
+        logFailure(TAG, "storage_query_failed", e, warning = true)
         null
     }
 

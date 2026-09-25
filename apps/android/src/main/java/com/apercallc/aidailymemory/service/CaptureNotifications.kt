@@ -47,9 +47,22 @@ class CaptureNotifications(private val context: Context) {
         )
     }
 
+    /**
+     * Whether the recording indicator can actually be seen: app notifications on *and* the
+     * status channel not blocked. The service checks this before and during capture.
+     */
+    fun canShowStatus(): Boolean {
+        if (!manager.areNotificationsEnabled()) return false
+        val channel = manager.getNotificationChannel(CHANNEL_STATUS) ?: return true
+        return channel.importance != NotificationManager.IMPORTANCE_NONE
+    }
+
     fun status(model: CaptureStatusModel): Notification =
         builder(CHANNEL_STATUS, model)
             .setOngoing(true)
+            // Android 14+ lets users swipe away foreground-service notifications. Dismissing
+            // the recording indicator re-posts it; pausing is the way to stop recording.
+            .setDeleteIntent(broadcast(RecordingService.ACTION_SHOW_STATUS))
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -79,6 +92,11 @@ class CaptureNotifications(private val context: Context) {
         if (manager.areNotificationsEnabled()) manager.notify(ID_STATUS, status(model))
     }
 
+    /** Re-posts a dismissed indicator while a session can still capture or resume. */
+    fun repostStatusIfActive(model: CaptureStatusModel) {
+        if (model.canStop) update(model)
+    }
+
     private fun builder(channel: String, model: CaptureStatusModel) =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_recording)
@@ -106,17 +124,15 @@ class CaptureNotifications(private val context: Context) {
         }
     }
 
-    // A notification tap counts as user interaction, so the service may start in the
-    // foreground from here even when the app is in the background (ADR-0010).
-    private fun action(label: Int, serviceAction: String) = NotificationCompat.Action(
-        0,
-        context.getString(label),
-        PendingIntent.getForegroundService(
-            context,
-            serviceAction.hashCode(),
-            RecordingService.intent(context, serviceAction),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        ),
+    private fun action(label: Int, serviceAction: String) =
+        NotificationCompat.Action(0, context.getString(label), broadcast(serviceAction))
+
+    /** Explicit and immutable: only this app's own receiver can get it, and nobody can edit it. */
+    private fun broadcast(serviceAction: String) = PendingIntent.getBroadcast(
+        context,
+        serviceAction.hashCode(),
+        CommandReceiver.intent(context, serviceAction),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
     private fun openApp() = PendingIntent.getActivity(

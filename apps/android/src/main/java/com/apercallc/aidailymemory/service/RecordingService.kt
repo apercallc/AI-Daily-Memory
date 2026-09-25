@@ -11,7 +11,9 @@ import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
+import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.capture.EffectHandler
+import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.CaptureSignal
 import com.apercallc.aidailymemory.recording.RecordingCommand
@@ -26,23 +28,29 @@ import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Microphone foreground service (ADR-0010). It owns no state: commands arrive as intents
- * (from the app, the notification, and later the watch), go through the controller, and the
+ * (from the app and its notification, later the watch), go through the controller, and the
  * service only executes the effects the controller hands back.
  *
  * Lifecycle rules:
- * - `startForeground` is called first in every command, well inside the platform timeout.
- * - Pause keeps the service (mic closed); Stop ends it.
+ * - `startForeground` is the first call for every command, well inside the platform timeout.
+ * - Only [send] starts this service, and only when `startForeground` can succeed: a
+ *   `startForegroundService` whose `startForeground` fails would crash the app.
+ * - Pause keeps the service (mic closed); Stop ends it once no command is in flight.
  * - START_STICKY is used only so a killed process comes back to *report* the interruption;
- *   a sticky restart never reopens the microphone.
+ *   a sticky restart never enters the foreground and never reopens the microphone.
+ * - All service state is touched on the main thread only.
  */
 class RecordingService : Service(), EffectHandler {
     private val container by lazy { (application as AiDailyMemoryApplication).container }
@@ -50,40 +58,57 @@ class RecordingService : Service(), EffectHandler {
         SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e ->
             // Surfaced to the operator log; state is unchanged because the journal write
             // failed or the effect never ran.
-            Log.e(TAG, "service_command_failed", e)
+            logFailure(TAG, "service_command_failed", e)
         },
     )
     private var isForeground = false
     private var foregroundProblem: CaptureProblem? = null
-    private var recoveryJob: Job? = null
+    private var pendingCommands = 0
     private var lastStartId = 0
+    private var attached = false
+    private var recoveryJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
-        container.controller.attach(this)
-        recoveryJob = container.recoveryScheduler.start(scope)
         scope.launch {
-            container.statusModels.filterNotNull().distinctUntilChanged().collect { model ->
-                if (isForeground) container.notifications.update(model)
-            }
+            container.statusModels
+                .filterNotNull()
+                .distinctUntilChanged()
+                // A state change and its health update arrive back to back; notify once.
+                .debounce(NOTIFY_DEBOUNCE_MS)
+                .collect { model -> if (isForeground) container.notifications.update(model) }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent == null) {
             // Sticky restart after the process was killed: the controller's restore already
-            // reported the interruption. Do not touch the microphone from the background.
-            stopSelf(startId)
+            // reported the interruption. Never touch the microphone from the background.
+            stopIfIdle()
             return START_STICKY
         }
-        lastStartId = startId
+        // Attach only for real commands, so restore effects after a sticky restart stay
+        // detached (notification only).
+        if (!attached) {
+            attached = true
+            container.controller.attach(this)
+            recoveryJob = container.recoveryScheduler.start(scope)
+            scope.launch { watchIndicator() }
+        }
         enterForeground()
+        pendingCommands++
         val action = intent.action
         scope.launch {
-            handle(action)
-            stopIfIdle()
+            try {
+                handle(action)
+            } finally {
+                pendingCommands--
+                stopIfIdle()
+            }
         }
         return START_STICKY
     }
@@ -91,8 +116,7 @@ class RecordingService : Service(), EffectHandler {
     override fun onDestroy() {
         container.controller.detach(this)
         recoveryJob?.cancel()
-        // The service is going away: seal whatever is being written on the app scope, which
-        // outlives this service.
+        // Seal whatever is being written on the app scope, which outlives this service.
         container.appScope.launch { container.engine.close() }
         scope.cancel()
         super.onDestroy()
@@ -108,8 +132,8 @@ class RecordingService : Service(), EffectHandler {
             ACTION_PAUSE -> controller.dispatch(RecordingCommand.Pause)
             ACTION_RESUME -> controller.dispatch(RecordingCommand.Resume)
             ACTION_STOP -> controller.dispatch(RecordingCommand.Stop)
-            ACTION_HIGHLIGHT -> container.placeMarker(MarkerKind.HIGHLIGHT)
-            ACTION_QUICK_NOTE -> container.placeMarker(MarkerKind.QUICK_NOTE)
+            // The indicator was swiped away; enterForeground() already re-posted it.
+            ACTION_SHOW_STATUS -> Unit
             else -> Log.w(TAG, "unknown_service_action")
         }
     }
@@ -117,33 +141,66 @@ class RecordingService : Service(), EffectHandler {
     override suspend fun execute(
         effect: CaptureEffect,
         state: RecordingState,
-    ): List<RecordingEvent> = when (effect) {
-        CaptureEffect.EnsureForeground -> {
-            if (!isForeground) enterForeground()
-            if (state.status != RecordingStatus.INTERRUPTED) container.notifications.cancelAlert()
-            foregroundProblem
-                ?.takeUnless { isForeground }
-                ?.let { problem -> failure(state, problem) }
-                .orEmpty()
-        }
-        is CaptureEffect.OpenMicrophone ->
-            if (container.permissions.microphoneGranted) {
-                container.engine.open(effect.sessionId)
-                emptyList()
-            } else {
-                failure(state, CaptureProblem.PERMISSION_DENIED)
+    ): List<RecordingEvent> = withContext(Dispatchers.Main.immediate) {
+        when (effect) {
+            CaptureEffect.EnsureForeground -> ensureForeground(state)
+            is CaptureEffect.OpenMicrophone -> when {
+                !container.permissions.microphoneGranted ->
+                    failure(state, CaptureProblem.PERMISSION_DENIED)
+                // Enforced here, not only in the UI: the mic never opens without a visible
+                // indicator, whichever surface asked (AGENTS.md rule 1).
+                !container.notifications.canShowStatus() ->
+                    failure(state, CaptureProblem.INDICATOR_HIDDEN)
+                !isForeground -> failure(state, foregroundProblem ?: CaptureProblem.UNKNOWN)
+                else -> {
+                    container.engine.open(effect.sessionId)
+                    emptyList()
+                }
             }
-        is CaptureEffect.CloseMicrophone -> {
-            container.engine.close()
-            emptyList()
+            is CaptureEffect.CloseMicrophone -> {
+                container.engine.close()
+                emptyList()
+            }
+            is CaptureEffect.FinishSession -> {
+                container.engine.close()
+                listOf(CaptureSignal.Stopped(effect.sessionId))
+            }
+            CaptureEffect.StopForeground -> {
+                leaveForeground()
+                emptyList()
+            }
         }
-        is CaptureEffect.FinishSession -> {
-            container.engine.close()
-            listOf(CaptureSignal.Stopped(effect.sessionId))
+    }
+
+    private fun ensureForeground(state: RecordingState): List<RecordingEvent> {
+        if (!isForeground) {
+            if (pendingCommands == 0) {
+                // No user command in flight (an engine report or a restored state): entering
+                // the foreground now would be a background start. Tell the user instead.
+                container.notifications.alert(state)
+                return emptyList()
+            }
+            enterForeground()
         }
-        CaptureEffect.StopForeground -> {
-            leaveForeground()
-            emptyList()
+        if (state.status != RecordingStatus.INTERRUPTED) container.notifications.cancelAlert()
+        val problem = foregroundProblem.takeUnless { isForeground } ?: return emptyList()
+        return failure(state, problem)
+    }
+
+    /**
+     * Notifications can be turned off while recording. Re-checked on every health update; if
+     * the indicator can no longer be seen, capture stops as an interruption the user can fix.
+     */
+    private suspend fun watchIndicator() {
+        container.statusModels.collect {
+            val state = container.controller.state.value
+            val sessionId = state.sessionId ?: return@collect
+            if (state.status in MIC_OPEN && !container.notifications.canShowStatus()) {
+                Log.w(TAG, "indicator_hidden_while_capturing")
+                container.controller.report(
+                    EngineReport.Failed(sessionId, CaptureProblem.INDICATOR_HIDDEN),
+                )
+            }
         }
     }
 
@@ -153,25 +210,24 @@ class RecordingService : Service(), EffectHandler {
     }
 
     private fun enterForeground() {
-        val model = container.currentStatusModel()
         try {
             ServiceCompat.startForeground(
                 this,
                 CaptureNotifications.ID_STATUS,
-                container.notifications.status(model),
+                container.notifications.status(container.currentStatusModel()),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
             )
             isForeground = true
             foregroundProblem = null
         } catch (e: SecurityException) {
             // Microphone permission missing (API 34+ checks it for this service type).
-            Log.w(TAG, "foreground_denied_permission", e)
+            logFailure(TAG, "foreground_denied_permission", e, warning = true)
             foregroundProblem = CaptureProblem.PERMISSION_DENIED
         } catch (e: IllegalStateException) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e is ForegroundServiceStartNotAllowedException
             ) {
-                Log.w(TAG, "foreground_start_not_allowed", e)
+                logFailure(TAG, "foreground_start_not_allowed", e, warning = true)
                 foregroundProblem = CaptureProblem.FOREGROUND_START_NOT_ALLOWED
             } else {
                 throw e
@@ -180,6 +236,7 @@ class RecordingService : Service(), EffectHandler {
     }
 
     private fun stopIfIdle() {
+        if (pendingCommands > 0) return
         val status = container.controller.state.value.status
         val idle = status == RecordingStatus.IDLE || status == RecordingStatus.COMPLETED
         if (idle || !isForeground) leaveForeground()
@@ -188,25 +245,73 @@ class RecordingService : Service(), EffectHandler {
     private fun leaveForeground() {
         if (isForeground) ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         isForeground = false
-        // Only stops if no newer command arrived meanwhile (a quick Stop → Start).
-        stopSelf(lastStartId)
+        // Never while a command is still running; stopSelf(id) also refuses if a newer
+        // command was delivered meanwhile (a quick Stop → Start).
+        if (pendingCommands == 0) stopSelf(lastStartId)
     }
 
     companion object {
         private const val TAG = "RecordingService"
+        private const val NOTIFY_DEBOUNCE_MS = 200L
         const val ACTION_START = "com.apercallc.aidailymemory.action.START"
         const val ACTION_PAUSE = "com.apercallc.aidailymemory.action.PAUSE"
         const val ACTION_RESUME = "com.apercallc.aidailymemory.action.RESUME"
         const val ACTION_STOP = "com.apercallc.aidailymemory.action.STOP"
         const val ACTION_HIGHLIGHT = "com.apercallc.aidailymemory.action.HIGHLIGHT"
         const val ACTION_QUICK_NOTE = "com.apercallc.aidailymemory.action.QUICK_NOTE"
+        const val ACTION_SHOW_STATUS = "com.apercallc.aidailymemory.action.SHOW_STATUS"
+
+        private val MIC_OPEN = setOf(
+            RecordingStatus.RECORDING,
+            RecordingStatus.RESUMING,
+            RecordingStatus.RECOVERING,
+        )
 
         fun intent(context: Context, action: String): Intent =
             Intent(context, RecordingService::class.java).setAction(action)
 
-        /** Sends a command from a visible activity (foreground start is allowed there). */
+        /**
+         * The single entry point for commands from the app and its notification.
+         *
+         * The service is only started when it can enter the foreground. With the microphone
+         * permission missing, or a background start refused, the command goes straight to
+         * the controller; its effects then run detached, report the problem, and never touch
+         * the microphone. Markers need no service at all.
+         */
         fun send(context: Context, action: String) {
-            ContextCompat.startForegroundService(context, intent(context, action))
+            val container = (context.applicationContext as AiDailyMemoryApplication).container
+            when (action) {
+                ACTION_HIGHLIGHT -> return mark(container, MarkerKind.HIGHLIGHT)
+                ACTION_QUICK_NOTE -> return mark(container, MarkerKind.QUICK_NOTE)
+            }
+            if (!container.permissions.microphoneGranted) return dispatchDirect(container, action)
+            try {
+                ContextCompat.startForegroundService(context, intent(context, action))
+            } catch (e: IllegalStateException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    e is ForegroundServiceStartNotAllowedException
+                ) {
+                    logFailure(TAG, "service_start_not_allowed", e, warning = true)
+                    dispatchDirect(container, action)
+                } else {
+                    throw e
+                }
+            }
+        }
+
+        private fun mark(container: AppContainer, kind: MarkerKind) {
+            container.appScope.launch { container.placeMarker(kind) }
+        }
+
+        private fun dispatchDirect(container: AppContainer, action: String) {
+            val command = when (action) {
+                ACTION_START -> RecordingCommand.Start(SessionId(container.ids.next().toString()))
+                ACTION_PAUSE -> RecordingCommand.Pause
+                ACTION_RESUME -> RecordingCommand.Resume
+                ACTION_STOP -> RecordingCommand.Stop
+                else -> return
+            }
+            container.appScope.launch { container.controller.dispatch(command) }
         }
     }
 }

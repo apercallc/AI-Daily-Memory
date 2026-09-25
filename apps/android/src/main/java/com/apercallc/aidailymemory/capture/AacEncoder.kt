@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.util.Log
+import com.apercallc.aidailymemory.platform.logFailure
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -114,7 +115,7 @@ class AacEncoder(
             codec.stop()
         } catch (e: IllegalStateException) {
             // Already stopped or errored; release below still frees the codec.
-            Log.w(TAG, "encoder_stop_failed", e)
+            logFailure(TAG, "encoder_stop_failed", e, warning = true)
         }
         codec.release()
     }

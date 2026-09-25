@@ -17,6 +17,8 @@ import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.platform.StorageMonitor
+import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.CaptureSignal
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
@@ -26,7 +28,6 @@ import com.apercallc.aidailymemory.recording.effects.EngineSignals
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
 import com.apercallc.aidailymemory.recording.health.CaptureHealthEvaluator
 import com.apercallc.aidailymemory.recording.health.HealthPolicy
-import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
@@ -43,6 +44,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -56,7 +58,7 @@ class AppContainer(context: Context) {
 
     val appScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
-            Log.e(TAG, "app_scope_failure", e)
+            logFailure(TAG, "app_scope_failure", e)
         },
     )
 
@@ -97,17 +99,21 @@ class AppContainer(context: Context) {
     private val detachedEffects = EffectHandler { effect, state ->
         when (effect) {
             CaptureEffect.EnsureForeground -> {
-                notifications.alert(state)
+                // A session that stays open without a service is shown, never silent.
+                if (state.status == RecordingStatus.PAUSED ||
+                    state.status == RecordingStatus.INTERRUPTED
+                ) {
+                    notifications.alert(state)
+                }
                 emptyList()
             }
             is CaptureEffect.OpenMicrophone -> {
-                val sessionId = effect.sessionId
-                listOf(
-                    EngineSignals.signalFor(
-                        state,
-                        EngineReport.Failed(sessionId, CaptureProblem.FOREGROUND_START_NOT_ALLOWED),
-                    ),
-                )
+                val problem = if (permissions.microphoneGranted) {
+                    CaptureProblem.FOREGROUND_START_NOT_ALLOWED
+                } else {
+                    CaptureProblem.PERMISSION_DENIED
+                }
+                listOf(EngineSignals.signalFor(state, EngineReport.Failed(effect.sessionId, problem)))
             }
             is CaptureEffect.CloseMicrophone -> emptyList()
             is CaptureEffect.FinishSession -> listOf(CaptureSignal.Stopped(effect.sessionId))
@@ -141,8 +147,13 @@ class AppContainer(context: Context) {
             storage = { storage.evaluate(database.segments().pendingBytes()) },
             elapsedRealtimeMs = clock::elapsedRealtimeMs,
             scope = appScope,
-            onReport = { report -> appScope.launch { controller.report(report) } },
+            // One consumer, so reports reach the controller in the order they happened.
+            onReport = { report -> engineReports.trySend(report) },
         )
+    }
+
+    private val engineReports = Channel<EngineReport>(Channel.UNLIMITED).also { channel ->
+        appScope.launch { for (report in channel) controller.report(report) }
     }
 
     val health: CaptureHealthTracker by lazy {

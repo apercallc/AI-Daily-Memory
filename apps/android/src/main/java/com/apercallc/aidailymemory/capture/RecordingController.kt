@@ -21,6 +21,7 @@ import com.apercallc.aidailymemory.recording.recovery.StartupRecovery
 import com.apercallc.aidailymemory.recording.time.CaptureTime
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Durable, append-only transition log (the Room table in production, a list in tests). */
 interface TransitionJournal {
@@ -103,31 +105,35 @@ class RecordingController(
     /** Restores persisted state once per process. Every dispatch waits for this to finish. */
     fun restore() {
         scope.launch {
-            val report = lock.withLock { restoreLocked() }
+            val report = lock.withLock { withContext(NonCancellable) { restoreLocked() } }
             restored.complete(report)
         }
     }
 
     suspend fun awaitRestored(): RestoreReport = restored.await()
 
-    suspend fun dispatch(event: RecordingEvent): Transition {
-        restored.await()
-        return lock.withLock { applyWithFollowUps(event) }
-    }
+    suspend fun dispatch(event: RecordingEvent): Transition = locked { applyWithFollowUps(event) }
 
     /** Maps an engine observation to a signal against the state it is applied to. */
-    suspend fun report(report: EngineReport): Transition {
+    suspend fun report(report: EngineReport): Transition =
+        locked { applyWithFollowUps(EngineSignals.signalFor(_state.value, report)) }
+
+    /**
+     * Once the lock is held, the whole reduce → journal → effects sequence runs to completion
+     * even if the caller is cancelled (a destroyed service, a superseded recovery wait).
+     * Stopping halfway would leave the journal, the published state, and the microphone
+     * disagreeing.
+     */
+    private suspend fun locked(block: suspend () -> Transition): Transition {
         restored.await()
-        return lock.withLock {
-            applyWithFollowUps(EngineSignals.signalFor(_state.value, report))
-        }
+        return lock.withLock { withContext(NonCancellable) { block() } }
     }
 
     private suspend fun restoreLocked(): RestoreReport {
         val latest = journal.latest()
         val restoredState = JournalCodec.restore(latest?.first)
         if (restoredState is RestoredState.Corrupt) {
-            Log.e(TAG, "journal_corrupt", IllegalStateException("revision ${restoredState.revision}"))
+            Log.e(TAG, "journal_corrupt revision=${restoredState.revision}")
         }
         _state.value = restoredState.state
         _statusSinceElapsedMs.value = elapsedRealtimeMs()
@@ -165,9 +171,8 @@ class RecordingController(
             is Transition.Ignored -> return transition to emptyList()
             is Transition.Rejected -> {
                 // Never silent: logged, and surfaced to whoever is listening.
-                Log.w(TAG, "transition_rejected", IllegalStateException(
-                    "${JournalCodec.causeOf(event)} in ${transition.state.status}",
-                ))
+                val cause = JournalCodec.causeOf(event)
+                Log.w(TAG, "transition_rejected cause=$cause status=${transition.state.status}")
                 _rejections.tryEmit(transition)
                 return transition to emptyList()
             }

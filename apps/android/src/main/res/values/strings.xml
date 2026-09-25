@@ -25,6 +25,7 @@
     <string name="problem_foreground_start_not_allowed">Open the app to start recording. Android doesn\'t allow starting from the background.</string>
     <string name="problem_storage_low">Storage is almost full. Free up space to keep recording.</string>
     <string name="problem_encryption_unavailable">This phone\'s secure key storage isn\'t working, so audio can\'t be saved safely. Nothing unencrypted was recorded.</string>
+    <string name="problem_indicator_hidden">Recording notifications are turned off, so the microphone was switched off. Turn them back on to keep recording.</string>
     <string name="problem_process_restarted">The app was closed by the system while recording. Nothing was recorded after that.</string>
     <string name="problem_device_rebooted">Your phone restarted while recording. Nothing was recorded after that.</string>
     <string name="problem_unknown">Recording stopped unexpectedly.</string>
@@ -60,6 +61,13 @@
     <string name="stat_pending">Only on this phone</string>
     <string name="stat_storage_left">Storage left</string>
     <string name="stat_storage_unknown">Unknown</string>
+    <string name="stat_last_saved">Last saved</string>
+    <string name="stat_last_saved_value">%1$s ago</string>
+    <plurals name="stat_gaps">
+        <item quantity="one">%1$d gap in this session</item>
+        <item quantity="other">%1$d gaps in this session</item>
+    </plurals>
+    <string name="stat_gaps_detail">Parts of this session weren\'t saved. They are marked, never filled in.</string>
     <string name="duration_minutes">%1$d min</string>
     <string name="duration_hours_minutes">%1$d h %2$d min</string>
     <string name="duration_under_minute">Under 1 min</string>

@@ -5,6 +5,7 @@ import com.apercallc.aidailymemory.data.CaptureTimeColumns
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.data.SegmentEntity
 import com.apercallc.aidailymemory.platform.DeviceClock
+import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.SessionId
 import com.apercallc.aidailymemory.recording.audio.AdtsHeaderWriter
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
@@ -38,6 +39,11 @@ class SegmentStore(
     private val ids: UuidV7Generator,
     private val clock: DeviceClock,
 ) {
+    /** Resolves the key before the microphone opens, so a Keystore unwrap never delays audio. */
+    fun warmUp() {
+        cipher()
+    }
+
     /**
      * Starts the next segment of [sessionId].
      *
@@ -92,7 +98,7 @@ class SegmentStore(
         val closed = try {
             segment.close()
         } catch (e: IOException) {
-            Log.e(TAG, "segment_close_failed", e)
+            logFailure(TAG, "segment_close_failed", e)
             return abandon(segment.entity)
         }
         val sealedFile = File(directory, segment.entity.fileName)
@@ -130,7 +136,7 @@ class SegmentStore(
             is SegmentTransition.Ignored -> current
             is SegmentTransition.Rejected -> {
                 // A rejected seal means the store and the lifecycle disagree: surface it.
-                Log.e(TAG, "segment_transition_rejected", IllegalStateException(result.reason.name))
+                Log.e(TAG, "segment_transition_rejected reason=${result.reason}")
                 current
             }
         }
@@ -143,7 +149,7 @@ class SegmentStore(
         try {
             FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
         } catch (e: IOException) {
-            Log.w(TAG, "segment_directory_sync_failed", e)
+            logFailure(TAG, "segment_directory_sync_failed", e, warning = true)
         }
     }
 

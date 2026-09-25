@@ -29,7 +29,14 @@ class RecoveryScheduler(
     private var attemptsSession: String? = null
 
     fun start(scope: CoroutineScope): Job = scope.launch {
-        controller.state.collectLatest { state -> onState(state) }
+        // Only interruptions observed by this process are retried. One restored from the
+        // journal (the process died meanwhile) needs the user: reopening the mic without them
+        // would be an automatic restart, which ADR-0010 forbids.
+        controller.awaitRestored()
+        val restoredRevision = controller.state.value.revision
+        controller.state.collectLatest { state ->
+            if (state.revision > restoredRevision) onState(state)
+        }
     }
 
     private suspend fun onState(state: RecordingState) {

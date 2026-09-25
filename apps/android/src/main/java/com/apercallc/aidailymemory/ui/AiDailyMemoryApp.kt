@@ -46,11 +46,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.core.os.UserManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,7 +72,6 @@ import com.apercallc.aidailymemory.recording.storage.StorageHealth
 import com.apercallc.aidailymemory.recording.storage.StorageLevel
 import com.apercallc.aidailymemory.service.RecordingService
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
-import androidx.core.os.UserManagerCompat
 
 /** What the permission dialog is currently asking for. */
 private sealed interface StartDialog {
@@ -357,32 +358,39 @@ private fun CaptureStatusCard(model: CaptureStatusModel, overview: CaptureOvervi
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(spacing.xl)
-                // Read as one unit, and announce changes: recording state must never be
-                // silent for TalkBack users.
-                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                .padding(spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.md),
+            // Headline and detail are read as one unit and announced when they change:
+            // recording state must never be silent for TalkBack users. The stats below are
+            // outside this live region so their minute-by-minute updates are not re-read.
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {
+                    liveRegion = LiveRegionMode.Polite
+                },
+                verticalArrangement = Arrangement.spacedBy(spacing.md),
             ) {
-                // Decorative: the headline text carries the meaning, so color is never the
-                // only signal.
-                Box(
-                    modifier = Modifier
-                        .size(spacing.statusDot)
-                        .background(color = status.container(model.tone), shape = CircleShape),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    // Decorative: the headline text carries the meaning, so color is never
+                    // the only signal.
+                    Box(
+                        modifier = Modifier
+                            .size(spacing.statusDot)
+                            .background(color = status.container(model.tone), shape = CircleShape),
+                    )
+                    Text(
+                        text = stringResource(CaptureStrings.headline(model.headline)),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
                 Text(
-                    text = stringResource(CaptureStrings.headline(model.headline)),
-                    style = MaterialTheme.typography.titleMedium,
+                    text = stringResource(CaptureStrings.detail(model)),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = stringResource(CaptureStrings.detail(model)),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             overview?.let { CaptureStats(it) }
         }
     }
@@ -397,16 +405,42 @@ private fun CaptureStats(overview: CaptureOverview) {
     if (summary.pendingUploadMs > 0) {
         Stat(R.string.stat_pending, durationText(summary.pendingUploadMs))
     }
+    overview.lastSavedAgoMs?.let { ago ->
+        Stat(
+            R.string.stat_last_saved,
+            stringResource(R.string.stat_last_saved_value, durationText(ago)),
+        )
+    }
     Stat(
         R.string.stat_storage_left,
         overview.storage.recordingMinutesLeft?.let { durationText(it * MS_PER_MINUTE) }
             ?: stringResource(R.string.stat_storage_unknown),
     )
+    if (overview.gaps.isNotEmpty()) {
+        Text(
+            text = pluralStringResource(
+                R.plurals.stat_gaps,
+                overview.gaps.size,
+                overview.gaps.size,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = AiDailyMemoryTheme.statusColors.warning,
+        )
+        Text(
+            text = stringResource(R.string.stat_gaps_detail),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
 private fun Stat(@StringRes label: Int, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(
+        // Label and value are read together ("Saved audio, 1 h 5 min").
+        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
         Text(
             text = stringResource(label),
             style = MaterialTheme.typography.bodyMedium,

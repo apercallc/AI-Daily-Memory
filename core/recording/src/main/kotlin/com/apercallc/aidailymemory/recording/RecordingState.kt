@@ -24,6 +24,12 @@ enum class CaptureProblem {
 
     /** Local audio encryption keys are unusable; recording unencrypted is never an option. */
     ENCRYPTION_UNAVAILABLE,
+
+    /**
+     * The recording notification cannot be shown (notifications or its channel turned off).
+     * The microphone is never open without a visible indicator (AGENTS.md rule 1).
+     */
+    INDICATOR_HIDDEN,
     PROCESS_RESTARTED,
     DEVICE_REBOOTED,
     UNKNOWN,
