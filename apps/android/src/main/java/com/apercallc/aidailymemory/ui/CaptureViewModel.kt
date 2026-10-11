@@ -7,23 +7,31 @@ import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.capture.CaptureOverview
+import com.apercallc.aidailymemory.capture.SessionDataDeletionResult
+import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
+import com.apercallc.aidailymemory.recording.RecordingStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 data class CaptureUiState(
     val model: CaptureStatusModel,
     val overview: CaptureOverview?,
+    val stopDecisionSessionId: String?,
 )
 
 /**
@@ -35,15 +43,26 @@ class CaptureViewModel(
     private val container: AppContainer,
     private val sendCommand: (String) -> Unit,
 ) : ViewModel() {
+    private val handledStopSessionId = MutableStateFlow(container.handledStopDecisionSessionId())
+    private val stopDecisionSessionId = combine(
+        container.controller.state,
+        handledStopSessionId,
+    ) { recording, handled ->
+        recording.sessionId?.value?.takeIf {
+            recording.status == RecordingStatus.COMPLETED && it != handled
+        }
+    }
+
     val uiState: StateFlow<CaptureUiState> = combine(
         container.statusModels,
         container.overview,
-    ) { model, overview ->
-        CaptureUiState(model ?: initialModel(), overview)
+        stopDecisionSessionId,
+    ) { model, overview, pendingStopDecision ->
+        CaptureUiState(model ?: initialModel(), overview, pendingStopDecision)
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-        CaptureUiState(initialModel(), overview = null),
+        CaptureUiState(initialModel(), overview = null, stopDecisionSessionId = null),
     )
 
     private val _messages = Channel<Int>(Channel.BUFFERED)
@@ -58,6 +77,33 @@ class CaptureViewModel(
     }
 
     fun send(action: String) = sendCommand(action)
+
+    fun keepStoppedSession(sessionId: String) {
+        markStopDecisionHandled(sessionId)
+    }
+
+    fun deleteStoppedSession(sessionId: String) {
+        viewModelScope.launch {
+            try {
+                when (withContext(Dispatchers.IO) { container.sessionDataDeletion.delete(sessionId) }) {
+                    SessionDataDeletionResult.Deleted -> markStopDecisionHandled(sessionId)
+                    SessionDataDeletionResult.SessionActive -> _messages.send(R.string.session_delete_active)
+                    SessionDataDeletionResult.RemoteCopyExists ->
+                        _messages.send(R.string.session_delete_remote_copy)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "session_delete_failed", e)
+                _messages.send(R.string.session_delete_failed)
+            }
+        }
+    }
+
+    private fun markStopDecisionHandled(sessionId: String) {
+        container.markStopDecisionHandled(sessionId)
+        handledStopSessionId.value = sessionId
+    }
 
     fun mark(kind: MarkerKind) {
         viewModelScope.launch {
@@ -90,6 +136,7 @@ class CaptureViewModel(
     }
 
     private companion object {
+        const val TAG = "CaptureViewModel"
         const val STOP_TIMEOUT_MS = 5_000L
     }
 }

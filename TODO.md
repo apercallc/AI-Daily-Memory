@@ -33,6 +33,43 @@ This file turns the architecture in README.md into an executable delivery plan.
 - [ ] All background work has bounded retry behavior
 - [ ] All user-facing failure states are visible and recoverable where possible
 
+## Private device-test milestone (before any public testing)
+
+This milestone means a privately sideloaded phone app and paired Wear OS companion for the
+owner's own device testing. It is not a public beta or a Play release. Keep the product
+acceptance criteria here even where they depend on later phase work; do not imply they are
+implemented until their checks below and in the phase exit gates pass.
+
+- [ ] Install and upgrade the phone + watch builds signed with the same key; verify pairing
+  and reconnection on the target Android phone and Wear OS watch.
+- [ ] Start, pause, resume, stop, and mark a report request from either the phone or watch;
+  the phone remains the capture device and the watch only displays phone-acknowledged state.
+  Watch-only microphone recording is out of scope unless a later ADR changes that decision.
+- [ ] A watch command that cannot reach the phone or start its microphone service is visibly
+  unconfirmed/failed; it never claims recording began. Phone notification always exposes state,
+  pause, and stop.
+- [ ] On Stop, offer explicit Keep or Delete. Keep retains the session's local evidence for
+  processing/review under the selected retention setting; Delete removes audio and derived
+  data for that session and confirms the result.
+- [ ] A report request made during a session covers the complete session through Stop,
+  including evidence-linked summary and action items. Show pending, partial, complete, and
+  failed states; never present a partial result as complete.
+- [ ] Decide and document the transcription/summarization execution mode before enabling it.
+  The requested default is on-device inference with no audio or transcript sent off-device;
+  benchmark model availability, quality, latency, storage, memory, and battery on the target
+  phone. Any cloud fallback requires a separate, explicit opt-in and privacy disclosure.
+- [ ] Exercise offline capture and processing, reconnection, watch disconnect/reconnect,
+  denied/revoked microphone permission, phone call/mic contention, process death/reboot,
+  low storage, low battery/thermal limits, corrupt or missing audio, and inference failure.
+  Each case must preserve evidence or report a visible recoverable loss; never silently drop it.
+- [ ] Verify a short end-to-end session on the target phone and watch, then complete the Phase
+  0 device/endurance checks and the relevant Phase 1–3 exit gates before calling the workflow
+  ready for regular personal testing.
+
+The on-device inference request conflicts with ADR-0014's current assumption that speech
+processing is transiently cloud-based. Before implementing that change, write a superseding
+ADR and update consent, retention, failure recovery, and processing-cost decisions.
+
 ## Repository / engineering foundation
 
 - [x] Create Android app scaffold
@@ -417,20 +454,20 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 - [x] Create Wear OS application module (scaffold)
 - [x] Watch shares the phone applicationId and debug suffix (Data Layer requirement; ADR-0008)
-- [ ] Wear module depends on core/recording for shared command/state types
-- [ ] Pair communication using Wear OS Data Layer (commands via MessageClient, state via DataClient; ADR-0008)
-- [ ] Ensure watch state always reflects acknowledged phone state (revision-ordered snapshots)
-- [ ] Command IDs deduplicated on the phone; retries return the cached outcome
-- [ ] Start
-- [ ] Pause
-- [ ] Resume
-- [ ] Stop
-- [ ] Highlight
-- [ ] Quick Note
-- [ ] Recording status
+- [x] Wear module depends on core/recording for shared command/state types
+- [x] Pair communication using Wear OS Data Layer (commands via MessageClient, state via DataClient; ADR-0008)
+- [x] Ensure watch state always reflects acknowledged phone state (revision-ordered snapshots)
+- [x] Command IDs deduplicated on the phone; retries return the cached outcome
+- [x] Start
+- [x] Pause
+- [x] Resume
+- [x] Stop
+- [x] Highlight
+- [x] Quick Note
+- [x] Recording status
 - [ ] Session duration
-- [ ] Phone-disconnected state
-- [ ] Command acknowledgement / timeout UX
+- [x] Phone-disconnected state
+- [x] Command acknowledgement / timeout UX
 - [ ] Watch battery benchmark
 - [ ] Watch accessibility
 - [ ] Physical OnePlus Watch 2 endurance tests

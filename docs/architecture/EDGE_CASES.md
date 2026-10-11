@@ -53,7 +53,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Caller cancelled mid-command (service destroyed, recovery wait superseded) | Reduce → journal → effects runs to completion once started | `RecordingController` | ✅ |
 | Interruption restored from a dead process (e.g. during a call) | Never retried automatically; the user resumes | `RecoveryScheduler` | ✅ |
 | Command while the service cannot enter the foreground (permission revoked, background) | The service is not started (that would crash); the command runs detached and reports the problem | `RecordingService.send` | ✅ |
-| Background start from watch refused | `StartFailed(FOREGROUND_START_NOT_ALLOWED)` + phone notification | ADR-0010 | 📐 |
+| Background start from watch refused | The command is dispatched detached, the foreground-service failure is reflected in phone state, and no microphone opens without the service | `RecordingService.sendWatchCommand`, `RecordingService.execute` | ✅ (logic; device check pending) |
 
 ## 2. Time and identity
 
@@ -120,11 +120,13 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 
 ## 6. Watch
 
-| Edge case | Behavior | Status |
-| --- | --- | --- |
-| Command lost or delayed | Timeout → "Not confirmed"; UI never flips optimistically | 📐 (ADR-0008) |
-| Stale snapshot after reconnect | Lower `revision` discarded; revision restored from the journal after a restart | 📐 |
-| Phone app data cleared (journal lost) | Snapshot flagged `reset`, accepted unconditionally | 📐 |
+| Edge case | Behavior | Where | Status |
+| --- | --- | --- | --- |
+| Command lost or delayed | Timeout → "Not confirmed"; the watch keeps the last phone snapshot and retries with the same command ID | `WearControlReducer`, `WearMainActivity` | ✅ (logic; device check pending) |
+| Duplicate/reordered command delivery | Recent command IDs are serialized, deduplicated, and return the cached reducer/marker outcome | `WatchCommandBridge`, `CommandAcknowledgements` | ✅ (unit tested) |
+| Stale snapshot after reconnect | Lower `revision` discarded; phone republishes state restored from the journal after a restart | `SnapshotRevisionPolicy`, `AppContainer` | ✅ (logic; device check pending) |
+| Phone app data cleared (journal lost) | Revision-zero snapshot flagged `reset`, accepted unconditionally | `AppContainer`, `SnapshotRevisionPolicy` | ✅ (logic; device check pending) |
+| Watch Start blocked by Android foreground-service rules | Command runs detached; the phone-authored failure state/problem is returned and the microphone never opens without the foreground service | `RecordingService`, `WatchCommandBridge` | ✅ (unit tested; device check pending) |
 
 ## 7. Daily rhythm and sessions (ADR-0012)
 
@@ -235,3 +237,14 @@ data rights.
 - ✅ Quick Note model: a marker window inside the active session (ADR-0011).
 - ❓ Behavior when the user starts a phone call on speaker while recording (legal, per
   jurisdiction). Default: treat it as `PHONE_CALL` interruption and do not capture.
+- ❓ Private device-test workflow: phone Stop now offers Keep/Delete, and local deletion removes
+  the session's audio plus derived database rows. Deletion refuses while an upload row or server
+  copy exists because no server-side deletion workflow is implemented; keep this visible and
+  retryable rather than deleting local evidence while remote data remains. Watch-initiated Stop
+  still needs device verification. Acceptance criteria remain tracked in TODO.
+- ❓ A watch "report" request during capture must be acknowledged by the phone and cover the
+  full session through Stop. Disconnection, rejected background start, or a pending report must
+  never be shown as completed.
+- ❓ On-device transcription/extraction is a requested direction, but conflicts with ADR-0014's
+  transient cloud-processing design. Decide model/device support and update the ADR before
+  implementation; offline inference failure must keep audio and expose a retryable state.

@@ -22,6 +22,7 @@ import com.apercallc.aidailymemory.recording.RecordingEvent
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import com.apercallc.aidailymemory.recording.effects.CaptureEffect
 import com.apercallc.aidailymemory.recording.effects.EngineReport
 import com.apercallc.aidailymemory.recording.effects.EngineSignals
@@ -43,12 +44,12 @@ import kotlinx.coroutines.withContext
 
 /**
  * Microphone foreground service (ADR-0010). It owns no state: commands arrive as intents
- * (from the app and its notification, later the watch), go through the controller, and the
+ * (from the app, notification, or watch), go through the controller, and the
  * service only executes the effects the controller hands back.
  *
  * Lifecycle rules:
  * - `startForeground` is the first call for every command, well inside the platform timeout.
- * - Only [send] starts this service, and only when `startForeground` can succeed: a
+ * - [send] and [sendWatchCommand] start this service only when the foreground start is allowed: a
  *   `startForegroundService` whose `startForeground` fails would crash the app.
  * - Pause keeps the service (mic closed); Stop ends it once no command is in flight.
  * - START_STICKY is used only so a killed process comes back to *report* the interruption;
@@ -108,9 +109,15 @@ class RecordingService : Service(), EffectHandler {
         enterForeground()
         pendingCommands++
         val action = intent.action
+        val watchCommand = intent.watchCommand()
+        val watchNodeId = intent.getStringExtra(EXTRA_WATCH_NODE_ID)
         scope.launch {
             try {
-                handle(action)
+                if (watchCommand != null && watchNodeId != null) {
+                    handleWatchCommand(watchNodeId, watchCommand)
+                } else {
+                    handle(action)
+                }
             } finally {
                 pendingCommands--
                 stopIfIdle()
@@ -138,6 +145,13 @@ class RecordingService : Service(), EffectHandler {
         super.onDestroy()
     }
 
+    private fun Intent.watchCommand(): WatchCommandEnvelope? {
+        val commandId = getStringExtra(EXTRA_WATCH_COMMAND_ID) ?: return null
+        val serviceAction = getStringExtra(EXTRA_WATCH_COMMAND) ?: return null
+        val command = WatchCommand.entries.firstOrNull { it.serviceAction == serviceAction } ?: return null
+        return WatchCommandEnvelope(commandId, command)
+    }
+
     private suspend fun handle(action: String?) {
         val controller = container.controller
         when (action) {
@@ -149,6 +163,16 @@ class RecordingService : Service(), EffectHandler {
             ACTION_SHOW_STATUS -> Unit
             else -> Log.w(TAG, "unknown_service_action")
         }
+    }
+
+    private suspend fun handleWatchCommand(nodeId: String, envelope: WatchCommandEnvelope) {
+        val acknowledgement = container.watchCommandBridge.execute(envelope.commandId, envelope.command)
+        WatchDataLayerTransport.sendAcknowledgement(
+            this,
+            nodeId,
+            acknowledgement,
+            container.currentWatchSnapshot(),
+        )
     }
 
     override suspend fun execute(
@@ -297,6 +321,9 @@ class RecordingService : Service(), EffectHandler {
         const val ACTION_HIGHLIGHT = "com.apercallc.aidailymemory.action.HIGHLIGHT"
         const val ACTION_QUICK_NOTE = "com.apercallc.aidailymemory.action.QUICK_NOTE"
         const val ACTION_SHOW_STATUS = "com.apercallc.aidailymemory.action.SHOW_STATUS"
+        const val EXTRA_WATCH_COMMAND_ID = "com.apercallc.aidailymemory.extra.WATCH_COMMAND_ID"
+        const val EXTRA_WATCH_COMMAND = "com.apercallc.aidailymemory.extra.WATCH_COMMAND"
+        const val EXTRA_WATCH_NODE_ID = "com.apercallc.aidailymemory.extra.WATCH_NODE_ID"
 
         private val NO_SERVICE_NEEDED = setOf(ACTION_PAUSE, ACTION_STOP)
 
@@ -343,6 +370,59 @@ class RecordingService : Service(), EffectHandler {
                     throw e
                 }
             }
+        }
+
+        fun sendWatchCommand(context: Context, nodeId: String, envelope: WatchCommandEnvelope) {
+            val container = (context.applicationContext as AiDailyMemoryApplication).container
+            val action = when (envelope.command) {
+                WatchCommand.Start -> ACTION_START
+                WatchCommand.Pause -> ACTION_PAUSE
+                WatchCommand.Resume -> ACTION_RESUME
+                WatchCommand.Stop -> ACTION_STOP
+                WatchCommand.Highlight -> ACTION_HIGHLIGHT
+                WatchCommand.QuickNote -> ACTION_QUICK_NOTE
+            }
+            if (envelope.command.isMarker || !container.permissions.microphoneGranted ||
+                (action in NO_SERVICE_NEEDED && !container.serviceRunning)
+            ) {
+                container.appScope.launch {
+                    executeWatchCommandDirect(container, context, nodeId, envelope)
+                }
+                return
+            }
+            val watchIntent = intent(context, action)
+                .putExtra(EXTRA_WATCH_COMMAND_ID, envelope.commandId)
+                .putExtra(EXTRA_WATCH_COMMAND, envelope.command.serviceAction)
+                .putExtra(EXTRA_WATCH_NODE_ID, nodeId)
+            try {
+                ContextCompat.startForegroundService(context, watchIntent)
+            } catch (e: IllegalStateException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    e is ForegroundServiceStartNotAllowedException
+                ) {
+                    logFailure(TAG, "watch_foreground_start_not_allowed", e, warning = true)
+                    container.appScope.launch {
+                        executeWatchCommandDirect(container, context, nodeId, envelope)
+                    }
+                } else {
+                    throw e
+                }
+            }
+        }
+
+        private suspend fun executeWatchCommandDirect(
+            container: AppContainer,
+            context: Context,
+            nodeId: String,
+            envelope: WatchCommandEnvelope,
+        ) {
+            val acknowledgement = container.watchCommandBridge.execute(envelope.commandId, envelope.command)
+            WatchDataLayerTransport.sendAcknowledgement(
+                context,
+                nodeId,
+                acknowledgement,
+                container.currentWatchSnapshot(),
+            )
         }
 
         /**

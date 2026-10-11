@@ -69,6 +69,74 @@ interface SessionDao {
     @Query("UPDATE session_info SET custom_title = :title WHERE session_id = :sessionId")
     suspend fun setTitle(sessionId: String, title: String?): Int
 
+    /**
+     * Removes database evidence and derived data for one session after its audio files have
+     * been deleted successfully. File cleanup must happen first so a failure never hides
+     * undeleted audio behind missing database rows.
+     */
+    @Transaction
+    suspend fun deleteSession(sessionId: String) {
+        deleteTranscriptSpans(sessionId)
+        deleteTranscripts(sessionId)
+        deleteClips(sessionId)
+        deleteClipPlans(sessionId)
+        deleteSpeechRegions(sessionId)
+        deleteSpeechAnalysis(sessionId)
+        deleteSegments(sessionId)
+        deleteMarkers(sessionId)
+        deleteTransitions(sessionId)
+        deleteSessionInfo(sessionId)
+    }
+
+    @Query(
+        "DELETE FROM transcript_span WHERE upload_id IN (" +
+            "SELECT t.upload_id FROM transcript t JOIN audio_segment s " +
+            "ON s.segment_id = t.segment_id WHERE s.session_id = :sessionId)",
+    )
+    suspend fun deleteTranscriptSpans(sessionId: String)
+
+    @Query(
+        "DELETE FROM transcript WHERE segment_id IN " +
+            "(SELECT segment_id FROM audio_segment WHERE session_id = :sessionId)",
+    )
+    suspend fun deleteTranscripts(sessionId: String)
+
+    @Query(
+        "DELETE FROM clip_upload WHERE segment_id IN " +
+            "(SELECT segment_id FROM audio_segment WHERE session_id = :sessionId)",
+    )
+    suspend fun deleteClips(sessionId: String)
+
+    @Query(
+        "DELETE FROM clip_plan WHERE segment_id IN " +
+            "(SELECT segment_id FROM audio_segment WHERE session_id = :sessionId)",
+    )
+    suspend fun deleteClipPlans(sessionId: String)
+
+    @Query(
+        "DELETE FROM speech_region WHERE segment_id IN " +
+            "(SELECT segment_id FROM audio_segment WHERE session_id = :sessionId)",
+    )
+    suspend fun deleteSpeechRegions(sessionId: String)
+
+    @Query(
+        "DELETE FROM segment_speech WHERE segment_id IN " +
+            "(SELECT segment_id FROM audio_segment WHERE session_id = :sessionId)",
+    )
+    suspend fun deleteSpeechAnalysis(sessionId: String)
+
+    @Query("DELETE FROM audio_segment WHERE session_id = :sessionId")
+    suspend fun deleteSegments(sessionId: String)
+
+    @Query("DELETE FROM capture_marker WHERE session_id = :sessionId")
+    suspend fun deleteMarkers(sessionId: String)
+
+    @Query("DELETE FROM recording_transition WHERE session_id = :sessionId")
+    suspend fun deleteTransitions(sessionId: String)
+
+    @Query("DELETE FROM session_info WHERE session_id = :sessionId")
+    suspend fun deleteSessionInfo(sessionId: String)
+
     @Query(
         """
         SELECT i.session_id AS sessionId, i.memory_day AS memoryDay, i.zone_id AS zoneId,
@@ -271,6 +339,13 @@ interface ClipDao {
 
     @Query("SELECT * FROM clip_upload WHERE segment_id = :segmentId ORDER BY first_frame")
     suspend fun forSegment(segmentId: String): List<ClipUploadEntity>
+
+    /** Any planned/upload row may be in flight or already represented on the server. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM clip_upload c JOIN audio_segment s " +
+            "ON s.segment_id = c.segment_id WHERE s.session_id = :sessionId)",
+    )
+    suspend fun hasUploadRowsForSession(sessionId: String): Boolean
 
     /** Planned segments whose every clip the server has verified: ready for UploadCompleted. */
     @Query(

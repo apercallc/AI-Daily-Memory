@@ -293,4 +293,35 @@ class SegmentStoreTest {
             assertEquals(SegmentState.SEALED.name, db.segments().get(kept.segmentId)?.state)
             assertTrue(File(directory, kept.fileName).exists())
         }
+
+    @Test
+    fun `explicit session deletion removes local sealed files but refuses active and remotely copied audio`() =
+        runTest {
+            val local = store.seal(store.begin(session, false, format).apply { writeFrames(4) })
+            val otherSession = SessionId("session-2")
+            val other = store.seal(store.begin(otherSession, false, format).apply { writeFrames(4) })
+            val remote = store.seal(store.begin(session, false, format).apply { writeFrames(4) })
+            db.segments().update(remote.copy(state = SegmentState.UPLOADED.name))
+
+            assertEquals(UserAudioDeletionResult.RemoteCopyExists, store.deleteSessionAudio(session.value))
+            assertTrue(File(directory, local.fileName).exists())
+            assertTrue(File(directory, remote.fileName).exists())
+
+            db.segments().update(remote.copy(state = SegmentState.SEALED.name))
+            assertEquals(UserAudioDeletionResult.Deleted(2), store.deleteSessionAudio(session.value))
+
+            assertEquals(SegmentState.DELETED.name, db.segments().get(local.segmentId)?.state)
+            assertFalse(File(directory, local.fileName).exists())
+            assertEquals(SegmentState.DELETED.name, db.segments().get(remote.segmentId)?.state)
+            assertTrue(File(directory, other.fileName).exists())
+        }
+
+    @Test
+    fun `explicit session deletion refuses while a segment is still being written`() = runTest {
+        val writing = store.begin(session, false, format)
+
+        assertEquals(UserAudioDeletionResult.SessionActive, store.deleteSessionAudio(session.value))
+        assertTrue(File(directory, "${writing.entity.segmentId}${SegmentStore.PART_SUFFIX}").exists())
+        assertEquals(SegmentState.WRITING.name, db.segments().get(writing.entity.segmentId)?.state)
+    }
 }

@@ -145,6 +145,24 @@ fun AiDailyMemoryApp(
         onOpenSettings = onOpenSettings,
     )
 
+    state.stopDecisionSessionId?.let { sessionId ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.stop_decision_title)) },
+            text = { Text(stringResource(R.string.stop_decision_body)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.keepStoppedSession(sessionId) }) {
+                    Text(stringResource(R.string.stop_decision_keep))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.deleteStoppedSession(sessionId) }) {
+                    Text(stringResource(R.string.session_delete_action))
+                }
+            },
+        )
+    }
+
     dialog?.let { current ->
         StartDialogContent(
             dialog = current,

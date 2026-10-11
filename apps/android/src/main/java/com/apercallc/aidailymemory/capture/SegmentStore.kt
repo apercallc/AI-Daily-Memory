@@ -30,6 +30,12 @@ import java.security.ProviderException
 /** Audio format of a segment; recorded on every row so later decoding never guesses. */
 data class SegmentFormat(val codec: String, val sampleRateHz: Int, val channelCount: Int)
 
+sealed interface UserAudioDeletionResult {
+    data class Deleted(val segments: Int) : UserAudioDeletionResult
+    data object SessionActive : UserAudioDeletionResult
+    data object RemoteCopyExists : UserAudioDeletionResult
+}
+
 /**
  * Owns segment files and their database rows. The row is written (WRITING) before the first
  * byte, so a crash always leaves a record that recovery can find and report as a gap.
@@ -176,6 +182,51 @@ class SegmentStore(
             deleted++
         }
         return deleted
+    }
+
+    /**
+     * Deletes a stopped session's local audio at the user's request. This deliberately refuses
+     * sessions with an in-progress segment or a segment uploaded/acknowledged by a server; the
+     * caller must remove remote copies through the owning service before deleting those sessions.
+     * Files are removed before their rows are updated, so a failure leaves a retryable row.
+     */
+    suspend fun deleteSessionAudio(sessionId: String): UserAudioDeletionResult {
+        val candidates = dao.forSession(sessionId)
+        if (candidates.any { it.state == SegmentState.WRITING.name }) {
+            return UserAudioDeletionResult.SessionActive
+        }
+        if (candidates.any {
+                it.state == SegmentState.UPLOADED.name || it.state == SegmentState.ACKNOWLEDGED.name
+            }
+        ) {
+            return UserAudioDeletionResult.RemoteCopyExists
+        }
+
+        var deleted = 0
+        for (entity in candidates) {
+            val result = lifecycle.reduce(entity.toSegment(), SegmentEvent.UserDelete)
+            when (result) {
+                is SegmentTransition.Applied -> {
+                    deleteSegmentFiles(entity)
+                    dao.update(entity.withSegment(result.segment))
+                    deleted++
+                }
+                is SegmentTransition.Ignored -> deleteSegmentFiles(entity)
+                is SegmentTransition.Rejected -> throw IllegalStateException(
+                    "local session deletion rejected: ${result.reason}",
+                )
+            }
+        }
+        return UserAudioDeletionResult.Deleted(deleted)
+    }
+
+    private fun deleteSegmentFiles(entity: SegmentEntity) {
+        val files = listOf(File(directory, entity.fileName), partFile(entity))
+        for (file in files) {
+            if (file.exists() && !file.delete()) {
+                throw IOException("could not delete local segment")
+            }
+        }
     }
 
     /**

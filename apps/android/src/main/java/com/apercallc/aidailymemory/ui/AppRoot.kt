@@ -116,6 +116,7 @@ private fun SessionsRoute(
             onRename = viewModel::rename,
             modifier = modifier,
             onOpen = onOpen,
+            onDelete = viewModel::delete,
         )
     }
 }

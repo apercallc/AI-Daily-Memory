@@ -44,6 +44,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:recording"))
+    implementation(libs.play.services.wearable)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

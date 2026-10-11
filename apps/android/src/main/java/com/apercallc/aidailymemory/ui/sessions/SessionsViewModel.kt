@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.capture.SessionDataDeletionResult
 import com.apercallc.aidailymemory.data.TranscriptText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Recent sessions grouped by memory day, with renaming. Two weeks keeps the list light. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -76,6 +78,25 @@ class SessionsViewModel(
                 // A full or locked database must not crash the app over a title.
                 logFailure(TAG, "session_rename_failed", e)
                 R.string.rename_failed
+            }
+            _messages.send(message)
+        }
+    }
+
+    /** Deletes only local evidence; uploaded audio requires remote deletion first. */
+    fun delete(sessionId: String) {
+        viewModelScope.launch {
+            val message = try {
+                when (withContext(Dispatchers.IO) { container.sessionDataDeletion.delete(sessionId) }) {
+                    SessionDataDeletionResult.Deleted -> R.string.session_delete_done
+                    SessionDataDeletionResult.SessionActive -> R.string.session_delete_active
+                    SessionDataDeletionResult.RemoteCopyExists -> R.string.session_delete_remote_copy
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "session_delete_failed", e)
+                R.string.session_delete_failed
             }
             _messages.send(message)
         }

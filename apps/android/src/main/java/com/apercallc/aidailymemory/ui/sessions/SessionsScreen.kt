@@ -50,9 +50,11 @@ fun SessionsScreen(
     modifier: Modifier = Modifier,
     /** Opens a session's transcript, with the title as shown on its card. */
     onOpen: (sessionId: String, title: String) -> Unit = { _, _ -> },
+    onDelete: (sessionId: String) -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleting by rememberSaveable { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -74,6 +76,7 @@ fun SessionsScreen(
                         session,
                         onOpen = { title -> onOpen(session.sessionId, title) },
                         onRename = { renaming = session.sessionId },
+                        onDelete = { deleting = session.sessionId },
                     )
                 }
             }
@@ -88,6 +91,26 @@ fun SessionsScreen(
             onSave = { input ->
                 renaming = null
                 onRename(session.sessionId, input)
+            },
+        )
+    }
+
+    val sessionToDelete = days?.flatMap { it.sessions }?.firstOrNull { it.sessionId == deleting }
+    if (sessionToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(R.string.session_delete_title)) },
+            text = { Text(stringResource(R.string.session_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = null
+                    onDelete(sessionToDelete.sessionId)
+                }) { Text(stringResource(R.string.session_delete_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             },
         )
     }
@@ -115,7 +138,12 @@ private fun DayHeader(group: DayGroup, today: LocalDate) {
 }
 
 @Composable
-private fun SessionCard(session: SessionItem, onOpen: (title: String) -> Unit, onRename: () -> Unit) {
+private fun SessionCard(
+    session: SessionItem,
+    onOpen: (title: String) -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     val range = session.end?.let {
@@ -164,6 +192,10 @@ private fun SessionCard(session: SessionItem, onOpen: (title: String) -> Unit, o
                     onClick = onRename,
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 ) { Text(stringResource(R.string.session_rename)) }
+                TextButton(
+                    onClick = onDelete,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.session_delete_action)) }
             }
         }
     }

@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory
 import android.content.Context
 import android.media.AudioManager
 import android.util.Log
+import androidx.core.content.edit
 import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
 import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
 import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
@@ -25,6 +26,7 @@ import com.apercallc.aidailymemory.capture.RecoveryScheduler
 import com.apercallc.aidailymemory.capture.RoomTransitionJournal
 import com.apercallc.aidailymemory.capture.SegmentCipher
 import com.apercallc.aidailymemory.capture.SegmentStore
+import com.apercallc.aidailymemory.capture.SessionDataDeletion
 import com.apercallc.aidailymemory.capture.TaggedReport
 import com.apercallc.aidailymemory.platform.PartialWakeLock
 import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
@@ -41,6 +43,7 @@ import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.CaptureSignal
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
+import com.apercallc.aidailymemory.recording.SessionId
 import com.apercallc.aidailymemory.recording.effects.CaptureEffect
 import com.apercallc.aidailymemory.recording.effects.EngineReport
 import com.apercallc.aidailymemory.recording.effects.EngineSignals
@@ -51,6 +54,7 @@ import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.marker.MarkerPolicy
+import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.recovery.InterruptionRecoveryPolicy
@@ -58,6 +62,9 @@ import com.apercallc.aidailymemory.recording.recovery.RecoveryCondition
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.storage.StoragePolicy
 import com.apercallc.aidailymemory.service.CaptureNotifications
+import com.apercallc.aidailymemory.service.WatchCommandBridge
+import com.apercallc.aidailymemory.service.WatchDataLayerTransport
+import com.apercallc.aidailymemory.service.WatchSnapshotFactory
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -67,6 +74,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -90,6 +98,16 @@ class AppContainer(context: Context) {
     val settings = SettingsStore(
         app.getSharedPreferences(SettingsStore.FILE_NAME, Context.MODE_PRIVATE),
     )
+    private val stopDecisionPreferences by lazy {
+        app.getSharedPreferences(STOP_DECISION_PREFERENCES, Context.MODE_PRIVATE)
+    }
+
+    fun handledStopDecisionSessionId(): String? =
+        stopDecisionPreferences.getString(STOP_DECISION_SESSION_KEY, null)
+
+    fun markStopDecisionHandled(sessionId: String) {
+        stopDecisionPreferences.edit { putString(STOP_DECISION_SESSION_KEY, sessionId) }
+    }
     val notifications = CaptureNotifications(app)
     private val audioManager = app.getSystemService(AudioManager::class.java)
 
@@ -238,6 +256,16 @@ class AppContainer(context: Context) {
         MarkerRecorder(controller, database.markers(), MarkerPolicy.Default, clock, ids)
     }
 
+    val watchCommandBridge: WatchCommandBridge by lazy {
+        WatchCommandBridge(
+            revision = { controller.state.value.revision },
+            dispatch = { command -> controller.dispatch(command) },
+            placeMarker = ::placeMarker,
+            newSessionId = { SessionId(ids.next().toString()) },
+            awaitReady = { controller.awaitRestored() },
+        )
+    }
+
     /** Applies the sleep schedule and quiet times to recording (ADR-0012). */
     val rhythm: RhythmRunner by lazy {
         RhythmRunner(
@@ -251,6 +279,21 @@ class AppContainer(context: Context) {
 
     val sessions: SessionRegistry by lazy {
         SessionRegistry(database.sessions(), rhythm = { settings.rhythm.value })
+    }
+
+    /** User-requested local deletion; refuses active sessions and audio already copied remotely. */
+    val sessionDataDeletion: SessionDataDeletion by lazy {
+        SessionDataDeletion(
+            sessions = database.sessions(),
+            deleteAudio = segments::deleteSessionAudio,
+            hasServerSideData = database.clips()::hasUploadRowsForSession,
+            isActive = { sessionId ->
+                val state = controller.state.value
+                state.sessionId?.value == sessionId &&
+                    state.status != RecordingStatus.IDLE &&
+                    state.status != RecordingStatus.COMPLETED
+            },
+        )
     }
 
     /** Charging-time speech analysis (ADR-0015); shadow mode until Phase 1 uploads. */
@@ -352,12 +395,41 @@ class AppContainer(context: Context) {
         health.overview.value?.health ?: CaptureHealth.Unknown,
     )
 
+    fun currentWatchSnapshot(): PhoneRecordingSnapshot {
+        val state = controller.state.value
+        return WatchSnapshotFactory.from(
+            state = state,
+            captureHealth = health.overview.value?.health?.level?.name ?: "UNKNOWN",
+            reset = state.revision == 0L,
+        )
+    }
+
+    fun publishCurrentWatchSnapshot() {
+        appScope.launch {
+            controller.awaitRestored()
+            WatchDataLayerTransport.publishSnapshot(app, currentWatchSnapshot())
+        }
+    }
+
     suspend fun placeMarker(kind: MarkerKind): MarkerDecision =
         markers.place(kind, capturing = currentStatusModel().canMark)
 
     /** Restores the journal and makes any open session visible without a running service. */
     fun restoreOnProcessStart() {
         controller.restore()
+        appScope.launch {
+            val restored = controller.awaitRestored()
+            val reset = restored.restored.state.revision == 0L
+            combine(controller.state, health.overview) { state, overview ->
+                WatchSnapshotFactory.from(
+                    state = state,
+                    captureHealth = overview?.health?.level?.name ?: "UNKNOWN",
+                    reset = reset && state.revision == 0L,
+                )
+            }
+                .distinctUntilChanged()
+                .collect { snapshot -> WatchDataLayerTransport.publishSnapshot(app, snapshot) }
+        }
         // Keystore work off the main thread; the settings screen shows it once loaded.
         appScope.launch { links.ensureLoaded() }
         appScope.launch { sessions.observe(controller.state) }
@@ -408,6 +480,8 @@ class AppContainer(context: Context) {
 
     private companion object {
         const val TAG = "AppContainer"
+        const val STOP_DECISION_PREFERENCES = "stop_decisions"
+        const val STOP_DECISION_SESSION_KEY = "handled_session_id"
 
         /** Acknowledged audio stays on the phone this long before retention may delete it. */
         const val RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000L

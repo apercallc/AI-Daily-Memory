@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.RecordingStatus
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -45,6 +46,45 @@ class RecordingServiceTest {
         val started = shadowOf(app as Application).nextStartedService
         assertEquals(RecordingService.ACTION_START, started?.action)
     }
+
+    @Test
+    fun `watch start is delivered through the foreground service with its dedupe identity`() {
+        shadowOf(app as Application).grantPermissions(
+            android.Manifest.permission.RECORD_AUDIO,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        )
+        val commandId = "123e4567-e89b-12d3-a456-426614174000"
+
+        RecordingService.sendWatchCommand(
+            app,
+            "phone-node",
+            WatchCommandEnvelope(commandId, WatchCommand.Start),
+        )
+
+        val started = shadowOf(app as Application).nextStartedService
+        assertEquals(RecordingService.ACTION_START, started?.action)
+        assertEquals(commandId, started?.getStringExtra(RecordingService.EXTRA_WATCH_COMMAND_ID))
+        assertEquals("phone-node", started?.getStringExtra(RecordingService.EXTRA_WATCH_NODE_ID))
+    }
+
+    @Test
+    fun `watch start without microphone permission never starts the service and reports failure`() =
+        runBlocking {
+            RecordingService.sendWatchCommand(
+                app,
+                "phone-node",
+                WatchCommandEnvelope(
+                    "123e4567-e89b-12d3-a456-426614174000",
+                    WatchCommand.Start,
+                ),
+            )
+
+            assertNull(shadowOf(app as Application).nextStartedService)
+            val state = withTimeout(5_000) {
+                app.container.controller.state.first { it.problem == CaptureProblem.PERMISSION_DENIED }
+            }
+            assertEquals(RecordingStatus.IDLE, state.status)
+        }
 
     @Test
     fun `pause and stop never start a service that isn't running`() {
