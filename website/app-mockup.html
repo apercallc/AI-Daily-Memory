@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Daily Memory — App Mockup</title>
+<style>
+  :root {
+    --md-primary: #6750A4;
+    --md-on-primary: #FFFFFF;
+    --md-primary-container: #EADDFF;
+    --md-on-primary-container: #21005D;
+    --md-surface: #1C1B1F;
+    --md-surface-dim: #DDD6F0;
+    --md-surface-bright: #3A383F;
+    --md-surface-container: #211F26;
+    --md-surface-container-high: #2B2930;
+    --md-surface-container-highest: #36343B;
+    --md-on-surface: #E6E1E5;
+    --md-on-surface-variant: #CAC4D0;
+    --md-outline: #49454F;
+    --md-outline-variant: #CAC4D0;
+    --md-recording: #F44336;
+    --md-recording-container: #FFDAD6;
+    --md-on-recording-container: #410E0B;
+    --md-success: #4CAF50;
+    --md-success-container: #B8F5C0;
+    --md-warning: #FFB300;
+    --md-warning-container: #FFF3C4;
+    --md-error: #EF4444;
+    --md-error-container: #F9DEDC;
+    --md-on-error-container: #410E0B;
+    --md-secondary: #625B71;
+    --md-secondary-container: #E8DEF8;
+    --md-tertiary: #7D5260;
+    --md-tertiary-container: #FFD8E4;
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 28px;
+    --shadow-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    --shadow-2: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+    --shadow-3: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Roboto', 'Segoe UI', -apple-system, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    color: var(--md-on-surface);
+  }
+
+  .page-title {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
+  }
+
+  .page-subtitle {
+    font-size: 28px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.9);
+    margin-bottom: 32px;
+    text-align: center;
+  }
+
+  .screens-row {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1400px;
+  }
+
+  .screen-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .screen-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Phone frame */
+  .phone {
+    width: 360px;
+    height: 780px;
+    background: var(--md-surface);
+    border-radius: 44px;
+    border: 8px solid #2A2A2E;
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: 28px;
+    background: var(--md-surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    font-size: 11px;
+    color: var(--md-on-surface);
+    flex-shrink: 0;
+  }
+
+  .status-bar .right { display: flex; gap: 6px; align-items: center; }
+  .battery { font-size: 10px; }
+
+  /* Notch */
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 24px;
+    background: #000;
+    border-radius: 0 0 16px 16px;
+    z-index: 10;
+  }
+
+  /* App content */
+  .app {
+    flex: 1;
+    background: var(--md-surface);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app::-webkit-scrollbar { width: 0; }
+
+  /* Top app bar */
+  .top-bar {
+    padding: 12px 20px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .top-bar h1 {
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--md-on-surface);
+  }
+
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  .icon-btn:hover { background: rgba(255,255,255,0.08); }
+
+  /* Date header */
+  .date-header {
+    padding: 4px 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .date-header .day-name {
+    font-size: 13px;
+    color: var(--md-primary);
+    font-weight: 500;
+  }
+
+  .date-header .full-date {
+    font-size: 18px;
+    color: var(--md-on-surface);
+    font-weight: 400;
+  }
+
+  /* Recording bar */
+  .recording-bar {
+    margin: 0 16px 12px;
+    padding: 12px 16px;
+    background: var(--md-recording-container);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .recording-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--md-recording);
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+  }
+
+  .recording-bar .text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--md-on-recording-container);
+    font-weight: 500;
+  }
+
+  .recording-bar .duration {
+    font-size: 13px;
+    color: var(--md-on-recording-container);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Session card */
+  .session-card {
+    margin: 0 16px 12px;
+    background: var(--md-surface-container);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+
+  .session-header {
+    padding: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .session-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 48px;
+  }
+
+  .session-time .time {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md-on-surface);
+  }
+
+  .session-time .duration {
+    font-size: 11px;
+    color: var(--md-on-surface-variant);
+    margin-top: 2px;
+  }
+
+  .session-body {
+    flex: 1;
+  }
+
+  .session-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    margin-bottom: 4px;
+  }
+
+  .session-summary {
+    font-size: 13px;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+  }
+
+  .session-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .chip-decision { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+  .chip-action { background: var(--md-tertiary-container); color: var(--md-tertiary); }
+  .chip-idea { background: var(--md-secondary-container); color: var(--md-secondary); }
+  .chip-commitment { background: var(--md-warning-container); color: #5D4037; }
+
+  /* Expandable transcript */
+  .transcript-toggle {
+    padding: 0 16px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--md-primary);
+    font-size: 13px;
+    font-weight: 500;
+    user-select: none;
+  }
+
+  .transcript-toggle:hover { opacity: 0.8; }
+
+  .transcript-toggle .arrow {
+    transition: transform 0.2s;
+    font-size: 10px;
+  }
+
+  .transcript-toggle.open .arrow { transform: rotate(180deg); }
+
+  .transcript-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    background: var(--md-surface-container-high);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+  }
+
+  .transcript-content.open {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .transcript-text {
+    padding: 14px 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--md-on-surface-variant);
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+  }
+
+  .transcript-speaker {
+    color: var(--md-primary);
+    font-weight: 600;
+    font-size: 11px;
+    margin-right: 6px;
+  }
+
+  .transcript-speaker.s2 { color: var(--md-tertiary); }
+
+  .transcript-timestamp {
+    color: rgba(255,255,255,0.25);
+    font-size: 10px;
+    margin-right: 6px;
+  }
+
+  /* Memory items */
+  .memory-section {
+    padding: 8px 16px 12px;
+    border-top: 1px solid var(--md-outline);
+  }
+
+  .memory-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--md-on-surface-variant);
+    margin-bottom: 8px;
+  }
+
+  .memory-item {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--md-on-surface);
+    line-height: 1.4;
+  }
+
+  .memory-item .bullet {
+    color: var(--md-primary);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .memory-item .evidence {
+    color: var(--md-on-surface-variant);
+    font-size: 11px;
+    font-style: italic;
+    margin-top: 2px;
+  }
+
+  /* Bottom nav */
+  .bottom-nav {
+    height: 64px;
+    background: var(--md-surface-container);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    flex-shrink: 0;
+    border-top: 1px solid var(--md-outline);
+  }
+
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: 16px;
+    font-size: 10px;
+  }
+
+  .nav-item.active {
+    color: var(--md-on-primary-container);
+    background: var(--md-primary-container);
+  }
+
+  .nav-item .nav-icon { font-size: 22px; }
+
+  /* FAB */
+  .fab {
+    position: absolute;
+    bottom: 80px;
+    right: 16px;
+    width: 56px;
+    height: 56px;
+    border-radius: 20px;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    border: none;
+    box-shadow: var(--shadow-2);
+    cursor: pointer;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+  }
+
+  .fab.recording {
+    background: var(--md-recording);
+    color: white;
+  }
+
+  /* Watch */
+  .watch {
+    width: 200px;
+    height: 220px;
+    background: #1a1a1e;
+    border-radius: 50px;
+    border: 6px solid #333;
+    box-shadow: var(--shadow-3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    gap: 12px;
+  }
+
+  .watch-screen {
+    width: 100%;
+    height: 100%;
+    background: var(--md-surface);
+    border-radius: 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    gap: 8px;
+  }
+
+  .watch-status {
+    font-size: 11px;
+    color: var(--md-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .watch-recording-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--md-recording);
+    animation: pulse 1.5s infinite;
+  }
+
+  .watch-duration {
+    font-size: 24px;
+    font-weight: 300;
+    color: var(--md-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .watch-controls {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .watch-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .watch-btn.pause { background: var(--md-warning); color: #000; }
+  .watch-btn.stop { background: var(--md-recording); color: white; }
+  .watch-btn.mark { background: var(--md-primary); color: white; }
+
+  /* Settings screen */
+  .settings-section {
+    margin: 0 16px 16px;
+  }
+
+  .settings-section h2 {
+    font-size: 13px;
+    color: var(--md-primary);
+    font-weight: 500;
+    margin-bottom: 8px;
+    padding-left: 4px;
+  }
+
+  .settings-card {
+    background: var(--md-surface-container);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .setting-row {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .setting-row:last-child { border-bottom: none; }
+
+  .setting-row .label {
+    font-size: 14px;
+    color: var(--md-on-surface);
+  }
+
+  .setting-row .sublabel {
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+    margin-top: 2px;
+  }
+
+  .setting-row .value {
+    font-size: 13px;
+    color: var(--md-on-surface-variant);
+  }
+
+  .switch {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--md-primary);
+    position: relative;
+    cursor: pointer;
+  }
+
+  .switch.off { background: var(--md-outline); }
+
+  .switch::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    top: 3px;
+    right: 3px;
+    transition: 0.2s;
+  }
+
+  .switch.off::after { right: 23px; }
+
+  /* Storage indicator */
+  .storage-bar {
+    margin: 0 16px 16px;
+    padding: 14px 16px;
+    background: var(--md-surface-container);
+    border-radius: var(--radius-md);
+  }
+
+  .storage-bar .label {
+    font-size: 13px;
+    color: var(--md-on-surface);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .storage-bar .bar {
+    height: 6px;
+    background: var(--md-outline);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .storage-bar .fill {
+    height: 100%;
+    background: var(--md-success);
+    border-radius: 3px;
+  }
+
+  .storage-bar .detail {
+    font-size: 11px;
+    color: var(--md-on-surface-variant);
+    margin-top: 6px;
+  }
+
+  /* Data flow diagram */
+  .flow-section {
+    max-width: 900px;
+    margin: 60px auto 0;
+    padding: 32px;
+    background: rgba(255,255,255,0.03);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .flow-section h2 {
+    font-size: 20px;
+    color: rgba(255,255,255,0.9);
+    font-weight: 400;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .flow-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+  }
+
+  .flow-node {
+    padding: 14px 24px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    text-align: center;
+    min-width: 240px;
+  }
+
+  .flow-node.capture { background: var(--md-recording-container); color: var(--md-on-recording-container); }
+  .flow-node.process { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+  .flow-node.delete { background: var(--md-error-container); color: var(--md-on-error-container); }
+  .flow-node.keep { background: var(--md-success-container); color: #003D00; }
+  .flow-node.sync { background: var(--md-secondary-container); color: var(--md-secondary); }
+
+  .flow-arrow {
+    color: rgba(255,255,255,0.3);
+    font-size: 20px;
+    padding: 4px 0;
+  }
+
+  .flow-note {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    max-width: 280px;
+    text-align: center;
+    padding: 4px 0 8px;
+  }
+
+  .flow-branch {
+    display: flex;
+    gap: 32px;
+  }
+
+  /* Annotation labels */
+  .annotation {
+    position: absolute;
+    background: rgba(103,80,164,0.9);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 500;
+    pointer-events: none;
+    z-index: 20;
+    white-space: nowrap;
+  }
+
+  .annotation::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(103,80,164,0.9);
+    border-bottom: 0;
+  }
+
+  .annotation.new {
+    background: var(--md-success);
+  }
+  .annotation.new::after {
+    border-top-color: var(--md-success);
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: var(--md-outline);
+    margin: 8px 16px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">AI Daily Memory</div>
+<div class="page-subtitle">App Experience Mockup — On-Device, Free, Private</div>
+
+<!-- Data Flow Section -->
+<div class="flow-section">
+  <h2>Data Lifecycle: Audio In, Memory Out, Audio Gone</h2>
+  <div class="flow-diagram">
+    <div class="flow-node capture">Record Audio (foreground service)</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node process">On-Device VAD: Find Speech, Cut Clips</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node process">Transcribe (on-device Whisper / user's API key)</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node delete">Delete Audio — Free Up Space</div>
+    <div class="flow-note">Audio is gone. Only the transcript text remains.</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node process">Extract Summary, Decisions, Actions, Ideas (on-device / user's API key)</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node keep">Keep on Phone: Summary + Transcript (expandable)</div>
+    <div class="flow-note">Summary is the default view. Transcript is one tap away for verification.</div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-node sync">Optional Sync → Your Second Brain (tommy-hoang-os / self-hosted)</div>
+    <div class="flow-note">Only structured memory leaves the phone — never audio, never raw transcript unless you choose full cloud mode.</div>
+  </div>
+</div>
+
+<div style="height: 40px;"></div>
+
+<div class="page-title">App Screens</div>
+
+<div class="screens-row">
+
+  <!-- SCREEN 1: Today / Daily Timeline -->
+  <div class="screen-group">
+    <div class="screen-label">1. Today — Daily Memory</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span>9:41</span>
+        <div class="right">
+          <span>📶</span>
+          <span class="battery">87%</span>
+        </div>
+      </div>
+      <div class="app">
+        <div class="top-bar">
+          <h1>Today</h1>
+          <button class="icon-btn">⚙</button>
+        </div>
+        <div class="date-header">
+          <div class="day-name">Monday</div>
+          <div class="full-date">October 12, 2026</div>
+        </div>
+
+        <!-- Active recording bar -->
+        <div class="recording-bar">
+          <div class="recording-dot"></div>
+          <div class="text">Recording — Morning commute</div>
+          <div class="duration">1:24:03</div>
+        </div>
+
+        <!-- Session 1 -->
+        <div class="session-card" id="card1">
+          <div class="session-header">
+            <div class="session-time">
+              <div class="time">8:15</div>
+              <div class="duration">32m</div>
+            </div>
+            <div class="session-body">
+              <div class="session-title">Standup with Sarah &amp; Dev Team</div>
+              <div class="session-summary">
+                Discussed Q4 roadmap priorities. Sarah confirmed the auth refactor
+                should ship before the billing migration. Agreed to defer the
+                analytics dashboard to January.
+              </div>
+              <div class="session-meta">
+                <span class="chip chip-decision">3 decisions</span>
+                <span class="chip chip-action">2 action items</span>
+                <span class="chip chip-idea">1 idea</span>
+              </div>
+            </div>
+          </div>
+          <div class="memory-section">
+            <h3>Decisions</h3>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Ship auth refactor before billing migration
+                <div class="evidence">"Let's prioritize auth first, billing can wait" — Sarah, 8:22 AM</div>
+              </div>
+            </div>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Defer analytics dashboard to January
+                <div class="evidence">"January is fine, we need the runway for auth" — 8:28 AM</div>
+              </div>
+            </div>
+          </div>
+          <div class="memory-section">
+            <h3>Action Items</h3>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Tommy: draft auth refactor scope doc by Wednesday
+              </div>
+            </div>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Sarah: confirm billing migration timeline with finance
+              </div>
+            </div>
+          </div>
+          <div class="transcript-toggle" onclick="toggleTranscript('t1', this)">
+            <span>View transcript</span>
+            <span class="arrow">▼</span>
+          </div>
+          <div class="transcript-content" id="t1">
+            <div class="transcript-text">
+              <span class="transcript-timestamp">[08:15:02]</span><span class="transcript-speaker">Tommy:</span>Alright, let's get started. Sarah, you had the roadmap updates?<br><br>
+              <span class="transcript-timestamp">[08:15:14]</span><span class="transcript-speaker s2">Sarah:</span>Yeah, so the big question is sequencing. We have auth refactor, billing migration, and the analytics dashboard all wanting Q4.<br><br>
+              <span class="transcript-timestamp">[08:15:31]</span><span class="transcript-speaker s2">Sarah:</span>We can't do all three. My recommendation is auth first, then billing, and defer analytics.<br><br>
+              <span class="transcript-timestamp">[08:15:48]</span><span class="transcript-speaker">Tommy:</span>I agree. Let's prioritize auth first, billing can wait. Analytics we push to January?<br><br>
+              <span class="transcript-timestamp">[08:16:02]</span><span class="transcript-speaker s2">Sarah:</span>January is fine, we need the runway for auth. Can you draft the scope doc by Wednesday?<br><br>
+              <span class="transcript-timestamp">[08:16:15]</span><span class="transcript-speaker">Tommy:</span>Yeah, I'll have it ready. And can you check with finance on the billing timeline?<br><br>
+              <span class="transcript-timestamp">[08:16:22]</span><span class="transcript-speaker s2">Sarah:</span>Will do.
+            </div>
+          </div>
+        </div>
+
+        <!-- Session 2 -->
+        <div class="session-card">
+          <div class="session-header">
+            <div class="session-time">
+              <div class="time">10:30</div>
+              <div class="duration">18m</div>
+            </div>
+            <div class="session-body">
+              <div class="session-title">Phone call — Vendor negotiation</div>
+              <div class="session-summary">
+                Negotiated annual contract with CloudProvider. Got 15% discount
+                by committing to annual upfront. Need to review the revised SLA
+                before signing.
+              </div>
+              <div class="session-meta">
+                <span class="chip chip-decision">1 decision</span>
+                <span class="chip chip-action">1 action item</span>
+                <span class="chip chip-commitment">1 commitment</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session 3 -->
+        <div class="session-card">
+          <div class="session-header">
+            <div class="session-time">
+              <div class="time">12:45</div>
+              <div class="duration">6m</div>
+            </div>
+            <div class="session-body">
+              <div class="session-title">Lunch idea — voice memo</div>
+              <div class="session-summary">
+                Had an idea for a weekend project: building a local-first
+                RSS aggregator that syncs via git. Would solve the "inbox
+                anxiety" problem with feed readers.
+              </div>
+              <div class="session-meta">
+                <span class="chip chip-idea">1 idea</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session 4 -->
+        <div class="session-card">
+          <div class="session-header">
+            <div class="session-time">
+              <div class="time">14:00</div>
+              <div class="duration">45m</div>
+            </div>
+            <div class="session-body">
+              <div class="session-title">1:1 with Marcus</div>
+              <div class="session-summary">
+                Marcus raised concern about the API rate limiter implementation.
+                He promised to send a PR with the token bucket approach by Friday.
+                I committed to reviewing it same day.
+              </div>
+              <div class="session-meta">
+                <span class="chip chip-action">1 action item</span>
+                <span class="chip chip-commitment">1 commitment</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height: 80px;"></div>
+      </div>
+      <button class="fab recording">●</button>
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <span class="nav-icon">📋</span>
+          <span>Today</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">📅</span>
+          <span>History</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🔍</span>
+          <span>Search</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">⚙</span>
+          <span>Settings</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: Session Detail with expanded transcript -->
+  <div class="screen-group">
+    <div class="screen-label">2. Session Detail — Verify Summary</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span>9:41</span>
+        <div class="right">
+          <span>📶</span>
+          <span class="battery">87%</span>
+        </div>
+      </div>
+      <div class="app">
+        <div class="top-bar">
+          <button class="icon-btn">‹</button>
+          <h1 style="font-size: 18px;">Standup</h1>
+          <button class="icon-btn">⋮</button>
+        </div>
+
+        <div style="padding: 16px 20px;">
+          <div style="font-size: 13px; color: var(--md-on-surface-variant); margin-bottom: 4px;">
+            Oct 12 · 8:15 AM — 8:47 AM · 32 min
+          </div>
+        </div>
+
+        <!-- Summary card -->
+        <div class="session-card" style="margin: 0 16px 12px;">
+          <div style="padding: 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--md-primary); margin-bottom: 8px;">AI Summary</div>
+            <div style="font-size: 14px; line-height: 1.6; color: var(--md-on-surface);">
+              Discussed Q4 roadmap priorities. Sarah confirmed the auth refactor
+              should ship before the billing migration. Agreed to defer the
+              analytics dashboard to January. Tommy will draft the scope doc
+              by Wednesday; Sarah will confirm billing timeline with finance.
+            </div>
+          </div>
+        </div>
+
+        <!-- Memory items -->
+        <div class="session-card" style="margin: 0 16px 12px;">
+          <div class="memory-section" style="border-top: none;">
+            <h3>Decisions (3)</h3>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Ship auth refactor before billing migration
+                <div class="evidence">"Let's prioritize auth first, billing can wait" — Sarah, 8:22 AM</div>
+              </div>
+            </div>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Defer analytics dashboard to January
+                <div class="evidence">"January is fine, we need the runway for auth" — 8:28 AM</div>
+              </div>
+            </div>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>
+                Use token bucket approach for rate limiter (from earlier discussion)
+                <div class="evidence">"Token bucket is cleaner than sliding window" — 8:35 AM</div>
+              </div>
+            </div>
+          </div>
+          <div class="memory-section">
+            <h3>Action Items (2)</h3>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>Tommy: draft auth refactor scope doc by Wednesday</div>
+            </div>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>Sarah: confirm billing migration timeline with finance</div>
+            </div>
+          </div>
+          <div class="memory-section">
+            <h3>Ideas (1)</h3>
+            <div class="memory-item">
+              <span class="bullet">›</span>
+              <div>Consider a shared component library to speed up both auth and billing UI work</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Expanded transcript -->
+        <div class="session-card" style="margin: 0 16px 12px; overflow: hidden;">
+          <div style="padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 13px; font-weight: 500; color: var(--md-primary);">Full Transcript</div>
+            <div style="font-size: 11px; color: var(--md-on-surface-variant);">32 min · 2,847 words</div>
+          </div>
+          <div style="padding: 0 16px 8px; font-size: 11px; color: var(--md-on-surface-variant);">
+            Tap any evidence link above to jump to the exact moment in the transcript.
+          </div>
+          <div class="transcript-content open" style="max-height: 320px; border-radius: 0;">
+            <div class="transcript-text">
+              <span class="transcript-timestamp">[08:15:02]</span><span class="transcript-speaker">Tommy:</span>Alright, let's get started. Sarah, you had the roadmap updates?<br><br>
+              <span class="transcript-timestamp">[08:15:14]</span><span class="transcript-speaker s2">Sarah:</span>Yeah, so the big question is sequencing. We have auth refactor, billing migration, and the analytics dashboard all wanting Q4.<br><br>
+              <span class="transcript-timestamp">[08:15:31]</span><span class="transcript-speaker s2">Sarah:</span>We can't do all three. My recommendation is auth first, then billing, and defer analytics.<br><br>
+              <span class="transcript-timestamp">[08:15:48]</span><span class="transcript-speaker">Tommy:</span>I agree. <span style="background: var(--md-primary-container); color: var(--md-on-primary-container); padding: 1px 4px; border-radius: 3px;">Let's prioritize auth first, billing can wait.</span> Analytics we push to January?<br><br>
+              <span class="transcript-timestamp">[08:16:02]</span><span class="transcript-speaker s2">Sarah:</span><span style="background: var(--md-primary-container); color: var(--md-on-primary-container); padding: 1px 4px; border-radius: 3px;">January is fine, we need the runway for auth.</span> Can you draft the scope doc by Wednesday?<br><br>
+              <span class="transcript-timestamp">[08:16:15]</span><span class="transcript-speaker">Tommy:</span>Yeah, I'll have it ready. And can you check with finance on the billing timeline?<br><br>
+              <span class="transcript-timestamp">[08:16:22]</span><span class="transcript-speaker s2">Sarah:</span>Will do.<br><br>
+              <span class="transcript-timestamp">[08:16:30]</span><span class="transcript-speaker">Tommy:</span>Alright, next item — the rate limiter. Marcus mentioned token bucket in the Slack thread.<br><br>
+              <span class="transcript-timestamp">[08:16:45]</span><span class="transcript-speaker s2">Sarah:</span>I looked at it. <span style="background: var(--md-primary-container); color: var(--md-on-primary-container); padding: 1px 4px; border-radius: 3px;">Token bucket is cleaner than sliding window</span> for our use case. Let's go with that.
+            </div>
+          </div>
+        </div>
+
+        <!-- Audio status -->
+        <div style="margin: 0 16px 16px; padding: 12px 16px; background: var(--md-surface-container); border-radius: var(--radius-md); display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">🗑</span>
+          <div>
+            <div style="font-size: 13px; color: var(--md-on-surface);">Audio deleted after transcription</div>
+            <div style="font-size: 11px; color: var(--md-on-surface-variant);">Freed 14.2 MB · Transcript kept for verification</div>
+          </div>
+        </div>
+
+        <div style="height: 20px;"></div>
+      </div>
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <span class="nav-icon">📋</span>
+          <span>Today</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">📅</span>
+          <span>History</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🔍</span>
+          <span>Search</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">⚙</span>
+          <span>Settings</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: Settings -->
+  <div class="screen-group">
+    <div class="screen-label">3. Settings — Free &amp; Private</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span>9:41</span>
+        <div class="right">
+          <span>📶</span>
+          <span class="battery">87%</span>
+        </div>
+      </div>
+      <div class="app">
+        <div class="top-bar">
+          <h1>Settings</h1>
+          <button class="icon-btn">✕</button>
+        </div>
+
+        <!-- Processing section -->
+        <div class="settings-section" style="margin-top: 16px;">
+          <h2>Processing (On-Device)</h2>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div>
+                <div class="label">Transcription</div>
+                <div class="sublabel">On-device Whisper (free, offline)</div>
+              </div>
+              <div class="value">▶</div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Summarization / Extraction</div>
+                <div class="sublabel">On-device model (free, offline)</div>
+              </div>
+              <div class="value">▶</div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Use my own API keys</div>
+                <div class="sublabel">Better quality, your cost, your choice</div>
+              </div>
+              <div class="switch off"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audio retention -->
+        <div class="settings-section">
+          <h2>Audio Retention</h2>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div>
+                <div class="label">Delete audio after transcription</div>
+                <div class="sublabel">Frees space automatically once text is extracted</div>
+              </div>
+              <div class="switch"></div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Keep transcript for verification</div>
+                <div class="sublabel">Expand any summary to read what was actually said</div>
+              </div>
+              <div class="switch"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Storage -->
+        <div class="settings-section">
+          <h2>Storage</h2>
+          <div class="storage-bar">
+            <div class="label">
+              <span>Memory data on phone</span>
+              <span>48 MB</span>
+            </div>
+            <div class="bar">
+              <div class="fill" style="width: 12%;"></div>
+            </div>
+            <div class="detail">
+              28 days of summaries + transcripts · Audio auto-deleted after processing
+            </div>
+          </div>
+        </div>
+
+        <!-- Sync section -->
+        <div class="settings-section">
+          <h2>Sync (Optional)</h2>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div>
+                <div class="label">Sync to second brain</div>
+                <div class="sublabel">Push summaries &amp; memory items to your server</div>
+              </div>
+              <div class="switch"></div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Sync target</div>
+                <div class="sublabel">https://tommy-hoang-os.local/api/memory</div>
+              </div>
+              <div class="value">▶</div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">What gets synced</div>
+                <div class="sublabel">Summaries + structured items only (no audio, no raw transcript)</div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Sync schedule</div>
+                <div class="sublabel">Nightly on Wi-Fi + charging</div>
+              </div>
+              <div class="value">▶</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Privacy section -->
+        <div class="settings-section">
+          <h2>Privacy</h2>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div>
+                <div class="label">All processing on this device</div>
+                <div class="sublabel">Nothing leaves your phone unless sync is on</div>
+              </div>
+              <span style="font-size: 20px;">🔒</span>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">No accounts, no cloud, no tracking</div>
+                <div class="sublabel">100% free and open source</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height: 20px;"></div>
+      </div>
+      <div class="bottom-nav">
+        <div class="nav-item">
+          <span class="nav-icon">📋</span>
+          <span>Today</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">📅</span>
+          <span>History</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🔍</span>
+          <span>Search</span>
+        </div>
+        <div class="nav-item active">
+          <span class="nav-icon">⚙</span>
+          <span>Settings</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WATCH -->
+  <div class="screen-group">
+    <div class="screen-label">4. Wear OS — Remote Control</div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 40px;">
+      <div class="watch">
+        <div class="watch-screen">
+          <div class="watch-recording-indicator"></div>
+          <div class="watch-status">Recording</div>
+          <div class="watch-duration">1:24:03</div>
+          <div style="font-size: 11px; color: var(--md-on-surface-variant);">Morning commute</div>
+          <div class="watch-controls">
+            <button class="watch-btn pause">⏸</button>
+            <button class="watch-btn mark">✦</button>
+            <button class="watch-btn stop">⏹</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size: 12px; color: rgba(255,255,255,0.4); max-width: 220px; text-align: center; line-height: 1.5;">
+        Watch shows phone-acknowledged state only.<br>
+        Pause, mark highlight, or stop — phone confirms.
+      </div>
+
+      <div style="height: 20px;"></div>
+
+      <!-- Watch idle state -->
+      <div class="watch">
+        <div class="watch-screen">
+          <div style="font-size: 11px; color: var(--md-on-surface-variant); text-transform: uppercase; letter-spacing: 1px;">Idle</div>
+          <div style="font-size: 18px; color: var(--md-on-surface); font-weight: 300;">Not recording</div>
+          <div style="font-size: 11px; color: var(--md-on-surface-variant);">Last: 2:47 PM today</div>
+          <div class="watch-controls">
+            <button class="watch-btn" style="background: var(--md-primary); color: white; width: 44px; height: 44px; font-size: 18px;">●</button>
+          </div>
+          <div style="font-size: 10px; color: var(--md-on-surface-variant);">Tap to start</div>
+        </div>
+      </div>
+
+      <div style="font-size: 12px; color: rgba(255,255,255,0.4); max-width: 220px; text-align: center;">
+        Idle state — ready to start recording
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="height: 40px;"></div>
+
+<!-- Key principles -->
+<div class="flow-section" style="max-width: 700px;">
+  <h2>What Makes This Different</h2>
+  <div style="display: flex; flex-direction: column; gap: 16px; padding: 0 16px;">
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+      <span style="font-size: 24px;">🔒</span>
+      <div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Everything stays on your phone</div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">No accounts, no cloud, no tracking. Audio is transcribed then deleted. Only you hold your data.</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+      <span style="font-size: 24px;">🆓</span>
+      <div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Completely free, open source</div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">On-device models cost nothing. Bring your own API key if you want higher quality — your choice, your cost.</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+      <span style="font-size: 24px;">✓</span>
+      <div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Trust but verify</div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">Every AI summary links to the exact transcript moment it came from. Skeptical? Tap and read it yourself.</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+      <span style="font-size: 24px;">🗑</span>
+      <div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Audio in, memory out, audio gone</div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">Storage is for memory, not recordings. Audio is deleted after transcription — the transcript is the evidence.</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+      <span style="font-size: 24px;">🔌</span>
+      <div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Optional sync to your second brain</div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">Point the app at your own server. Structured memory pushes out nightly — summaries, decisions, action items. Never audio.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height: 60px;"></div>
+
+<script>
+function toggleTranscript(id, el) {
+  const content = document.getElementById(id);
+  content.classList.toggle('open');
+  el.classList.toggle('open');
+}
+</script>
+
+</body>
+</html>

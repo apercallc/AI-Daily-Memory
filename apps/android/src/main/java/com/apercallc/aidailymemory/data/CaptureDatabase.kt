@@ -26,8 +26,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ClipPlanEntity::class,
         TranscriptEntity::class,
         TranscriptSpanEntity::class,
+        MemoryItemEntity::class,
+        DailyReportEntity::class,
+        LocalTranscriptLineEntity::class,
+        ProcessingStateEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -38,12 +42,18 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun speech(): SpeechDao
     abstract fun clips(): ClipDao
     abstract fun transcripts(): TranscriptDao
+    abstract fun memoryItems(): MemoryItemDao
+    abstract fun dailyReports(): DailyReportDao
+    abstract fun localTranscripts(): LocalTranscriptDao
+    abstract fun processingState(): ProcessingStateDao
 
     companion object {
         const val NAME = "capture.db"
 
         /** Every migration, in order. Tests open old databases with exactly this list. */
-        fun migrations(): Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        fun migrations(): Array<Migration> = arrayOf(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+        )
 
         fun open(context: Context): CaptureDatabase =
             Room.databaseBuilder(context.applicationContext, CaptureDatabase::class.java, NAME)
@@ -145,6 +155,67 @@ abstract class CaptureDatabase : RoomDatabase() {
                         "`start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, " +
                         "`sealed` BLOB NOT NULL, `confidence` REAL, " +
                         "PRIMARY KEY(`upload_id`, `idx`))",
+                )
+            }
+        }
+
+        /** Adds on-device processing tables (ADR-0020): memory items, daily reports, local
+         *  transcript lines, and processing state. New tables only; nothing existing changes. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `memory_item` (" +
+                        "`id` TEXT NOT NULL, `session_id` TEXT NOT NULL, " +
+                        "`memory_day` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`text` TEXT NOT NULL, `confidence` TEXT NOT NULL, " +
+                        "`quote` TEXT, `owner` TEXT, `due` TEXT, " +
+                        "`direction` TEXT, `counterpart` TEXT, " +
+                        "`extraction_model` TEXT NOT NULL, `extraction_version` INTEGER NOT NULL, " +
+                        "`evidence_epoch_ms` INTEGER, `dismissed_at_epoch_ms` INTEGER, " +
+                        "`extracted_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_memory_item_session_id` ON `memory_item` (`session_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_memory_item_memory_day` ON `memory_item` (`memory_day`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `daily_report` (" +
+                        "`id` TEXT NOT NULL, `memory_day` TEXT NOT NULL, " +
+                        "`zone_id` TEXT NOT NULL, `headline` TEXT NOT NULL, " +
+                        "`summary` TEXT NOT NULL, `report_json` TEXT NOT NULL, " +
+                        "`generated_at_epoch_ms` INTEGER NOT NULL, " +
+                        "`extraction_model` TEXT NOT NULL, `extraction_version` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_daily_report_memory_day` ON `daily_report` (`memory_day`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `local_transcript_line` (" +
+                        "`line_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, " +
+                        "`segment_id` TEXT NOT NULL, `start_epoch_ms` INTEGER NOT NULL, " +
+                        "`end_epoch_ms` INTEGER NOT NULL, `speaker` TEXT, " +
+                        "`text` TEXT NOT NULL, `confidence` REAL, " +
+                        "`provider` TEXT NOT NULL, `model` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`line_id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_local_transcript_line_session_id` ON `local_transcript_line` (`session_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_local_transcript_line_session_id_start_epoch_ms` " +
+                        "ON `local_transcript_line` (`session_id`, `start_epoch_ms`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `processing_state` (" +
+                        "`session_id` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                        "`audio_deleted` INTEGER NOT NULL, `last_error` TEXT, " +
+                        "`updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`session_id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_processing_state_state` ON `processing_state` (`state`)",
                 )
             }
         }
