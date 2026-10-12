@@ -23,6 +23,7 @@ import com.apercallc.aidailymemory.recording.processing.ProcessingValidation
 import com.apercallc.aidailymemory.recording.processing.TranscriptionProvider
 import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.segment.SegmentState
+import com.apercallc.aidailymemory.recording.speech.EnergyVad
 import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import java.time.Instant
@@ -61,6 +62,7 @@ class ProcessingPipeline(
     suspend fun processPending(limit: Int = BATCH): ProcessingRun {
         if (!settings.processingEnabled.value) return ProcessingRun(0, 0, 0)
 
+        processingStateDao.enqueueReadySessions(EnergyVad.VERSION, now())
         var processed = 0
         var failed = 0
         val pending = processingStateDao.pending(limit)

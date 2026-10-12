@@ -490,6 +490,7 @@ class AppContainer(context: Context) {
     /** New speech analysis may have produced clips; upload them on the next good window. */
     fun afterSpeechAnalysis() {
         if (links.isLinked) uploadScheduler.schedule()
+        if (processingSettings.processingEnabled.value) processingScheduler.schedule()
     }
 
     /** The server refused [link]: stop and ask the user to reconnect (if it is still current). */

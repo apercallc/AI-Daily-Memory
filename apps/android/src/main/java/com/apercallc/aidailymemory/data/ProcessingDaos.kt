@@ -78,6 +78,44 @@ interface LocalTranscriptDao {
 
 @Dao
 interface ProcessingStateDao {
+    /** Queues eligible completed sessions once, after every sealed segment has been analyzed. */
+    @Query(
+        """
+        INSERT OR IGNORE INTO processing_state
+            (session_id, state, audio_deleted, last_error, updated_at_epoch_ms)
+        SELECT DISTINCT s.session_id, 'PENDING', 0, NULL, :nowEpochMs
+        FROM audio_segment s
+        WHERE s.state = 'SEALED'
+            AND EXISTS (
+                SELECT 1 FROM segment_speech ready
+                WHERE ready.segment_id = s.segment_id
+                    AND ready.analyzer = :analyzer
+                    AND ready.outcome = 'OK'
+                    AND ready.speech_ms > 0
+            )
+            AND EXISTS (
+                SELECT 1 FROM recording_transition completed
+                WHERE completed.session_id = s.session_id
+                    AND completed.status = 'COMPLETED'
+                    AND completed.revision = (
+                        SELECT MAX(latest.revision) FROM recording_transition latest
+                        WHERE latest.session_id = s.session_id
+                    )
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM audio_segment unanalyzed
+                WHERE unanalyzed.session_id = s.session_id
+                    AND unanalyzed.state = 'SEALED'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM segment_speech analyzed
+                        WHERE analyzed.segment_id = unanalyzed.segment_id
+                            AND analyzed.analyzer = :analyzer
+                    )
+            )
+        """,
+    )
+    suspend fun enqueueReadySessions(analyzer: String, nowEpochMs: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(state: ProcessingStateEntity)
 

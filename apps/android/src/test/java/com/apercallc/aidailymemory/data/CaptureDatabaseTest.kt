@@ -42,6 +42,54 @@ class CaptureDatabaseTest {
     fun tearDown() = db.close()
 
     @Test
+    fun `processing queue includes only completed fully analyzed sessions with speech`() = runTest {
+        val segments = db.segments()
+        val transitions = db.transitions()
+        val ready = db.speech()
+        segments.insert(segmentEntity(sessionId = "ready", sequence = 0, state = "SEALED"))
+        segments.insert(segmentEntity(sessionId = "ready", sequence = 1, state = "SEALED"))
+        ready.upsert(speech("ready-0", "OK"))
+        ready.upsert(speech("ready-1", "UNREADABLE"))
+        transitions.append(TransitionEntity(1, "COMPLETED", "ready", null, "stop", captureTime()))
+
+        segments.insert(segmentEntity(sessionId = "still-analyzing", state = "SEALED"))
+        transitions.append(
+            TransitionEntity(2, "COMPLETED", "still-analyzing", null, "stop", captureTime()),
+        )
+
+        segments.insert(segmentEntity(sessionId = "no-speech", state = "SEALED"))
+        ready.upsert(speech("no-speech-0", "OK", speechMs = 0))
+        transitions.append(
+            TransitionEntity(3, "COMPLETED", "no-speech", null, "stop", captureTime()),
+        )
+
+        segments.insert(segmentEntity(sessionId = "active", state = "SEALED"))
+        ready.upsert(speech("active-0", "OK"))
+        transitions.append(TransitionEntity(4, "RECORDING", "active", null, "resume", captureTime()))
+
+        val processing = db.processingState()
+        processing.enqueueReadySessions("energy-v1", 99L)
+        processing.enqueueReadySessions("energy-v1", 100L)
+
+        assertEquals("PENDING", processing.forSession("ready")?.state)
+        assertEquals(99L, processing.forSession("ready")?.updatedAtEpochMs)
+        assertNull(processing.forSession("still-analyzing"))
+        assertNull(processing.forSession("no-speech"))
+        assertNull(processing.forSession("active"))
+    }
+
+    private fun speech(segmentId: String, outcome: String, speechMs: Long = 10_000) = SegmentSpeechEntity(
+        segmentId = segmentId,
+        analyzer = "energy-v1",
+        outcome = outcome,
+        totalMs = 60_000,
+        speechMs = speechMs,
+        paddedMs = speechMs,
+        regionCount = if (speechMs > 0) 1 else 0,
+        analyzedAtEpochMs = 1,
+    )
+
+    @Test
     fun `journal restores the newest transition after a restart`() = runTest {
         val session = SessionId("session-1")
         var state = RecordingState.Initial
