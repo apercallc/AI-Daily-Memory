@@ -90,6 +90,34 @@ class CaptureDatabaseTest {
     )
 
     @Test
+    fun `interrupted processing stages are eligible for restart recovery`() = runTest {
+        val processing = db.processingState()
+        val recoverableStates = listOf("PENDING", "TRANSCRIBING", "TRANSCRIBED", "EXTRACTING")
+        recoverableStates.forEachIndexed { index, state ->
+            processing.upsert(
+                ProcessingStateEntity(
+                    sessionId = "recover-$state",
+                    state = state,
+                    audioDeleted = false,
+                    lastError = null,
+                    updatedAtEpochMs = index.toLong(),
+                ),
+            )
+        }
+        processing.upsert(
+            ProcessingStateEntity("finished", "COMPLETED", false, null, 4L),
+        )
+        processing.upsert(
+            ProcessingStateEntity("failed", "FAILED", false, null, 5L),
+        )
+
+        assertEquals(
+            recoverableStates,
+            processing.pending(10).map { it.state },
+        )
+    }
+
+    @Test
     fun `journal restores the newest transition after a restart`() = runTest {
         val session = SessionId("session-1")
         var state = RecordingState.Initial

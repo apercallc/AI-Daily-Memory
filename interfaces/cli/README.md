@@ -1,6 +1,6 @@
 # CLI
 
-The CLI will call the same Memory Query API as Android, MCP, and future web clients.
+The CLI will call the public REST API used by other external clients.
 
 Planned commands:
 

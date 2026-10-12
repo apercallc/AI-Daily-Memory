@@ -41,6 +41,7 @@ class SpeechAnalyzerTest {
     private lateinit var db: CaptureDatabase
     private lateinit var directory: File
     private lateinit var store: SegmentStore
+    private lateinit var cipher: SegmentCipher
     private val format = SegmentFormat("aac-lc-adts", 16_000, 1)
     private var calls = 0
 
@@ -74,7 +75,7 @@ class SpeechAnalyzerTest {
             .build()
         directory = File(context.cacheDir, "speech-test").apply { deleteRecursively() }
         StreamingAeadConfig.register()
-        val cipher = SegmentCipher(
+        cipher = SegmentCipher(
             KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM_HKDF_4KB"))
                 .getPrimitive(RegistryConfiguration.get(), StreamingAead::class.java),
         )
@@ -133,6 +134,49 @@ class SpeechAnalyzerTest {
 
         assertEquals(AnalysisRun(analyzed = 2, failed = 0, remaining = 1), analyzer().analyzePending(limit = 2))
         assertEquals(AnalysisRun(analyzed = 1, failed = 0, remaining = 0), analyzer().analyzePending(limit = 2))
+    }
+
+    @Test
+    fun `transient keystore unavailability leaves analysis pending for retry`() = runTest {
+        val segment = sealed()
+        val available = cipher
+        cipher = SegmentCipher(UnavailableStreamingAead)
+
+        assertEquals(AnalysisRun(analyzed = 0, failed = 0, remaining = 1), analyzer().analyzePending())
+        assertEquals(null, db.speech().analysis(segment.segmentId))
+
+        cipher = available
+        assertEquals(AnalysisRun(analyzed = 1, failed = 0, remaining = 0), analyzer().analyzePending())
+        assertEquals(SpeechOutcome.OK.name, db.speech().analysis(segment.segmentId)?.outcome)
+    }
+
+    private object UnavailableStreamingAead : StreamingAead {
+        private fun down(): Nothing = throw java.security.ProviderException("keystore busy")
+
+        override fun newEncryptingChannel(
+            ciphertextDestination: java.nio.channels.WritableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newSeekableDecryptingChannel(
+            ciphertextSource: java.nio.channels.SeekableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newDecryptingChannel(
+            ciphertextSource: java.nio.channels.ReadableByteChannel,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newEncryptingStream(
+            ciphertextDestination: java.io.OutputStream,
+            associatedData: ByteArray,
+        ) = down()
+
+        override fun newDecryptingStream(
+            ciphertextSource: java.io.InputStream,
+            associatedData: ByteArray,
+        ) = down()
     }
 
     @Test

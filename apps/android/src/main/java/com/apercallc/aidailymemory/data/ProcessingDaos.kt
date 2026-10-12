@@ -69,11 +69,15 @@ interface LocalTranscriptDao {
     @Query("SELECT * FROM local_transcript_line WHERE session_id = :sessionId ORDER BY start_epoch_ms")
     suspend fun forSession(sessionId: String): List<LocalTranscriptLineEntity>
 
+    @Query("SELECT * FROM local_transcript_line WHERE session_id IN (:sessionIds) ORDER BY start_epoch_ms")
+    suspend fun forSessions(sessionIds: List<String>): List<LocalTranscriptLineEntity>
+
     @Query("DELETE FROM local_transcript_line WHERE session_id = :sessionId")
     suspend fun deleteForSession(sessionId: String)
 
     @Query("SELECT COUNT(*) FROM local_transcript_line WHERE session_id = :sessionId")
     suspend fun countForSession(sessionId: String): Int
+
 }
 
 @Dao
@@ -125,7 +129,7 @@ interface ProcessingStateDao {
     @Query("SELECT * FROM processing_state WHERE state = :state")
     suspend fun inState(state: String): List<ProcessingStateEntity>
 
-    @Query("SELECT * FROM processing_state WHERE state IN ('PENDING', 'TRANSCRIBED') ORDER BY updated_at_epoch_ms LIMIT :limit")
+    @Query("SELECT * FROM processing_state WHERE state IN ('PENDING', 'TRANSCRIBING', 'TRANSCRIBED', 'EXTRACTING') ORDER BY updated_at_epoch_ms LIMIT :limit")
     suspend fun pending(limit: Int): List<ProcessingStateEntity>
 
     @Query("SELECT COUNT(*) FROM processing_state WHERE state IN ('PENDING', 'TRANSCRIBING', 'TRANSCRIBED', 'EXTRACTING')")
@@ -133,4 +137,7 @@ interface ProcessingStateDao {
 
     @Query("SELECT COUNT(*) FROM processing_state WHERE state = 'FAILED'")
     fun observeFailedCount(): Flow<Int>
+
+    @Query("UPDATE processing_state SET state = 'PENDING', last_error = NULL, updated_at_epoch_ms = :nowEpochMs WHERE state = 'FAILED'")
+    suspend fun retryFailed(nowEpochMs: Long): Int
 }

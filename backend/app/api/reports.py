@@ -2,11 +2,8 @@
 
     GET /v1/reports/{memory_day}   the assembled report for that day, or 404 before it exists
 
-Read-only: reports are always rebuilt from `memory_items` by extraction, never edited here. A
-report only ever exists for a `full_cloud` account (ADR-0019), so a non-full_cloud caller gets a
-clear 403 rather than an indistinguishable-from-just-not-generated-yet 404 (TODO.md Phase 5:
-"API keys and MCP require a cloud storage mode") — the entitlement check server-authoritative
-clients (MCP, the CLI, third-party API keys) are meant to rely on, per AGENTS.md rule 3.
+Read-only: this endpoint returns the persisted report for its authenticated owner. Phone-only
+accounts may access reports they explicitly synced; storage mode is not an authorization check.
 """
 
 from datetime import date
@@ -38,4 +35,7 @@ async def get_report(memory_day: date, session: Session, reader: Reader) -> dict
     )
     if row is None:
         return error_response(404, "No report for this day yet.", code="report_not_found")  # type: ignore[return-value]
-    return row.report
+    report = dict(row.report)
+    if "transcript:read" not in reader.scopes:
+        report.pop("transcriptLines", None)
+    return report

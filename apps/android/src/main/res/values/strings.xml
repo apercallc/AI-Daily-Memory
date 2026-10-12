@@ -259,7 +259,7 @@
     <string name="processing_transcription">Transcription</string>
     <string name="processing_extraction">Summarization &amp; extraction</string>
     <string name="processing_provider_disabled">Off (no transcription)</string>
-    <string name="processing_provider_on_device">On-device (free, offline)</string>
+    <string name="processing_provider_on_device">On-device processing unavailable in this build</string>
     <string name="processing_provider_user_api">My API key</string>
     <string name="processing_api_key">API key</string>
     <string name="processing_api_url">API endpoint URL</string>
@@ -269,7 +269,7 @@
     <string name="processing_delete_audio_body">Frees storage automatically once the transcript is saved. The transcript is kept so you can verify any summary.</string>
 
     <!-- Sync (ADR-0020) -->
-    <string name="sync_section">Sync to second brain</string>
+    <string name="sync_section">Sync to API endpoint</string>
     <string name="sync_explainer">Push daily summaries and memory items to your own server for cross-device querying. Never sends audio.</string>
     <string name="sync_enabled">Enable sync</string>
     <string name="sync_url">Sync endpoint URL</string>
@@ -279,6 +279,8 @@
     <!-- Daily memory / report UI -->
     <string name="memory_title">Today\'s Memory</string>
     <string name="memory_empty">No memory yet. Start recording and enable processing to build your daily memory.</string>
+    <string name="memory_load_error">Memory could not be loaded. Your saved data is unchanged.</string>
+    <string name="memory_retry">Try again</string>
     <string name="memory_decisions">Decisions</string>
     <string name="memory_actions">Action items</string>
     <string name="memory_commitments">Commitments</string>

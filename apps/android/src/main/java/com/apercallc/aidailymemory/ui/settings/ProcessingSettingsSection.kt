@@ -287,21 +287,24 @@ private fun ProviderSelector(selected: String, onSelect: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         options.forEach { (value, labelRes) ->
+            val available = value != "on-device"
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(value) }
+                    .clickable(enabled = available) { onSelect(value) }
                     .padding(vertical = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 androidx.compose.material3.RadioButton(
                     selected = selected == value,
-                    onClick = { onSelect(value) },
+                    onClick = if (available) ({ onSelect(value) }) else null,
+                    enabled = available,
                 )
                 Text(
                     text = stringResource(labelRes),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = if (available) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

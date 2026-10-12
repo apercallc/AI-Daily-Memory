@@ -1,4 +1,4 @@
-"""One error shape for every failure, so every client (Android, CLI, MCP) handles errors once.
+"""One error shape for every failure, so every client (Android, CLI, API) handles errors once.
 
     {"error": {"code": "not_found", "message": "Not Found", "request_id": "..."}}
 

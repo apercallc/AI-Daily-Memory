@@ -2,7 +2,7 @@
 
 The report is the product's main output: what happened in a memory day, in the user's time
 zone, with every extracted item tied to evidence. It is a versioned contract shared by the app,
-exports (Markdown for Google Drive and the share sheet), and future API/MCP clients.
+exports (Markdown for Google Drive and the share sheet), and future API clients.
 
 Model-generated text is untrusted input (README "Untrusted Content"): the renderer escapes all
 of it, so transcript text can't inject headings, links, images, or HTML into an export.

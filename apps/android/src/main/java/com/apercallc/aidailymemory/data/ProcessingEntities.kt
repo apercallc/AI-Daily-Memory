@@ -49,7 +49,7 @@ data class MemoryItemEntity(
  * device, so just one row per memory day). Stored as JSONB-equivalent (JSON string in SQLite).
  *
  * This is the primary artifact the user sees in the daily timeline and the primary thing that
- * syncs to a second brain.
+ * syncs through the user's API endpoint.
  */
 @Entity(
     tableName = "daily_report",

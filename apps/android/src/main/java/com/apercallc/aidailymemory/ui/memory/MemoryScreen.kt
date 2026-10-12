@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -34,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
@@ -75,10 +78,11 @@ data class MemoryDay(
     val sessions: List<MemorySession>,
 )
 
-/** Stateless: renders the daily memory timeline. [days] is null while loading. */
+/** Stateless: renders the daily memory timeline. */
 @Composable
 fun MemoryScreen(
-    days: List<MemoryDay>?,
+    state: MemoryLoadState,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
@@ -86,23 +90,38 @@ fun MemoryScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        when {
-            days == null -> item {
+        when (state) {
+            MemoryLoadState.Loading -> item {
                 Text(
                     text = stringResource(R.string.sessions_loading),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            days.isEmpty() -> item {
-                Text(
-                    text = stringResource(R.string.memory_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            MemoryLoadState.Failed -> item {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    Text(
+                        text = stringResource(R.string.memory_load_error),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Button(onClick = onRetry) {
+                        Text(stringResource(R.string.memory_retry))
+                    }
+                }
             }
-            else -> items(days, key = { it.dateLabel }) { day ->
-                MemoryDaySection(day)
+            is MemoryLoadState.Content -> if (state.days.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.memory_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                items(state.days, key = { it.dateLabel }) { day ->
+                    MemoryDaySection(day)
+                }
             }
         }
     }
@@ -268,6 +287,7 @@ private fun ExpandableTranscript(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clickable(role = Role.Button) { expanded = !expanded }
                 .padding(vertical = spacing.xs)
                 .semantics { contentDescription = if (expanded) "Hide transcript" else "View transcript" },

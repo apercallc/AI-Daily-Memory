@@ -76,7 +76,6 @@ ADR and update consent, retention, failure recovery, and processing-cost decisio
 - [x] Create pure Kotlin recording-domain module
 - [x] Create FastAPI backend scaffold
 - [x] Create Wear OS placeholder
-- [x] Create MCP placeholder
 - [x] Create CLI placeholder
 - [x] Create CI workflow
 - [x] Create quality-gates document
@@ -523,40 +522,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 - [ ] Known benchmark questions reliably retrieve the correct evidence without vector search.
 
-# Phase 5 — MCP + CLI
-
-## MCP
-
-- [x] Directory scaffold
-- [x] API keys and MCP require a cloud storage mode (GET /v1/reports 403 `cloud_storage_required`
-  for non-full_cloud accounts, surfaced as a clear tool error); key creation still offers no
-  opt-in UI — full_cloud is today only reachable via the storage-mode switch, not a
-  dedicated "connect MCP" flow
-- [x] Read-only initial server (interfaces/mcp, FastMCP, stdio transport)
-- [ ] ask_memory (needs semantic recall — Gate F, not crossed; would be speculative to build)
-- [ ] search_memory (same as ask_memory)
-- [x] get_day
-- [x] get_timeline
-- [x] get_decisions
-- [x] get_action_items
-- [x] get_daily_report
-- [x] get_commitments
-- [ ] get_highlights (no highlight data is populated yet — Phase 2's Highlights are unchecked)
-- [x] Per-user authorization (the backend's own bearer-token scoping; MCP adds nothing new here)
-- [x] Bounded result sizes (inherits the report contract's own list caps, ≤50 items each)
-- [x] No direct database access (the MCP server's only dependency is the backend HTTP API)
-- [x] No bulk transcript export by default (no tool ever returns transcript_segments)
-- [ ] Transcript text returned as bounded, clearly quoted fields (prompt-injection hygiene for the user's agent) — moot today: no tool returns transcript text at all
-- [ ] Audit sensitive tool access
-- [x] API-key authentication for user-owned third-party clients (existing `kind="api"` tokens,
-  `memory:read` scope by default)
-- [x] Key scopes (read-only initially) and least-privilege defaults (API_KEY_SCOPES, app/auth.py)
-- [ ] Key creation / rotation / revocation UI and API (still admin-CLI or self-service-signup
-  device tokens only; no dedicated API-key management surface)
-- [ ] Per-key and per-user rate limits
-- [x] Key stored only as a secure hash (SHA-256, app/auth.py — predates this task)
-- [x] MCP transport auth (authenticate the calling user, never a shared service key — one MCP
-  process per account, that account's own API key from its own environment)
+# Phase 5 — CLI
 
 ## CLI
 
@@ -572,7 +538,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ### Phase 5 exit gate
 
-- [ ] MCP and CLI return the same evidence-backed results as Android through the shared query API.
+- [ ] CLI returns evidence-backed results through the public API.
 
 # Phase 6 — Semantic recall (only if benchmark proves need)
 
@@ -697,7 +663,7 @@ Do not begin until Android capture and recall are proven.
 
 # Phase 10 — Public launch: subscription, user API, data portability
 
-Do not begin until Phase 5 (MCP + CLI) and Phase 8 (production hardening) have
+Do not begin until Phase 5 (CLI) and Phase 8 (production hardening) have
 exited. Charging money and opening third-party API access raise the bar on
 authorization, billing correctness, and data rights — everything below builds on
 hardened phases, it does not replace them.
@@ -707,7 +673,7 @@ hardened phases, it does not replace them.
 - [ ] ADR: billing provider decision (Google Play Billing for Android + server-side entitlement verification; decide web/stripe path if web sign-up exists)
 - [ ] Server-authoritative entitlement checks (client state is never trusted for gating)
 - [ ] Entitlement service behind the same API surface as other features
-- [ ] Plan definition: free tier limits, paid tiers, what is metered (recording hours, processing, recall calls, MCP/API calls)
+- [ ] Plan definition: free tier limits, paid tiers, what is metered (recording hours, processing, recall calls, API calls)
 - [ ] Metering recorded per user with auditable counters
 - [ ] Grace period / dunning / cancellation behavior defined and tested
 - [ ] Sandbox + production billing test suite (purchase, renew, cancel, refund, restore on reinstall)
@@ -716,7 +682,7 @@ hardened phases, it does not replace them.
 
 ## Public API access (user-owned clients)
 
-- [ ] API keys shipped per Phase 5 checklist (scopes, hashing, rotation, rate limits)
+- [ ] API keys shipped with the public API (scopes, hashing, rotation, rate limits)
 - [ ] Public API docs with auth, rate limits, and error semantics
 - [ ] Versioned API contract; deprecation policy for breaking changes
 - [ ] API access gated by subscription entitlement
@@ -739,7 +705,7 @@ hardened phases, it does not replace them.
 
 ### Phase 10 exit gate
 
-- [ ] A paying user can subscribe, connect an MCP/API client, export all their data, and cancel — entirely self-service, with correct entitlement enforcement at every step.
+- [ ] A paying user can subscribe, connect an API client, export all their data, and cancel — entirely self-service, with correct entitlement enforcement at every step.
 
 # Definition of Done for every production feature
 

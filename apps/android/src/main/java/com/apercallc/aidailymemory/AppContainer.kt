@@ -41,8 +41,8 @@ import com.apercallc.aidailymemory.platform.PartialWakeLock
 import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
 import com.apercallc.aidailymemory.schedule.RhythmRunner
 import com.apercallc.aidailymemory.schedule.SessionRegistry
-import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.settings.ProcessingSettings
+import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.update.UpdateChecker
 import com.apercallc.aidailymemory.update.UpdateClient
 import com.apercallc.aidailymemory.data.CaptureDatabase
@@ -356,7 +356,7 @@ class AppContainer(context: Context) {
 
     val uploadScheduler = UploadScheduler(app)
 
-    /** Second-brain sync (ADR-0020); runs only when sync is enabled and configured. */
+    /** Optional API sync (ADR-0020); runs only when sync is enabled and configured. */
     val syncScheduler = SyncScheduler(app)
     val syncManager by lazy {
         SyncManager(
@@ -366,49 +366,50 @@ class AppContainer(context: Context) {
         )
     }
 
-    /** On-device processing (ADR-0020); transcribes + extracts while charging. */
+    /** Creates providers per job so edits in Settings apply without restarting the app. */
     val processingScheduler = ProcessingScheduler(app)
-    val processingPipeline by lazy {
-        val tp = when (processingSettings.transcriptionProvider.value) {
-            ProcessingSettings.PROVIDER_USER_API -> {
-                val url = processingSettings.transcriptionApiUrl
-                val key = processingSettings.transcriptionApiKey
-                if (url != null && key != null) {
-                    ApiKeyTranscriptionProvider(url, key, "user-model")
-                } else {
-                    StubTranscriptionProvider()
+    val processingPipeline: ProcessingPipeline
+        get() {
+            val tp = when (processingSettings.transcriptionProvider.value) {
+                ProcessingSettings.PROVIDER_USER_API -> {
+                    val url = processingSettings.transcriptionApiUrl
+                    val key = processingSettings.transcriptionApiKey
+                    if (!url.isNullOrBlank() && !key.isNullOrBlank()) {
+                        ApiKeyTranscriptionProvider(url, key, "user-model")
+                    } else {
+                        StubTranscriptionProvider()
+                    }
                 }
+                else -> StubTranscriptionProvider()
             }
-            else -> StubTranscriptionProvider()
-        }
-        val ep = when (processingSettings.extractionProvider.value) {
-            ProcessingSettings.PROVIDER_USER_API -> {
-                val url = processingSettings.extractionApiUrl
-                val key = processingSettings.extractionApiKey
-                val model = processingSettings.extractionModel
-                if (url != null && key != null && model != null) {
-                    ApiKeyExtractionProvider(url, key, model)
-                } else {
-                    StubExtractionProvider()
+            val ep = when (processingSettings.extractionProvider.value) {
+                ProcessingSettings.PROVIDER_USER_API -> {
+                    val url = processingSettings.extractionApiUrl
+                    val key = processingSettings.extractionApiKey
+                    val model = processingSettings.extractionModel
+                    if (!url.isNullOrBlank() && !key.isNullOrBlank() && !model.isNullOrBlank()) {
+                        ApiKeyExtractionProvider(url, key, model)
+                    } else {
+                        StubExtractionProvider()
+                    }
                 }
+                else -> StubExtractionProvider()
             }
-            else -> StubExtractionProvider()
+            return ProcessingPipeline(
+                segments = segments,
+                segmentDao = database.segments(),
+                speechDao = database.speech(),
+                clipDao = database.clips(),
+                memoryItemDao = database.memoryItems(),
+                dailyReportDao = database.dailyReports(),
+                localTranscriptDao = database.localTranscripts(),
+                processingStateDao = database.processingState(),
+                transcriptionProvider = tp,
+                extractionProvider = ep,
+                settings = processingSettings,
+                ids = ids,
+            )
         }
-        ProcessingPipeline(
-            segments = segments,
-            segmentDao = database.segments(),
-            speechDao = database.speech(),
-            clipDao = database.clips(),
-            memoryItemDao = database.memoryItems(),
-            dailyReportDao = database.dailyReports(),
-            localTranscriptDao = database.localTranscripts(),
-            processingStateDao = database.processingState(),
-            transcriptionProvider = tp,
-            extractionProvider = ep,
-            settings = processingSettings,
-            ids = ids,
-        )
-    }
 
     /** Self-update (GitHub Releases): checked once per app open, installed on user tap. */
     val updates: UpdateChecker by lazy { UpdateChecker(UpdateClient()) }

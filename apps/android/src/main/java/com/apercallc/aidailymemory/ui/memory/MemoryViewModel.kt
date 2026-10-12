@@ -14,13 +14,23 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.update
+
+sealed interface MemoryLoadState {
+    data object Loading : MemoryLoadState
+    data class Content(val days: List<MemoryDay>) : MemoryLoadState
+    data object Failed : MemoryLoadState
+}
 
 /** ViewModel for the daily memory timeline. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -33,56 +43,67 @@ class MemoryViewModel(
     private val timeFmt = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
     private val dateFmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL)
 
-    val days: StateFlow<List<MemoryDay>?> = container.database.sessions()
-        .observeSince(memoryToday().minusDays(DAYS_SHOWN).toString())
-        .flatMapLatest { rows ->
-            flow {
-                if (rows.isEmpty()) {
-                    emit(emptyList())
-                    return@flow
+    private val reloadRequests = MutableStateFlow(0)
+
+    val state: StateFlow<MemoryLoadState> = reloadRequests
+        .flatMapLatest {
+            container.database.sessions()
+                .observeSince(memoryToday().minusDays(DAYS_SHOWN).toString())
+                .flatMapLatest { rows ->
+                    flow {
+                        if (rows.isEmpty()) {
+                            emit(emptyList())
+                            return@flow
+                        }
+                        val itemsDao = container.database.memoryItems()
+                        val transcriptDao = container.database.localTranscripts()
+                        val processingDao = container.database.processingState()
+
+                        val sessions = rows.map { row ->
+                            val sessionItems = itemsDao.forSession(row.sessionId)
+                            val sessionLines = transcriptDao.forSession(row.sessionId)
+                            val procState = processingDao.forSession(row.sessionId)
+
+                            val title = row.customTitle ?: run {
+                                val time = Instant.ofEpochMilli(row.startedAtEpochMs)
+                                    .atZone(ZoneId.of(row.zoneId)).toLocalTime()
+                                PartOfDay.of(time).name.lowercase().replaceFirstChar { it.uppercase() }
+                            }
+
+                            MemorySession(
+                                sessionId = row.sessionId,
+                                title = title,
+                                startTime = formatTime(row.startedAtEpochMs, row.zoneId),
+                                durationText = formatDuration(row.capturedMs),
+                                summary = buildSummary(sessionItems),
+                                items = sessionItems.map { it.toDisplayItem() },
+                                transcriptLines = sessionLines,
+                                audioDeleted = procState?.audioDeleted == true,
+                                freedBytes = 0,
+                            )
+                        }
+
+                        val grouped = rows.zip(sessions) { row, session -> row.memoryDay to session }
+                            .groupBy({ it.first }, { it.second })
+
+                        emit(grouped.map { (day, daySessions) ->
+                            MemoryDay(
+                                dayLabel = formatDayLabel(day),
+                                dateLabel = day,
+                                sessions = daySessions,
+                            )
+                        })
+                    }.flowOn(Dispatchers.IO)
                 }
-                val itemsDao = container.database.memoryItems()
-                val transcriptDao = container.database.localTranscripts()
-                val processingDao = container.database.processingState()
-
-                val sessions = rows.map { row ->
-                    val sessionItems = itemsDao.forSession(row.sessionId)
-                    val sessionLines = transcriptDao.forSession(row.sessionId)
-                    val procState = processingDao.forSession(row.sessionId)
-
-                    val title = row.customTitle ?: run {
-                        val time = Instant.ofEpochMilli(row.startedAtEpochMs)
-                            .atZone(ZoneId.of(row.zoneId)).toLocalTime()
-                        PartOfDay.of(time).name.lowercase().replaceFirstChar { it.uppercase() }
-                    }
-
-                    MemorySession(
-                        sessionId = row.sessionId,
-                        title = title,
-                        startTime = formatTime(row.startedAtEpochMs, row.zoneId),
-                        durationText = formatDuration(row.capturedMs),
-                        summary = buildSummary(sessionItems),
-                        items = sessionItems.map { it.toDisplayItem() },
-                        transcriptLines = sessionLines,
-                        audioDeleted = procState?.audioDeleted == true,
-                        freedBytes = 0,
-                    )
-                }
-
-                val grouped = rows.zip(sessions) { row, session -> row.memoryDay to session }
-                    .groupBy({ it.first }, { it.second })
-
-                val memoryDays = grouped.map { (day, daySessions) ->
-                    MemoryDay(
-                        dayLabel = formatDayLabel(day),
-                        dateLabel = day,
-                        sessions = daySessions,
-                    )
-                }
-                emit(memoryDays)
-            }.flowOn(Dispatchers.IO)
+                .map<List<MemoryDay>, MemoryLoadState> { MemoryLoadState.Content(it) }
+                .onStart { emit(MemoryLoadState.Loading) }
+                .catch { emit(MemoryLoadState.Failed) }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MemoryLoadState.Loading)
+
+    fun retry() {
+        reloadRequests.update { it + 1 }
+    }
 
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)

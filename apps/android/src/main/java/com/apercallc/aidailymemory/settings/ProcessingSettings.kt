@@ -7,18 +7,26 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * User settings for on-device processing and second-brain sync (ADR-0020). Backed by
+ * User settings for on-device processing and optional API sync (ADR-0020). Backed by
  * SharedPreferences, which are excluded from backup and device transfer like all app data
  * (data_extraction_rules.xml).
  *
  * Processing is disabled by default: the user must configure a provider (on-device or a
  * user-supplied API key) before any transcription or extraction runs. Sync is also off by
- * default until the user enters a second-brain endpoint and auth token.
+ * default until the user enters an API endpoint and auth token.
  *
  * Writes publish immediately; reads never throw. API keys and tokens are stored in
  * SharedPreferences (app-private, credential-encrypted storage) and never logged.
  */
 class ProcessingSettings(private val prefs: SharedPreferences) {
+
+    private val _configRevision = MutableStateFlow(0L)
+    /** Emits whenever a non-flow provider or sync setting changes. */
+    val configRevision: StateFlow<Long> = _configRevision.asStateFlow()
+
+    private fun configChanged() {
+        _configRevision.value += 1
+    }
 
     // --- Processing enable / disable -----------------------------------------------
 
@@ -44,14 +52,20 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
 
     var transcriptionApiKey: String?
         get() = prefs.getString(KEY_TRANSCRIPTION_API_KEY, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_TRANSCRIPTION_API_KEY) else putString(KEY_TRANSCRIPTION_API_KEY, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_TRANSCRIPTION_API_KEY) else putString(KEY_TRANSCRIPTION_API_KEY, value)
+            }
+            configChanged()
         }
 
     var transcriptionApiUrl: String?
         get() = prefs.getString(KEY_TRANSCRIPTION_API_URL, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_TRANSCRIPTION_API_URL) else putString(KEY_TRANSCRIPTION_API_URL, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_TRANSCRIPTION_API_URL) else putString(KEY_TRANSCRIPTION_API_URL, value)
+            }
+            configChanged()
         }
 
     // --- Extraction provider -------------------------------------------------------
@@ -68,20 +82,29 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
 
     var extractionApiKey: String?
         get() = prefs.getString(KEY_EXTRACTION_API_KEY, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_EXTRACTION_API_KEY) else putString(KEY_EXTRACTION_API_KEY, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_EXTRACTION_API_KEY) else putString(KEY_EXTRACTION_API_KEY, value)
+            }
+            configChanged()
         }
 
     var extractionApiUrl: String?
         get() = prefs.getString(KEY_EXTRACTION_API_URL, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_EXTRACTION_API_URL) else putString(KEY_EXTRACTION_API_URL, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_EXTRACTION_API_URL) else putString(KEY_EXTRACTION_API_URL, value)
+            }
+            configChanged()
         }
 
     var extractionModel: String?
         get() = prefs.getString(KEY_EXTRACTION_MODEL, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_EXTRACTION_MODEL) else putString(KEY_EXTRACTION_MODEL, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_EXTRACTION_MODEL) else putString(KEY_EXTRACTION_MODEL, value)
+            }
+            configChanged()
         }
 
     // --- Audio cleanup -------------------------------------------------------------
@@ -108,21 +131,31 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
 
     var syncUrl: String?
         get() = prefs.getString(KEY_SYNC_URL, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_SYNC_URL) else putString(KEY_SYNC_URL, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_SYNC_URL) else putString(KEY_SYNC_URL, value)
+            }
+            configChanged()
         }
 
     var syncToken: String?
         get() = prefs.getString(KEY_SYNC_TOKEN, null)
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_SYNC_TOKEN) else putString(KEY_SYNC_TOKEN, value)
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_SYNC_TOKEN) else putString(KEY_SYNC_TOKEN, value)
+            }
+            configChanged()
         }
 
     private val _syncIncludeTranscripts = MutableStateFlow(prefs.getBoolean(KEY_SYNC_INCLUDE_TRANSCRIPTS, false))
     val syncIncludeTranscripts: StateFlow<Boolean> = _syncIncludeTranscripts.asStateFlow()
 
     fun setSyncIncludeTranscripts(include: Boolean) {
-        prefs.edit { putBoolean(KEY_SYNC_INCLUDE_TRANSCRIPTS, include) }
+        if (_syncIncludeTranscripts.value == include) return
+        prefs.edit {
+            putBoolean(KEY_SYNC_INCLUDE_TRANSCRIPTS, include)
+            remove(KEY_LAST_SYNC)
+        }
         _syncIncludeTranscripts.value = include
     }
 

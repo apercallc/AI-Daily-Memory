@@ -2,26 +2,28 @@
 
 GET    /v1/me              who am I (used by Connect to verify a token before storing it)
 PUT    /v1/me              change storage_mode (ADR-0014)
+DELETE /v1/me              delete this account and its server-side data
 DELETE /v1/tokens/current  revoke the calling token (Disconnect; AGENTS rule 4)
 """
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require, revoke_token
 from app.db import get_session
-from app.db.models import User
+from app.db.models import AudioUpload, User
 from app.errors import ErrorResponse
+from app.storage import DeleteIncompleteError, ObjectStore, user_prefix
 
 router = APIRouter(tags=["account"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Device = Annotated[Principal, Depends(require("upload:write"))]
-_ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s in (401, 403)}
+_ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s in (401, 403, 503)}
 
 StorageMode = Literal["phone_only", "reports_cloud", "full_cloud"]
 
@@ -55,6 +57,39 @@ async def update_me(body: StorageModeUpdate, session: Session, device: Device) -
     )
     await session.commit()
     return Me(storage_mode=body.storage_mode, scopes=sorted(device.scopes))
+
+
+@router.delete("/me", status_code=204, responses=_ERRORS)
+async def delete_me(request: Request, session: Session, device: Device) -> Response:
+    """Deletes the user's server-side data and the user's entire object-storage prefix.
+
+    Object storage is cleared before the database cascade; if deletion is incomplete, the
+    account remains intact so the operation can be retried. The device token is the proof of
+    possession and is revoked by the same cascading delete.
+    """
+    store: ObjectStore | None = request.app.state.object_store
+    uploads = await session.scalar(
+        select(func.count()).select_from(AudioUpload).where(AudioUpload.user_id == device.user_id),
+    )
+    await session.rollback()
+    if store is None:
+        if uploads:
+            raise HTTPException(
+                status_code=503,
+                detail="Account data deletion is temporarily unavailable. Retry later.",
+            )
+    else:
+        try:
+            await store.delete_prefix(user_prefix(device.user_id))
+        except DeleteIncompleteError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Account data deletion is incomplete. Retry later.",
+            ) from error
+
+    await session.execute(delete(User).where(User.id == device.user_id))
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.delete("/tokens/current", status_code=204, responses=_ERRORS)

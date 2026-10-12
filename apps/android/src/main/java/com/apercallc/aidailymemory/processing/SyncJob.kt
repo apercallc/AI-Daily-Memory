@@ -25,12 +25,14 @@ import java.net.URL
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 /**
- * Schedules the nightly second-brain sync (ADR-0020). Runs while charging on an unmetered
+ * Schedules the optional API sync (ADR-0020). Runs while charging on an unmetered
  * network, matching the upload policy (ADR-0015): no mobile data and no daytime battery.
  * Scheduling again replaces the pending job, so calling this often is cheap and never stacks.
  */
@@ -41,6 +43,7 @@ class SyncScheduler(context: Context) {
         val info = JobInfo.Builder(JOB_ID, ComponentName(app, SyncJobService::class.java))
             .setRequiresCharging(true)
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
+            .setBackoffCriteria(RETRY_BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setPersisted(true)
             .build()
         val result = app.getSystemService(JobScheduler::class.java).schedule(info)
@@ -53,6 +56,7 @@ class SyncScheduler(context: Context) {
 
     companion object {
         const val JOB_ID = 1_005
+        const val RETRY_BACKOFF_MS = 30_000L
         private const val TAG = "SyncJob"
     }
 }
@@ -63,16 +67,21 @@ class SyncJobService : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         val container = (application as AiDailyMemoryApplication).container
+        var needsReschedule = false
         running = container.appScope.launch(Dispatchers.IO) {
             try {
-                container.syncManager.syncPending()
+                needsReschedule = !container.syncManager.syncPending()
+                if (needsReschedule) Log.w(TAG, "sync_pending_retry")
             } catch (e: CancellationException) {
+                needsReschedule = true
                 throw e
             } catch (e: Exception) {
-                // Reports stay unsynced; the next eligible window retries them.
+                needsReschedule = true
                 logFailure(TAG, "sync_failed", e)
             } finally {
-                jobFinished(params, false)
+                if (currentCoroutineContext().isActive) {
+                    jobFinished(params, needsReschedule)
+                }
             }
         }
         return true
@@ -91,7 +100,7 @@ class SyncJobService : JobService() {
 
 /**
  * Builds a [SyncPayload] from local daily reports and memory items, then POSTs it to the
- * user-configured second-brain endpoint. Only structured memory leaves the phone — never audio
+ * user-configured API endpoint. Only structured memory leaves the phone — never audio
  * (ADR-0020). Raw transcript lines are included only when the user opts in.
  *
  * The last successful sync timestamp is tracked in [ProcessingSettings]; reports generated after
@@ -141,7 +150,7 @@ class SyncManager(
         val syncReports = reports.map { report ->
             val items = database.memoryItems().observeForDay(report.memoryDay).first()
             val transcriptLines = if (includeTranscripts) {
-                transcriptLinesForItems(items)
+                transcriptLinesForReport(report)
             } else {
                 null
             }
@@ -172,16 +181,15 @@ class SyncManager(
     }
 
     /**
-     * Collects transcript lines for the sessions referenced by [items]. Each session's lines are
-     * fetched via the local transcript DAO's one-shot suspend query.
+     * Includes every transcript line in the report's local calendar day, including sessions
+     * whose extractor produced no memory items.
      */
-    private suspend fun transcriptLinesForItems(
-        items: List<MemoryItemEntity>,
+    private suspend fun transcriptLinesForReport(
+        report: DailyReportEntity,
     ): List<SyncTranscriptLine> {
-        val sessionIds = items.map { it.sessionId }.distinct()
-        return sessionIds.flatMap { sessionId ->
-            database.localTranscripts().forSession(sessionId).map { it.toSyncTranscriptLine() }
-        }
+        val sessionIds = database.sessions().sessionIdsForDay(report.memoryDay)
+        if (sessionIds.isEmpty()) return emptyList()
+        return database.localTranscripts().forSessions(sessionIds).map { it.toSyncTranscriptLine() }
     }
 
     /**

@@ -42,6 +42,39 @@ class SessionDeletionTest {
                 SegmentSpeechEntity("$target-0", "energy-v1", "OK", 1000, 400, 800, 1, 1),
                 listOf(SpeechRegionEntity("$target-0", 0, 500, 400, false)),
             )
+            db.localTranscripts().insertAll(
+                listOf(
+                    LocalTranscriptLineEntity(
+                        lineId = "line-$target",
+                        sessionId = target,
+                        segmentId = "$target-0",
+                        startEpochMs = 1_000,
+                        endEpochMs = 2_000,
+                        speaker = null,
+                        text = "private transcript",
+                        confidence = 0.9,
+                        provider = "test",
+                        model = "test",
+                    ),
+                ),
+            )
+            db.memoryItems().insertAll(listOf(memoryItem(target), memoryItem(other)))
+            db.processingState().upsert(
+                ProcessingStateEntity(target, "COMPLETED", true, null, 2_000),
+            )
+            db.dailyReports().upsert(
+                DailyReportEntity(
+                    id = "report-$target",
+                    memoryDay = "2026-10-11",
+                    zoneId = "America/Chicago",
+                    headline = "private report",
+                    summary = "private summary",
+                    reportJson = "{}",
+                    generatedAtEpochMs = 2_000,
+                    extractionModel = "test",
+                    extractionVersion = 1,
+                ),
+            )
 
             db.sessions().deleteSession(target)
 
@@ -50,8 +83,32 @@ class SessionDeletionTest {
             assertEquals(0, db.markers().observeCount(target).first())
             assertEquals(1, db.markers().observeCount(other).first())
             assertEquals(null, db.speech().analysis("$target-0"))
+            assertEquals(emptyList(), db.localTranscripts().forSession(target))
+            assertEquals(emptyList(), db.memoryItems().forSession(target))
+            assertEquals(1, db.memoryItems().forSession(other).size)
+            assertEquals(null, db.processingState().forSession(target))
+            assertEquals(null, db.dailyReports().forDay("2026-10-11"))
             assertEquals(1, db.sessions().observeSince("2026-10-01").first().size)
         }
+
+    private fun memoryItem(sessionId: String) = MemoryItemEntity(
+        id = "memory-$sessionId",
+        sessionId = sessionId,
+        memoryDay = "2026-10-11",
+        kind = "decision",
+        text = "private memory",
+        confidence = "confirmed",
+        quote = "evidence",
+        owner = null,
+        due = null,
+        direction = null,
+        counterpart = null,
+        extractionModel = "test",
+        extractionVersion = 1,
+        evidenceEpochMs = 1_000,
+        dismissedAtEpochMs = null,
+        extractedAtEpochMs = 2_000,
+    )
 
     private fun sessionInfo(id: String) = SessionInfoEntity(
         sessionId = id,

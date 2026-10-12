@@ -3,7 +3,7 @@ package com.apercallc.aidailymemory.recording.processing
 import kotlinx.serialization.Serializable
 
 /**
- * The sync payload the phone pushes to a user-configured second-brain endpoint (ADR-0020).
+ * The sync payload the phone pushes to a user-configured API endpoint (ADR-0020).
  * This is the wire format — serialized to JSON — for the nightly sync job.
  *
  * Only structured memory leaves the phone: daily reports and their items with evidence quotes.

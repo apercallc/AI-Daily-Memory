@@ -64,9 +64,6 @@ Status:
   SHA-256), a Postgres job queue, sealed delivery for phone storage modes, storage-mode
   switching, structured extraction and daily report generation for full-cloud accounts
   (ADR-0019), and a retention sweep for temporary audio.
-- **MCP:** a read-only server ([interfaces/mcp](interfaces/mcp)) exposes daily reports, the
-  session timeline, decisions, action items, and commitments over the backend's query API —
-  one process per account, authenticated with that account's own `memory:read` API key.
 - **Deliberately off:** transcription (Deepgram, ADR-0018) and extraction (Claude, ADR-0019)
   are wired behind provider seams but ship `disabled` by default. Until Gate B's provider
   terms, consent, and cost reviews pass, uploads are refused with `processing_unavailable`
@@ -127,7 +124,7 @@ flowchart LR
     WK --> OBJ
     WK --> PR
     WK --> DB
-    MCP["MCP / CLI — read-only"] --> API
+    EXT["External API clients"] --> API
 ```
 
 The phone records and stores locally first; the backend only ever sees data in a cloud mode you explicitly chose. The watch never records on its own — it sends commands and displays phone-acknowledged state.
@@ -138,7 +135,7 @@ The phone records and stores locally first; the backend only ever sees data in a
 
 The architecture is implemented incrementally through [TODO.md](./TODO.md).
 
-The repository is scaffolded as a monorepo with Android, Wear OS, backend, MCP/CLI interface boundaries, CI quality gates, security guidance, and Architecture Decision Records. Work should follow the phase gates in TODO.md rather than implementing later-stage infrastructure early.
+The repository is scaffolded as a monorepo with Android, Wear OS, the backend REST API, CI quality gates, security guidance, and Architecture Decision Records. Work should follow the phase gates in TODO.md rather than implementing later-stage infrastructure early.
 
 # Architecture Priorities
 
@@ -275,83 +272,35 @@ Answers should return supporting timestamps and source references.
 
 # Client Access Strategy
 
-AI Daily Memory should eventually be accessible through multiple clients without duplicating retrieval logic.
+The versioned REST API is the only supported external integration. Android and future
+user-owned clients use the same authorization, retrieval, ranking, and evidence rules.
 
 ```text
 Android App
-Web Frontend
-CLI
-MCP
-External API
-     │
-     └──────────────┐
-                    v
-             Memory Query API
-                    │
-                    v
-             Retrieval Engine
-                    │
-                    v
-               PostgreSQL
+CLI (planned)
+External API clients
+        │
+        v
+  Memory Query API
+        │
+        v
+  Retrieval Engine
+        │
+        v
+    PostgreSQL
 ```
 
-All clients use the same authorization, retrieval, ranking, and evidence rules.
-
-Never build separate memory logic for Android, web, CLI, or MCP.
+Never duplicate memory logic in a client. The API remains the boundary between external
+clients and server-held data.
 
 ## Initial order
 
-1. REST API — shipped (upload + account + reports endpoints)
+1. REST API — shipped (upload, account, sync, and report endpoints)
 2. Android Ask / Search — planned (Phase 4)
-3. MCP — shipped, read-only ([interfaces/mcp](interfaces/mcp))
-4. CLI — planned (scaffold exists)
-5. Web Frontend — planned
+3. CLI — planned (scaffold exists)
+4. Web Frontend — planned
 
 The web frontend should not block the core product.
-
----
-
-# MCP Architecture
-
-MCP should be a first-class access layer once memory retrieval works.
-
-MCP must call the same Memory Query Service used by the other clients.
-
-```text
-MCP Client
-   |
-   v
-MCP Server
-   |
-   v
-Memory Query Service
-   |
-   v
-PostgreSQL
-```
-
-Do not allow MCP to query the database directly.
-
-MCP and the public API serve only server-held data. Users in the default "On this phone" storage
-mode must opt into a cloud mode before creating an API key
-([ADR-0014](docs/adr/0014-where-memory-lives.md)).
-
-The read-only MCP server ships today in [interfaces/mcp](interfaces/mcp) (FastMCP, stdio
-transport, one process per account using that account's own `memory:read` API key):
-
-```text
-get_daily_report     the full report for one memory day
-get_day              alias for get_daily_report
-get_timeline         the day's sessions, in order
-get_decisions        decisions, with confidence and evidence
-get_action_items     action items, with owner and optional due date
-get_commitments      commitments, with direction and counterpart
-```
-
-Deliberately not implemented: `ask_memory` / `search_memory` (need semantic recall —
-Gate F, not crossed) and `get_highlights` (no highlight data is populated yet).
-
-Prefer structured tool results and evidence references instead of returning large transcript dumps.
 
 ---
 
@@ -981,7 +930,6 @@ This allows controlled reprocessing without modifying original evidence.
 
 ```text
                     ┌──────── Android
-                    ├──────── MCP
                     ├──────── CLI
                     └──────── Web
                              |
@@ -1360,16 +1308,15 @@ flowchart LR
     end
     subgraph fullCloud["Full cloud — explicit opt-in"]
         C1["Speech clips upload at night"] --> C2["Transcripts + memory stored server-side"]
-        C2 --> C3["Daily reports + MCP/API tools"]
+        C2 --> C3["Daily reports + REST API"]
     end
     OFF["Current default: transcription + extraction disabled"] -.-> A2
     OFF -.-> C1
 ```
 
-`phone_only` means no long-term server retention, not that data never leaves the phone:
-ADR-0014 requires transient cloud processing when a provider is enabled. Both provider stages
-ship disabled today, so uploads are refused by default. `reports_cloud` report retention is not
-implemented yet. API keys and MCP access currently require `full_cloud`.
+`phone_only` means no long-term server retention unless the user explicitly syncs data. API access
+requires an authenticated account and an existing server-side report; explicit sync makes reports
+available regardless of storage mode.
 
 ## AI Providers
 
@@ -1388,14 +1335,13 @@ Transcripts contain whatever anyone near the phone said. Treat transcript text a
 - extraction prompts delimit transcript text as data; model output is schema-validated
   and can only create memory items that cite evidence, never trigger actions
 - Ask My Memory answers are generated from a bounded evidence package, with no tools
-- MCP/API results return transcript text as clearly quoted, bounded fields so a user's
-  own agent can distinguish memory content from instructions
+- API results return transcript text as clearly quoted, bounded fields so a user's own
+  client can distinguish memory content from instructions
 
-## MCP / API
+## Public API
 
 - user-scoped authorization
 - least-privilege access
-- read-only MCP tools initially
 - bounded result sizes
 - no raw bulk transcript export unless explicitly requested and authorized
 - third-party access uses per-user API keys: hashed at rest, scoped read-only by default, rate-limited, revocable
@@ -1491,7 +1437,6 @@ magnitude cheaper. So:
 - entities
 - full-text search
 - structured retrieval
-- MCP
 - CLI
 - semantic search only if needed
 
@@ -1540,14 +1485,13 @@ AI-Daily-Memory/
 │   └── tests/
 │
 ├── interfaces/
-│   ├── mcp/            # read-only MCP server over the Memory Query API
-│   └── cli/            # placeholder
+│   └── cli/            # API client placeholder
 │
 ├── contracts/
 │   └── daily-report.v1.schema.json
 │
 ├── docs/
-│   ├── adr/            # ADR-0001 … ADR-0019
+│   ├── adr/            # ADR-0001 … ADR-0021
 │   ├── api/            # endpoint inventory, versioning policy
 │   ├── architecture/   # review, edge-case catalog, performance & scale plan
 │   ├── operations/     # object storage lifecycle
@@ -1557,7 +1501,7 @@ AI-Daily-Memory/
 │
 ├── website/            # landing page (static, self-contained index.html)
 │
-├── .github/workflows/  # CI: Android qualityCheck, backend (real Postgres), MCP
+├── .github/workflows/  # CI: Android qualityCheck and backend (real Postgres)
 │
 └── README.md
 ```
@@ -1579,12 +1523,14 @@ Use Architecture Decision Records for decisions that are expensive to reverse.
 | [0011](docs/adr/0011-quick-note-and-markers.md) | Quick Note and highlights are markers inside a session |
 | [0012](docs/adr/0012-daily-rhythm.md) | Daily rhythm: sleep schedule, quiet times, memory days, daily report |
 | [0013](docs/adr/0013-opt-in-local-audio-retention.md) | Transcripts by default; opt-in, local-only audio keeping |
-| [0014](docs/adr/0014-where-memory-lives.md) | memory on the phone by default; cloud modes opt-in; API/MCP needs a cloud mode |
+| [0014](docs/adr/0014-where-memory-lives.md) | Memory on the phone by default; cloud modes opt-in; API access requires explicit sync |
 | [0015](docs/adr/0015-speech-gating-and-night-processing.md) | transcribe speech only; VAD + clip upload at night on the charger |
 | [0016](docs/adr/0016-owner-voice-attribution.md) | On-device owner voice (Me vs others) for action-item attribution |
 | [0017](docs/adr/0017-no-speech-retention.md) | No-speech segments are acknowledged immediately; retention applies (amends ADR-0013) |
 | [0018](docs/adr/0018-transcription-provider.md) | Deepgram wired as the MVP transcription provider; default stays `disabled` until Gate B reviews |
 | [0019](docs/adr/0019-structured-extraction-and-report-generation.md) | Structured extraction + daily report generation for full-cloud accounts; extraction provider default `disabled` |
+| [0020](docs/adr/0020-on-device-processing-phone-only-storage-optional-sync.md) | On-device processing, phone-only storage, optional API sync |
+| [0021](docs/adr/0021-public-rest-api-only.md) | Public REST API is the only supported external integration |
 
 ---
 
@@ -1732,9 +1678,9 @@ Exit:
 
 > Known questions from prior days retrieve the correct evidence reliably.
 
-## Phase 5 — MCP + CLI
+## Phase 5 — CLI
 
-Expose the recall engine without bypassing it.
+Expose the recall engine through the public API without bypassing it.
 
 Exit:
 
@@ -1851,6 +1797,6 @@ The first meaningful product milestone is:
 
 The longer-term success criterion is stronger:
 
-> Months later, ask a natural question through Android, MCP, CLI, API, or web and reliably retrieve the correct memory without scanning or sending the user's entire history to an LLM.
+> Months later, ask a natural question through Android, CLI, the public API, or web and reliably retrieve the correct memory without scanning or sending the user's entire history to an LLM.
 
 That is the architecture target.

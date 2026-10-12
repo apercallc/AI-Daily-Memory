@@ -181,7 +181,7 @@ async def build_daily_report(
     evidence = await _evidence_map(session, [item.id for item in items], now=now)
 
     # Truncate each section to the contract's cap, best-confidence first, insertion order
-    # after that. The contract's caps are what every client (app, MCP) is built against.
+    # after that. The contract's caps are what every API client is built against.
     kept: dict[str, list[MemoryItem]] = defaultdict(list)
     for item in sorted(items, key=lambda i: (_CONFIDENCE_RANK[i.confidence], i.created_at, i.id)):
         if len(kept[item.kind]) < _MAX_ITEMS_PER_SECTION:

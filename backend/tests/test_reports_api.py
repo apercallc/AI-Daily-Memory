@@ -73,31 +73,21 @@ def test_reports_require_authentication(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize("storage_mode", ["phone_only", "reports_cloud"])
-def test_reports_require_full_cloud_storage_mode(
+def test_synced_reports_remain_accessible_after_optional_phone_sync(
     db: Engine, client: TestClient, storage_mode: str
 ) -> None:
     account = make_account(db, storage_mode=storage_mode)
     memory_day = date(2026, 9, 25)
-    with db.begin() as connection:
-        connection.execute(
-            text("UPDATE users SET storage_mode = 'full_cloud' WHERE id = :id"),
-            {"id": account.user_id},
-        )
-        # Report data could only ever exist for a full_cloud account, so simulate one lingering
-        # after a later switch away from full_cloud — it must still be refused, not returned.
-        insert_report(db, account.user_id, memory_day, {"status": "complete"})
-        connection.execute(
-            text("UPDATE users SET storage_mode = :m WHERE id = :id"),
-            {"m": storage_mode, "id": account.user_id},
-        )
+    report = {"schema_version": 1, "memory_day": "2026-09-25", "status": "complete"}
+    insert_report(db, account.user_id, memory_day, report)
 
     response = client.get(
         f"/v1/reports/{memory_day.isoformat()}",
         headers={"Authorization": f"Bearer {account.token}"},
     )
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "cloud_storage_required"
+    assert response.status_code == 200
+    assert response.json()["status"] == "complete"
 
 
 def test_a_report_never_leaks_across_accounts(db: Engine, client: TestClient) -> None:

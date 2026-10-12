@@ -2,7 +2,7 @@
 
     uv run python -m app.reports.schema
 
-The committed file (contracts/daily-report.v1.schema.json) is what API/MCP clients code
+The committed file (contracts/daily-report.v1.schema.json) is what API clients code
 against; a test fails if it drifts from the models.
 """
 

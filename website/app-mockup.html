@@ -755,8 +755,8 @@
     <div class="flow-node keep">Keep on Phone: Summary + Transcript (expandable)</div>
     <div class="flow-note">Summary is the default view. Transcript is one tap away for verification.</div>
     <div class="flow-arrow">↓</div>
-    <div class="flow-node sync">Optional Sync → Your Second Brain (tommy-hoang-os / self-hosted)</div>
-    <div class="flow-note">Only structured memory leaves the phone — never audio, never raw transcript unless you choose full cloud mode.</div>
+    <div class="flow-node sync">Optional Sync → Your API endpoint</div>
+    <div class="flow-note">Structured memory leaves the phone only when you configure sync. Audio and transcripts stay local unless you explicitly enable transcript sync.</div>
   </div>
 </div>
 
@@ -1185,7 +1185,7 @@
           <div class="settings-card">
             <div class="setting-row">
               <div>
-                <div class="label">Sync to second brain</div>
+                <div class="label">Sync to API endpoint</div>
                 <div class="sublabel">Push summaries &amp; memory items to your server</div>
               </div>
               <div class="switch"></div>
@@ -1193,7 +1193,7 @@
             <div class="setting-row">
               <div>
                 <div class="label">Sync target</div>
-                <div class="sublabel">https://tommy-hoang-os.local/api/memory</div>
+                <div class="sublabel">Configured endpoint (entered by you)</div>
               </div>
               <div class="value">▶</div>
             </div>
@@ -1339,7 +1339,7 @@
     <div style="display: flex; gap: 12px; align-items: flex-start;">
       <span style="font-size: 24px;">🔌</span>
       <div>
-        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Optional sync to your second brain</div>
+        <div style="font-size: 15px; color: rgba(255,255,255,0.9); font-weight: 500;">Optional sync to your API endpoint</div>
         <div style="font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px;">Point the app at your own server. Structured memory pushes out nightly — summaries, decisions, action items. Never audio.</div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 # API versioning policy
 
 All client routes live under a major version prefix: `/v1/...`. Clients (Android, Wear via the
-phone, CLI, MCP, third-party API keys) pin the major version.
+phone, CLI, and third-party API clients) pin the major version.
 
 ## What may change inside `/v1`
 

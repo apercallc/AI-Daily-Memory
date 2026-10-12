@@ -3,9 +3,8 @@ package com.apercallc.aidailymemory.recording.processing
 import kotlinx.serialization.Serializable
 
 /**
- * The daily report contract — the unit of memory that the phone stores and optionally syncs to
- * a second brain (ADR-0020). This is the on-device equivalent of the backend's
- * `DailyReport` contract (`contracts/daily-report.v1.schema.json`).
+ * The daily report contract, stored locally and optionally synced through the public API (ADR-0020).
+ * It mirrors the backend's `DailyReport` contract (`contracts/daily-report.v1.schema.json`).
  *
  * A report covers one memory day (ADR-0012) and contains:
  * - A headline summary of the day.

@@ -135,9 +135,9 @@ private fun SessionsRoute(
 
 @Composable
 private fun MemoryRoute(viewModel: MemoryViewModel, onBack: () -> Unit) {
-    val days by viewModel.days.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     SecondaryScreen(stringResource(R.string.memory_title), onBack, snackbar = null) { modifier ->
-        MemoryScreen(days = days, modifier = modifier)
+        MemoryScreen(state = state, onRetry = viewModel::retry, modifier = modifier)
     }
 }
 

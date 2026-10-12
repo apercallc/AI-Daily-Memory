@@ -70,16 +70,15 @@ with `v: 1`, the upload and segment ids, `offset_ms`, provider/model/language, a
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/reports/{memory_day}` | `memory:read` | The daily report contract v1; `404 report_not_found` if nothing was generated; `403 cloud_storage_required` for phone-only accounts |
+| GET | `/v1/reports/{memory_day}` | `memory:read` | The daily report contract v1; `404 report_not_found` if nothing was generated |
 
-Reports only exist for cloud storage modes (a full_cloud account is the only one with
-server-side plaintext to extract from, ADR-0014/0019). `memory:read` is also the scope of
-API keys (`kind=api`, read-only by default, `app/auth.py`); the read-only MCP server
-([interfaces/mcp](../../interfaces/mcp)) uses this endpoint exclusively.
+Reports are available to an authenticated owner when they exist, including after explicit sync;
+storage mode alone does not determine report visibility. `memory:read` is also the scope of
+API keys (`kind=api`, read-only by default, `app/auth.py`).
 
 ## Coming later
 
-Recall (`ask_memory`, `search_memory`, ...) for API keys and MCP arrives with Phase 4's
+Recall (`ask_memory`, `search_memory`, ...) for API clients arrives with Phase 4's
 query engine, through the Memory Query Service only, and only for server-held data
-(reports-in-cloud or full-cloud storage modes). API-key management UI and per-key rate
+(explicitly synced reports or full-cloud storage). API-key management UI and per-key rate
 limits are Phase 5/10 items.

@@ -45,7 +45,7 @@ self-service data export. Three more rules follow from that:
 | `apps/wear` | Wear OS controller. Wear Compose Material 3. Controller only — it shows **acknowledged phone state**, never assumes a command succeeded. |
 | `core/recording` | Pure Kotlin JVM recording state machine. No Android dependencies. |
 | `backend` | FastAPI + Pydantic, Python 3.13, uv-managed. |
-| `interfaces/mcp`, `interfaces/cli` | Future access layers. Must go through the Memory Query Service, never the DB directly. |
+| `interfaces/cli` | Future API client. Must use the public API, never the DB directly. |
 | `docs/adr` | Architecture Decision Records. Read before changing an architectural decision. |
 | `docs/architecture/` | Architecture review, edge-case catalog (`EDGE_CASES.md`), performance & scale plan. Update the catalog when you handle a new edge case. |
 | `docs/quality/QUALITY_GATES.md` | Release-quality standards. |

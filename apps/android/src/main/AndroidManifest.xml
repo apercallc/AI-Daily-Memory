@@ -48,7 +48,7 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
-        <!-- Sync job (ADR-0020): pushes memory to user's second brain on Wi-Fi + charging. -->
+        <!-- Sync job (ADR-0020): optionally pushes memory to the user's API endpoint on Wi-Fi + charging. -->
         <service
             android:name=".processing.SyncJobService"
             android:exported="false"
@@ -110,12 +110,6 @@
         <!-- Clip uploads while charging on unmetered networks (ADR-0015). System-bound only. -->
         <service
             android:name=".upload.UploadJobService"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
-
-        <!-- Second-brain sync while charging on unmetered networks (ADR-0020). System-bound only. -->
-        <service
-            android:name=".processing.SyncJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

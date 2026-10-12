@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.processing
 
 import android.util.Log
+import com.apercallc.aidailymemory.capture.SegmentAudioRead
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.data.ClipDao
 import com.apercallc.aidailymemory.data.DailyReportDao
@@ -28,8 +29,11 @@ import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 data class ProcessingRun(val processed: Int, val failed: Int, val remaining: Int)
 
@@ -71,10 +75,15 @@ class ProcessingPipeline(
             try {
                 processSession(state.sessionId)
                 processed++
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) {
+                    updateState(state.sessionId, "PENDING", null)
+                }
+                throw e
             } catch (e: ProcessingException) {
                 Log.w(TAG, "processing_failed session=${state.sessionId} code=${e.code}")
                 failed++
-                updateState(state.sessionId, "FAILED", e.code)
+                updateState(state.sessionId, if (e.retryable) "PENDING" else "FAILED", e.code)
             } catch (e: Exception) {
                 logFailure(TAG, "processing_exception", e)
                 failed++
@@ -87,59 +96,75 @@ class ProcessingPipeline(
     }
 
     private suspend fun processSession(sessionId: String) {
-        // Find sealed segments with speech analysis for this session
+        // Reuse persisted evidence after an interrupted extraction or sync-window stop. Audio
+        // may already be deleted, so load transcripts before deciding there is no work to do.
+        val allLines = localTranscriptDao.forSession(sessionId).toMutableList()
         val segmentIds = segmentDao.forSession(sessionId)
             .filter { it.state == SegmentState.SEALED.name }
             .map { it.segmentId }
 
-        if (segmentIds.isEmpty()) {
+        if (segmentIds.isEmpty() && allLines.isEmpty()) {
             updateState(sessionId, "COMPLETED", null)
             return
         }
 
         updateState(sessionId, "TRANSCRIBING", null)
 
-        // Transcribe each segment's speech clips
-        val allLines = mutableListOf<LocalTranscriptLineEntity>()
-        for (segmentId in segmentIds) {
-            val segment = segmentDao.get(segmentId) ?: continue
-            val audio = segments.readAudio(segment) ?: continue
-            if (audio.isEmpty()) continue
-
-            val result = transcriptionProvider.transcribe(
-                audio,
-                segment.codec,
-                segment.sampleRateHz,
-            )
-            ProcessingValidation.validateTranscript(result, segment.durationMs)
-
-            val segmentStart = segment.start.occurredAtEpochMs
-            for (span in result.spans) {
-                val lineId = ids.next().toString()
-                val line = LocalTranscriptLineEntity(
-                    lineId = lineId,
-                    sessionId = sessionId,
-                    segmentId = segmentId,
-                    startEpochMs = segmentStart + span.startMs,
-                    endEpochMs = segmentStart + span.endMs,
-                    speaker = span.speaker,
-                    text = span.text,
-                    confidence = span.confidence,
-                    provider = transcriptionProvider.name,
-                    model = transcriptionProvider.model,
-                )
-                allLines.add(line)
-            }
-        }
-
         if (allLines.isEmpty()) {
-            updateState(sessionId, "COMPLETED", null)
-            return
+            for (segmentId in segmentIds) {
+                val segment = segmentDao.get(segmentId) ?: continue
+                val audio = when (val read = segments.readAudioResult(segment)) {
+                    is SegmentAudioRead.Audio -> read.bytes
+                    SegmentAudioRead.Unavailable ->
+                        throw ProcessingException("audio_temporarily_unavailable", retryable = true)
+                    SegmentAudioRead.Missing,
+                    SegmentAudioRead.Corrupt ->
+                        throw ProcessingException("audio_unreadable", retryable = false)
+                }
+                if (audio.isEmpty()) throw ProcessingException("audio_empty", retryable = false)
+
+                val result = transcriptionProvider.transcribe(
+                    audio,
+                    segment.codec,
+                    segment.sampleRateHz,
+                )
+                ProcessingValidation.validateTranscript(result, segment.durationMs)
+
+                val segmentStart = segment.start.occurredAtEpochMs
+                for (span in result.spans) {
+                    val lineId = ids.next().toString()
+                    allLines.add(
+                        LocalTranscriptLineEntity(
+                            lineId = lineId,
+                            sessionId = sessionId,
+                            segmentId = segmentId,
+                            startEpochMs = segmentStart + span.startMs,
+                            endEpochMs = segmentStart + span.endMs,
+                            speaker = span.speaker,
+                            text = span.text,
+                            confidence = span.confidence,
+                            provider = transcriptionProvider.name,
+                            model = transcriptionProvider.model,
+                        ),
+                    )
+                }
+            }
+
+            if (allLines.isEmpty()) {
+                updateState(sessionId, "COMPLETED", null)
+                return
+            }
+            localTranscriptDao.insertAll(allLines)
         }
 
-        // Store transcript lines
-        localTranscriptDao.insertAll(allLines)
         updateState(sessionId, "TRANSCRIBED", null)
+        if (settings.deleteAudioAfterTranscription.value) {
+            for (segmentId in segmentIds) {
+                val segment = segmentDao.get(segmentId) ?: continue
+                segments.deleteSegmentAudio(segment)
+            }
+            updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
+        }
 
         // Build numbered lines for extraction
         val numberedLines = allLines.mapIndexed { index, line ->
@@ -197,14 +222,6 @@ class ProcessingPipeline(
             ),
         )
 
-        // Delete audio if configured
-        if (settings.deleteAudioAfterTranscription.value) {
-            for (segmentId in segmentIds) {
-                val segment = segmentDao.get(segmentId) ?: continue
-                segments.deleteSegmentAudio(segment)
-            }
-        }
-
         updateState(sessionId, "COMPLETED", null, audioDeleted = settings.deleteAudioAfterTranscription.value)
     }
 
@@ -215,12 +232,18 @@ class ProcessingPipeline(
             .toString()
     }
 
-    private suspend fun updateState(sessionId: String, state: String, error: String?, audioDeleted: Boolean = false) {
+    private suspend fun updateState(
+        sessionId: String,
+        state: String,
+        error: String?,
+        audioDeleted: Boolean = false,
+    ) {
+        val audioWasDeleted = processingStateDao.forSession(sessionId)?.audioDeleted == true
         processingStateDao.upsert(
             ProcessingStateEntity(
                 sessionId = sessionId,
                 state = state,
-                audioDeleted = audioDeleted,
+                audioDeleted = audioDeleted || audioWasDeleted,
                 lastError = error,
                 updatedAtEpochMs = now(),
             ),

@@ -118,7 +118,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.processingEnabled,
         pSettings.transcriptionProvider,
         pSettings.deleteAudioAfterTranscription,
-    ) { enabled, tp, deleteAudio ->
+        pSettings.configRevision,
+    ) { enabled, tp, deleteAudio, _ ->
         ProcessingUi(
             enabled = enabled,
             transcriptionProvider = tp,
@@ -135,7 +136,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val sync: StateFlow<SyncUi> = combine(
         pSettings.syncEnabled,
         pSettings.syncIncludeTranscripts,
-    ) { enabled, includeTranscripts ->
+        pSettings.configRevision,
+    ) { enabled, includeTranscripts, _ ->
         SyncUi(
             enabled = enabled,
             url = pSettings.syncUrl ?: "",
@@ -147,28 +149,72 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncUi())
 
     val processingActions = ProcessingActions(
-        onEnableChange = pSettings::setProcessingEnabled,
-        onTranscriptionProviderChange = pSettings::setTranscriptionProvider,
-        onTranscriptionApiKeyChange = { v -> pSettings.transcriptionApiKey = v },
-        onTranscriptionApiUrlChange = { v -> pSettings.transcriptionApiUrl = v },
-        onExtractionProviderChange = pSettings::setExtractionProvider,
-        onExtractionApiKeyChange = { v -> pSettings.extractionApiKey = v },
-        onExtractionApiUrlChange = { v -> pSettings.extractionApiUrl = v },
-        onExtractionModelChange = { v -> pSettings.extractionModel = v },
+        onEnableChange = { enabled ->
+            pSettings.setProcessingEnabled(enabled)
+            onProcessingSettingsChanged()
+        },
+        onTranscriptionProviderChange = { provider ->
+            pSettings.setTranscriptionProvider(provider)
+            onProcessingSettingsChanged()
+        },
+        onTranscriptionApiKeyChange = { value ->
+            pSettings.transcriptionApiKey = value
+            onProcessingSettingsChanged()
+        },
+        onTranscriptionApiUrlChange = { value ->
+            pSettings.transcriptionApiUrl = value
+            onProcessingSettingsChanged()
+        },
+        onExtractionProviderChange = { provider ->
+            pSettings.setExtractionProvider(provider)
+            onProcessingSettingsChanged()
+        },
+        onExtractionApiKeyChange = { value ->
+            pSettings.extractionApiKey = value
+            onProcessingSettingsChanged()
+        },
+        onExtractionApiUrlChange = { value ->
+            pSettings.extractionApiUrl = value
+            onProcessingSettingsChanged()
+        },
+        onExtractionModelChange = { value ->
+            pSettings.extractionModel = value
+            onProcessingSettingsChanged()
+        },
         onDeleteAudioChange = pSettings::setDeleteAudioAfterTranscription,
     )
 
     val syncActions = SyncActions(
-        onEnableChange = pSettings::setSyncEnabled,
-        onUrlChange = { v -> pSettings.syncUrl = v },
-        onTokenChange = { v -> pSettings.syncToken = v },
-        onIncludeTranscriptsChange = pSettings::setSyncIncludeTranscripts,
+        onEnableChange = { enabled ->
+            pSettings.setSyncEnabled(enabled)
+            onProcessingSettingsChanged()
+        },
+        onUrlChange = { value ->
+            pSettings.syncUrl = value
+            onProcessingSettingsChanged()
+        },
+        onTokenChange = { value ->
+            pSettings.syncToken = value
+            onProcessingSettingsChanged()
+        },
+        onIncludeTranscriptsChange = { include ->
+            pSettings.setSyncIncludeTranscripts(include)
+            onProcessingSettingsChanged()
+        },
     )
 
-    /** Schedules processing + sync when settings change to enabled. */
+    /** Schedules or cancels background work as processing and sync settings change. */
     fun onProcessingSettingsChanged() {
-        if (pSettings.processingEnabled.value) container.processingScheduler.schedule()
+        if (pSettings.processingEnabled.value) {
+            container.appScope.launch(Dispatchers.IO) {
+                container.database.processingState().retryFailed(System.currentTimeMillis())
+                container.processingScheduler.schedule()
+            }
+        } else {
+            container.processingScheduler.cancel()
+        }
         if (pSettings.syncEnabled.value) container.syncScheduler.schedule()
+        else container.syncScheduler.cancel()
     }
 
     /** Switches storage mode server-side; audio already uploaded is unaffected (ADR-0014). */

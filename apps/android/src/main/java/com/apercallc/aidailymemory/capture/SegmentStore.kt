@@ -30,6 +30,13 @@ import java.security.ProviderException
 /** Audio format of a segment; recorded on every row so later decoding never guesses. */
 data class SegmentFormat(val codec: String, val sampleRateHz: Int, val channelCount: Int)
 
+sealed interface SegmentAudioRead {
+    data class Audio(val bytes: ByteArray) : SegmentAudioRead
+    data object Missing : SegmentAudioRead
+    data object Corrupt : SegmentAudioRead
+    data object Unavailable : SegmentAudioRead
+}
+
 sealed interface UserAudioDeletionResult {
     data class Deleted(val segments: Int) : UserAudioDeletionResult
     data object SessionActive : UserAudioDeletionResult
@@ -266,9 +273,18 @@ class SegmentStore(
      * The decrypted, fully valid ADTS stream of a sealed segment, or null when the file is gone
      * (retention), fails authentication, or doesn't parse cleanly. Never partial audio.
      */
-    fun readAudio(entity: SegmentEntity): ByteArray? {
-        val file = File(directory, entity.fileName).takeIf { it.isFile } ?: return null
-        return (decrypt(entity, file) as? SegmentRead.Audio)?.bytes
+    fun readAudio(entity: SegmentEntity): ByteArray? =
+        (readAudioResult(entity) as? SegmentAudioRead.Audio)?.bytes
+
+    /** Keeps a transient Keystore failure distinct from missing or corrupt evidence. */
+    fun readAudioResult(entity: SegmentEntity): SegmentAudioRead {
+        val file = File(directory, entity.fileName).takeIf { it.isFile }
+            ?: return SegmentAudioRead.Missing
+        return when (val read = decrypt(entity, file)) {
+            is SegmentRead.Audio -> SegmentAudioRead.Audio(read.bytes)
+            SegmentRead.Corrupt -> SegmentAudioRead.Corrupt
+            SegmentRead.Unavailable -> SegmentAudioRead.Unavailable
+        }
     }
 
     /** What reading a sealed file gave: audio, proof it isn't audio, or "try again later". */

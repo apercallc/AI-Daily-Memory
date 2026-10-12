@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.analysis
 
 import android.util.Log
+import com.apercallc.aidailymemory.capture.SegmentAudioRead
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.data.SegmentEntity
 import com.apercallc.aidailymemory.data.SegmentSpeechEntity
@@ -48,7 +49,8 @@ class SpeechAnalyzer(
         var failed = 0
         for (segment in dao.pending(EnergyVad.VERSION, limit)) {
             currentCoroutineContext().ensureActive()
-            val (outcome, summary) = analyze(segment)
+            val result = analyze(segment) ?: break
+            val (outcome, summary) = result
             save(segment, outcome, summary)
             if (outcome == SpeechOutcome.OK) analyzed++ else failed++
         }
@@ -57,8 +59,14 @@ class SpeechAnalyzer(
         return AnalysisRun(analyzed, failed, remaining)
     }
 
-    private fun analyze(segment: SegmentEntity): Pair<SpeechOutcome, SpeechSummary?> {
-        val audio = store.readAudio(segment) ?: return SpeechOutcome.UNREADABLE to null
+    private fun analyze(segment: SegmentEntity): Pair<SpeechOutcome, SpeechSummary?>? {
+        val audio = when (val read = store.readAudioResult(segment)) {
+            is SegmentAudioRead.Audio -> read.bytes
+            SegmentAudioRead.Missing,
+            SegmentAudioRead.Corrupt ->
+                return SpeechOutcome.UNREADABLE to null
+            SegmentAudioRead.Unavailable -> return null
+        }
         val vad = EnergyVad(segment.sampleRateHz)
         val frames = FrameBuffer()
         return try {

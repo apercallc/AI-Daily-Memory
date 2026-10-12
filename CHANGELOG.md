@@ -15,8 +15,6 @@ All notable changes to AI Daily Memory. Format follows
 - `docs/product/PRIVACY.md`: the citable list of privacy claims we can and cannot make.
 - `docs/operations/DEPLOYMENT.md`: runbook incl. deliberate provider enablement.
 - Backend: retention-sweep index on `audio_uploads (state, created_at)` (migration 0005).
-- MCP server: configuration is environment-only (a stray `.env` in the launching
-  client's working directory is no longer read); config test coverage added.
 
 ### Fixed
 
@@ -32,10 +30,14 @@ All notable changes to AI Daily Memory. Format follows
 - Android: with no account linked, accumulated local audio no longer surfaces as an
   upload-backlog warning — staying on the phone is the design in phone-only mode.
 
+### Removed
+
+- Removed the optional MCP server, its dependencies, tests, CI job, and setup documentation
+  (ADR-0021). External access remains through the REST API.
+
 ### Changed
 
-- README Status, Data Model, Query API, MCP tools, tech stack, repository map, and ADR
-  index updated to match the shipped code (ADR-0017–0019 included).
+- The Android sync endpoint and settings remain user-configured; no client-specific integration is included (ADR-0021).
 - `docs/api/ENDPOINTS.md` now documents signup/login, storage-mode switching, and
   reports endpoints; removed the stale "coming in Phase 5" note for shipped tools.
 - `backend/.env.example` lists the Deepgram and extraction provider settings.

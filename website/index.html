@@ -651,7 +651,7 @@ main:focus { outline: none; }
           </div>
           <div class="mode">
             <div class="mode-name">Full cloud</div>
-            <p>Server-held transcripts and memory for API/MCP access. This requires an explicit choice; provider stages are disabled by default.</p>
+            <p>Reports and synced memory are available to authorized clients through the public REST API. This requires an explicit choice; provider stages are disabled by default.</p>
             <div class="leak off-cloud">→ readable server-side, by choice and only when enabled</div>
           </div>
         </aside>
@@ -683,7 +683,7 @@ main:focus { outline: none; }
             <li>Transcription and structured extraction, behind privacy and cost gates</li>
             <li>The in-app daily report screen</li>
             <li>Ask My Memory — natural-language recall with evidence</li>
-            <li>MCP/API access for your own AI agents (read-only server already exists)</li>
+            <li>API access for user-owned clients (read-only scopes)</li>
             <li>Automatic APK releases with in-app updates</li>
             <li>iPhone and Apple Watch, once Android is proven</li>
           </ul>
@@ -710,7 +710,7 @@ main:focus { outline: none; }
           <a class="btn btn-ghost" href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener">All releases &amp; watch</a>
         </div>
       </div>
-      <p class="dev-note">Developer? The whole system is on GitHub: <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">apercallc/AI-Daily-Memory</a> — clone it and run <code>./gradlew :apps:android:assembleDebug</code>. There's also a read-only MCP server in <code>interfaces/mcp</code> for wiring your memory into your own agents.</p>
+      <p class="dev-note">Developer? The whole system is on GitHub: <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">apercallc/AI-Daily-Memory</a> — clone it and run <code>./gradlew :apps:android:assembleDebug</code>. External clients use the documented REST API.</p>
     </div>
   </section>
 

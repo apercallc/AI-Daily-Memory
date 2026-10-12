@@ -3,9 +3,10 @@
     POST /v1/sync   accept a SyncPayload from the phone, upsert reports + memory items
 
 The phone processes audio on-device (transcription, extraction, report generation) and
-pushes the structured result here. The backend stores it so the user's AI clients (MCP,
-API keys, tommy-hoang-os) can query it. The backend never processes audio in this flow —
-it is a sync target and query service, not a processor.
+pushes structured memory to this service for user-authorized API clients to query. The backend
+never processes audio in this flow — it is a sync target and query service, not a processor.
+Transcript lines are stored only when the phone explicitly
+sets `includeTranscripts=true`.
 
 Idempotent by replacement: syncing the same day's data replaces prior items for those
 sessions, matching the phone's own idempotent-by-replacement extraction (ADR-0019).
@@ -15,7 +16,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,12 +54,26 @@ class SyncCoverageIn(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SyncTranscriptLineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(alias="sessionId", min_length=1, max_length=128)
+    start_epoch_ms: int = Field(alias="startEpochMs", ge=0)
+    speaker: str | None = Field(default=None, max_length=80)
+    text: str = Field(min_length=1, max_length=5_000)
+
+
 class SyncReportIn(BaseModel):
     memory_day: str = Field(alias="memoryDay")
     zone_id: str = Field(alias="zoneId")
     headline: str
     summary: str
     items: list[SyncItemIn]
+    transcript_lines: list[SyncTranscriptLineIn] | None = Field(
+        default=None,
+        alias="transcriptLines",
+        max_length=20_000,
+    )
     coverage: SyncCoverageIn
     generated_at_epoch_ms: int = Field(alias="generatedAtEpochMs")
     extraction_model: str = Field(alias="extractionModel")
@@ -135,6 +150,10 @@ async def sync_memory(
             "extractionModel": report.extraction_model,
             "extractionVersion": report.extraction_version,
         }
+        if payload.include_transcripts:
+            report_json["transcriptLines"] = [
+                line.model_dump(by_alias=True) for line in (report.transcript_lines or [])
+            ]
         if existing is not None:
             existing.report = report_json
             existing.extraction_version = report.extraction_version

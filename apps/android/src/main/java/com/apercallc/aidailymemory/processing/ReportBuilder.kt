@@ -11,7 +11,7 @@ import kotlinx.serialization.serializer
 
 /**
  * Builds a [DailyReport] from extracted memory items and transcript lines (ADR-0020).
- * The report is the unit the phone stores and optionally syncs to a second brain.
+ * The report is the unit the phone stores and optionally syncs to a user-configured API endpoint.
  */
 object ReportBuilder {
 

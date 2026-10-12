@@ -82,14 +82,21 @@ interface SessionDao {
     suspend fun setTitle(sessionId: String, title: String?): Int
 
     /**
-     * Removes database evidence and derived data for one session after its audio files have
-     * been deleted successfully. File cleanup must happen first so a failure never hides
-     * undeleted audio behind missing database rows.
+     * Removes audio evidence, transcript, memory items, processing state, and the day-level
+     * report after files have been deleted successfully. The day report is removed because it
+     * may summarize the deleted session; remaining sessions' individual memories stay intact.
+     * File cleanup must happen first so a failure never hides undeleted audio behind missing
+     * database rows.
      */
     @Transaction
     suspend fun deleteSession(sessionId: String) {
+        val memoryDay = memoryDayForSession(sessionId)
         deleteTranscriptSpans(sessionId)
         deleteTranscripts(sessionId)
+        deleteLocalTranscriptLines(sessionId)
+        deleteMemoryItems(sessionId)
+        deleteProcessingState(sessionId)
+        if (memoryDay != null) deleteDailyReport(memoryDay)
         deleteClips(sessionId)
         deleteClipPlans(sessionId)
         deleteSpeechRegions(sessionId)
@@ -99,6 +106,24 @@ interface SessionDao {
         deleteTransitions(sessionId)
         deleteSessionInfo(sessionId)
     }
+
+    @Query("SELECT session_id FROM session_info WHERE memory_day = :memoryDay")
+    suspend fun sessionIdsForDay(memoryDay: String): List<String>
+
+    @Query("SELECT memory_day FROM session_info WHERE session_id = :sessionId")
+    suspend fun memoryDayForSession(sessionId: String): String?
+
+    @Query("DELETE FROM local_transcript_line WHERE session_id = :sessionId")
+    suspend fun deleteLocalTranscriptLines(sessionId: String)
+
+    @Query("DELETE FROM memory_item WHERE session_id = :sessionId")
+    suspend fun deleteMemoryItems(sessionId: String)
+
+    @Query("DELETE FROM processing_state WHERE session_id = :sessionId")
+    suspend fun deleteProcessingState(sessionId: String)
+
+    @Query("DELETE FROM daily_report WHERE memory_day = :memoryDay")
+    suspend fun deleteDailyReport(memoryDay: String)
 
     @Query(
         "DELETE FROM transcript_span WHERE upload_id IN (" +

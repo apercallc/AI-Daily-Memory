@@ -22,9 +22,7 @@ The owner wants:
 2. **User data stays on the device.** Audio is captured, transcribed, and then deleted. The
    transcript and derived memory live on the phone. Nothing leaves unless the user explicitly
    enables sync.
-3. **Second-brain integration.** The owner wants to push structured memory (summaries,
-   decisions, action items) from the phone to their own second-brain system (tommy-hoang-os) for
-   querying via API/MCP. Other users can point sync at their own self-hosted backend or skip it.
+3. **API integration.** Users may optionally sync structured memory to an endpoint they control. They can configure a self-hosted API target or leave sync disabled.
 
 ## Decision
 
@@ -81,9 +79,11 @@ A sync mechanism pushes structured memory out of the phone, nightly, on Wi-Fi + 
 - **What gets synced:** daily reports + structured memory items (decisions, actions,
   commitments, ideas) with short evidence quotes. Never audio. Raw transcript is not synced
   unless the user explicitly enables "full transcript sync" (off by default).
-- **Where it goes:** a user-configured URL + auth token, set in Settings. For the owner, this
-  is tommy-hoang-os. For other users, it can be a self-hosted instance of the existing FastAPI
-  backend or any HTTP endpoint that accepts the sync payload.
+- **Transcript query access:** synced transcript lines require the separate `transcript:read` scope;
+  default API keys carry only `memory:read`.
+- **Where it goes:** a user-configured URL + auth token, set in Settings. It can be a
+  self-hosted instance of the existing FastAPI backend or another API endpoint that accepts
+  the documented sync payload.
 - **Direction:** phone pushes out. The sync target does not push back or control the phone.
 - **Failure handling:** sync failures are visible to the user (like upload failures today) and
   retried with bounded backoff. The phone's local memory is always the source of truth.
@@ -93,10 +93,9 @@ A sync mechanism pushes structured memory out of the phone, nightly, on Wi-Fi + 
 The FastAPI backend (ADR-0018, ADR-0019, the upload protocol, the job queue, the query API)
 becomes an optional self-hosted component:
 
-- A user who wants cross-device API/MCP access can run their own instance and point the phone's
+- A user who wants cross-device API access can run their own instance and point the phone's
   sync at it. The backend stores synced memory and serves queries.
-- The owner uses tommy-hoang-os as the sync target instead. The FastAPI backend is not needed
-  for the owner's use case unless they choose to run it.
+- The FastAPI backend is optional and is not needed for phone-only use.
 - The existing provider seams in the backend are not deleted — they remain as a reference for
   self-hosters who prefer server-side processing — but they are no longer the product's path.
 
@@ -116,17 +115,16 @@ becomes an optional self-hosted component:
   user configures a sync target that requires the upload protocol.
 - **Evidence links still work.** Memory items cite transcript spans by index and timestamp. The
   transcript is on the phone; expanding a summary shows the cited span. If the user syncs
-  memory items to a second brain, evidence quotes (≤300 chars) travel with them, but the full
+  memory items through the API, evidence quotes (≤300 chars) travel with them, but the full
   transcript stays on the phone unless the user enables full transcript sync.
 
 ## Alternatives considered
 
 - **Keep cloud processing (ADR-0014 as-is):** rejected — requires a hosted backend, provider
   keys we pay for, and user audio touching our server. Contradicts "free and private."
-- **Phone as MCP server via relay:** rejected (ADR-0014 already rejected this — availability,
+- **Phone as a separate relay protocol:** rejected (ADR-0014 already rejected this — availability,
   latency, battery).
-- **On-device only, no sync at all:** rejected — the owner needs second-brain integration, and
-  other users may want cross-device access. Sync is optional but must exist.
+- **On-device only, no sync at all:** rejected — users may want cross-device API access. Sync is optional.
 
 ## Open questions
 
@@ -136,4 +134,4 @@ becomes an optional self-hosted component:
   on terms and rate limits, which need review before shipping.
 - Sync payload format: the existing daily-report JSON contract
   (`contracts/daily-report.v1.schema.json`) is the natural unit; confirm it carries enough
-  evidence context for second-brain querying without the full transcript.
+  evidence context for API clients without requiring the full transcript.

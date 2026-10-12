@@ -21,8 +21,9 @@ from app.db import Database, get_session
 from app.db.models import AccessToken, AudioUpload, DeviceKey, SealedDelivery
 
 TOKEN_PREFIX: Final = "adm_"  # noqa: S105 - a public prefix, not a secret
-Scope = Literal["upload:write", "memory:read"]
-# Devices upload audio and read their own memory. API keys start read-only (rule 4).
+Scope = Literal["upload:write", "memory:read", "transcript:read"]
+# Devices upload audio and read their own memory. API keys start with memory:read only;
+# transcript access is a separate explicit scope.
 DEVICE_SCOPES: Final[tuple[Scope, ...]] = ("upload:write", "memory:read")
 API_KEY_SCOPES: Final[tuple[Scope, ...]] = ("memory:read",)
 # Writing last_used_at on every request would turn reads into writes.

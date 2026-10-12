@@ -12,6 +12,8 @@ import com.apercallc.aidailymemory.platform.logFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -25,6 +27,7 @@ class ProcessingScheduler(context: Context) {
         val info = JobInfo.Builder(JOB_ID, ComponentName(app, ProcessingJobService::class.java))
             .setRequiresCharging(true)
             .setRequiresBatteryNotLow(true)
+            .setBackoffCriteria(RETRY_BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setPersisted(true)
             .build()
         val result = app.getSystemService(JobScheduler::class.java).schedule(info)
@@ -37,6 +40,7 @@ class ProcessingScheduler(context: Context) {
 
     companion object {
         const val JOB_ID = 1_004
+        const val RETRY_BACKOFF_MS = 30_000L
         private const val TAG = "ProcessingScheduler"
     }
 }
@@ -47,18 +51,20 @@ class ProcessingJobService : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         val container = (application as AiDailyMemoryApplication).container
+        var needsReschedule = false
         running = container.appScope.launch(Dispatchers.IO) {
-            var more = false
             try {
-                more = container.processingPipeline.processPending().remaining > 0
+                needsReschedule = container.processingPipeline.processPending().remaining > 0
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                needsReschedule = true
                 logFailure(TAG, "processing_job_failed", e)
             } finally {
-                jobFinished(params, false)
+                if (currentCoroutineContext().isActive) {
+                    jobFinished(params, needsReschedule)
+                }
             }
-            if (more) container.processingScheduler.schedule()
         }
         return true
     }

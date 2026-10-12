@@ -12,7 +12,7 @@ role table at the bottom of AGENTS.md defines what each one reviews.
 - `android-reviewer` — after writing/changing Kotlin, Compose, or Wear code
 - `backend-reviewer` — after writing/changing Python/FastAPI code
 - `security-reviewer` — before merging anything touching capture, permissions,
-  auth, storage, upload, or MCP/API surfaces
+  auth, storage, upload, or public API surfaces
 - `performance-reviewer` — for anything on the recording hot path or backend queries
 - `test-quality-reviewer` — before declaring a feature done
 
