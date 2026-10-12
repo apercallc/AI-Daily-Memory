@@ -53,6 +53,7 @@ import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.schedule.QuietWindow
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
+import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.ui.TimeText
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.DayOfWeek
@@ -82,6 +83,10 @@ fun RhythmSettingsScreen(
     modifier: Modifier = Modifier,
     account: AccountUi? = null,
     accountActions: AccountActions = AccountActions(),
+    update: UpdateState = UpdateState.Idle,
+    onUpdateCheck: () -> Unit = {},
+    onUpdateDownload: () -> Unit = {},
+    onUpdateInstall: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(
@@ -107,6 +112,13 @@ fun RhythmSettingsScreen(
                 onStorageModeChange = accountActions.changeStorageMode,
             )
         }
+        HorizontalDivider()
+        UpdateSection(
+            state = update,
+            onCheck = onUpdateCheck,
+            onDownload = onUpdateDownload,
+            onInstall = onUpdateInstall,
+        )
     }
 }
 

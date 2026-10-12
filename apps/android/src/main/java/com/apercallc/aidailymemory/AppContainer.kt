@@ -1,8 +1,10 @@
 package com.apercallc.aidailymemory
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import com.apercallc.aidailymemory.analysis.MediaCodecAacDecoder
 import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
@@ -33,6 +35,8 @@ import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
 import com.apercallc.aidailymemory.schedule.RhythmRunner
 import com.apercallc.aidailymemory.schedule.SessionRegistry
 import com.apercallc.aidailymemory.settings.SettingsStore
+import com.apercallc.aidailymemory.update.UpdateChecker
+import com.apercallc.aidailymemory.update.UpdateClient
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.platform.DeviceClock
@@ -334,6 +338,31 @@ class AppContainer(context: Context) {
     val accountApi: AccountApi get() = backend
 
     val uploadScheduler = UploadScheduler(app)
+
+    /** Self-update (GitHub Releases): checked once per app open, installed on user tap. */
+    val updates: UpdateChecker by lazy { UpdateChecker(UpdateClient()) }
+
+    /** The version the updater compares against; "0" when the package manager won't say. */
+    fun installedVersionName(): String = try {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0"
+    } catch (_: Exception) {
+        "0"
+    }
+
+    /** Where a downloaded update APK lands (app-private cache; cleared with the app). */
+    fun updateApkFile() = File(File(app.cacheDir, "updates"), UpdateChecker.ASSET_NAME)
+
+    /** Hands the downloaded APK to the system installer (user confirms the install). */
+    fun installApk(apk: File) {
+        val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", apk)
+        app.startActivity(
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+    }
 
     /** Connect / disconnect (blocking: call on IO). */
     val accountLinker: AccountLinker by lazy {

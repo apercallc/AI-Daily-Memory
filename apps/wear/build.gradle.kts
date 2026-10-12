@@ -1,6 +1,17 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// SAME key as apps/android (ADR-0008): the Wear Data Layer only delivers messages between
+// apps with the same package name AND signature. Lives outside the repo; absent = unsigned.
+val releaseKeystoreProperties: Properties? by lazy {
+    val file = File(System.getProperty("user.home"), ".android-keystores/ai-daily-memory.properties")
+    if (!file.isFile) return@lazy null
+    Properties().apply { file.inputStream().use { load(it) } }
 }
 
 android {
@@ -26,6 +37,17 @@ android {
             // Mirrors apps/android so debug phone + debug watch builds can talk to each other.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+
+        release {
+            releaseKeystoreProperties?.let { props ->
+                signingConfig = signingConfigs.create("releaseKeystore") {
+                    storeFile = File(props.getProperty("storeFile"))
+                    storePassword = props.getProperty("storePassword")
+                    keyAlias = props.getProperty("keyAlias")
+                    keyPassword = props.getProperty("keyPassword")
+                }
+            }
         }
     }
 

@@ -234,4 +234,20 @@
     <string name="storage_mode_phone_only">Phone only — transcripts stay on this phone</string>
     <string name="storage_mode_reports_cloud">Reports in the cloud — daily reports are stored on the server; transcripts stay on this phone</string>
     <string name="storage_mode_full_cloud">Full cloud — transcripts and reports are stored on the server</string>
+
+    <string name="update_title">App update</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_idle">Updates arrive from the project\'s GitHub releases. The app checks automatically each time it opens.</string>
+    <string name="update_up_to_date">You\'re on the latest version (%1$s).</string>
+    <string name="update_available">Version %1$s is available.</string>
+    <string name="update_download">Download &amp; install</string>
+    <string name="update_download_retry">Retry download</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_downloading_hint">Downloading the update. This can take a minute on slower connections.</string>
+    <string name="update_ready">Version %1$s is downloaded and ready to install.</string>
+    <string name="update_install">Install update</string>
+    <string name="update_check_failed">Couldn\'t check for updates. Check your connection and try again.</string>
+    <string name="update_download_failed">The download didn\'t finish. Your version keeps working; try again.</string>
+    <string name="update_snackbar">Update available: %1$s</string>
 </resources>

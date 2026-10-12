@@ -44,6 +44,8 @@ import com.apercallc.aidailymemory.ui.settings.AccountActions
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
+import com.apercallc.aidailymemory.update.UpdateState
+import com.apercallc.aidailymemory.update.UpdateViewModel
 import java.time.Instant
 import java.time.ZoneId
 
@@ -60,6 +62,7 @@ fun AppRoot(
     capture: CaptureViewModel,
     sessions: () -> SessionsViewModel,
     settings: () -> SettingsViewModel,
+    updates: () -> UpdateViewModel,
     permissions: Permissions,
 ) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.CAPTURE) }
@@ -70,9 +73,13 @@ fun AppRoot(
     }
     BackHandler(enabled = screen != AppScreen.CAPTURE) { back() }
 
+    // Auto-check for updates once per process; the settings card can always re-check.
+    LaunchedEffect(Unit) { updates().checkIfIdle() }
+
     when (screen) {
         AppScreen.CAPTURE -> AiDailyMemoryApp(
             viewModel = capture,
+            updates = updates(),
             permissions = permissions,
             onOpenSessions = { screen = AppScreen.SESSIONS },
             onOpenSettings = { screen = AppScreen.SETTINGS },
@@ -82,7 +89,7 @@ fun AppRoot(
             openTitle = title
             screen = AppScreen.TRANSCRIPT
         }
-        AppScreen.SETTINGS -> SettingsRoute(settings(), onBack = back)
+        AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
         AppScreen.TRANSCRIPT -> {
             val id = openSession
             if (id != null) {
@@ -131,10 +138,15 @@ private fun TranscriptRoute(viewModel: SessionsViewModel, sessionId: String, tit
 }
 
 @Composable
-private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
+private fun SettingsRoute(
+    viewModel: SettingsViewModel,
+    updates: UpdateViewModel,
+    onBack: () -> Unit,
+) {
     val rhythm by viewModel.rhythm.collectAsStateWithLifecycle()
     val retention by viewModel.retention.collectAsStateWithLifecycle()
     val account by viewModel.account.collectAsStateWithLifecycle()
+    val update by updates.state.collectAsStateWithLifecycle()
     // Recomputed on a slow tick too, so "Next: …" never shows a time that already passed.
     val next by produceState<NextChange?>(initialValue = null, rhythm) {
         while (true) {
@@ -161,6 +173,10 @@ private fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     changeStorageMode = viewModel::changeStorageMode,
                 )
             },
+            update = update,
+            onUpdateCheck = updates::check,
+            onUpdateDownload = updates::download,
+            onUpdateInstall = updates::install,
             modifier = modifier,
         )
     }

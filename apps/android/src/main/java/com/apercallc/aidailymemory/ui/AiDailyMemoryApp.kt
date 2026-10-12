@@ -40,6 +40,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +61,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.update.UpdateState
+import com.apercallc.aidailymemory.update.UpdateViewModel
 import com.apercallc.aidailymemory.capture.CaptureOverview
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
@@ -89,6 +94,7 @@ private sealed interface StartDialog {
 @Composable
 fun AiDailyMemoryApp(
     viewModel: CaptureViewModel,
+    updates: UpdateViewModel,
     permissions: Permissions,
     onOpenSessions: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -107,6 +113,22 @@ fun AiDailyMemoryApp(
     }
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { message -> snackbar.showSnackbar(resources.getString(message)) }
+    }
+
+    // Update available: say so once per release, with a one-tap hop to the update section.
+    var announcedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(updates) {
+        updates.state.collect { state ->
+            if (state is UpdateState.Available && announcedUpdate != state.release.versionName) {
+                announcedUpdate = state.release.versionName
+                val result = snackbar.showSnackbar(
+                    resources.getString(R.string.update_snackbar, state.release.versionName),
+                    actionLabel = resources.getString(R.string.update_install),
+                    duration = SnackbarDuration.Long,
+                )
+                if (result == SnackbarResult.ActionPerformed) onOpenSettings()
+            }
+        }
     }
 
     fun tryStart() {

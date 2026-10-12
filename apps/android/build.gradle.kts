@@ -1,8 +1,21 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+}
+
+// Release signing lives outside the repository (no secrets in git). When the properties
+// file is absent — CI, a fresh clone — the release build is simply unsigned.
+// The SAME key signs the Wear app (ADR-0008): the Wear Data Layer requires matching
+// applicationId + signature.
+val releaseKeystoreProperties: Properties? by lazy {
+    val file = File(System.getProperty("user.home"), ".android-keystores/ai-daily-memory.properties")
+    if (!file.isFile) return@lazy null
+    Properties().apply { file.inputStream().use { load(it) } }
 }
 
 room {
@@ -45,6 +58,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            releaseKeystoreProperties?.let { props ->
+                signingConfig = signingConfigs.create("releaseKeystore") {
+                    storeFile = File(props.getProperty("storeFile"))
+                    storePassword = props.getProperty("storePassword")
+                    keyAlias = props.getProperty("keyAlias")
+                    keyPassword = props.getProperty("keyPassword")
+                }
+            }
         }
     }
 

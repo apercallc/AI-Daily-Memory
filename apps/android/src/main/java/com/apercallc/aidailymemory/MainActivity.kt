@@ -11,6 +11,7 @@ import com.apercallc.aidailymemory.ui.CaptureViewModel
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
+import com.apercallc.aidailymemory.update.UpdateViewModel
 
 class MainActivity : ComponentActivity() {
     private val container get() = (application as AiDailyMemoryApplication).container
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
         SettingsViewModel.Factory(container)
     }
 
+    private val updateViewModel: UpdateViewModel by viewModels {
+        UpdateViewModel.Factory(container)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -41,6 +46,7 @@ class MainActivity : ComponentActivity() {
                     capture = viewModel,
                     sessions = { sessionsViewModel },
                     settings = { settingsViewModel },
+                    updates = { updateViewModel },
                     permissions = container.permissions,
                 )
             }

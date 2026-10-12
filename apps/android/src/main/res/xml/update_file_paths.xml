@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the app-update cache directory is shareable, and only with the installer. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>
