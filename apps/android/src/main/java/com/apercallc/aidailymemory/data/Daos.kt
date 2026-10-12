@@ -65,6 +65,18 @@ interface SessionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun register(entity: SessionInfoEntity)
 
+    /**
+     * A delayed controller observer must not recreate metadata after user deletion. Check
+     * the journal and insert in the same transaction as deletion's competing transaction.
+     */
+    @Transaction
+    suspend fun registerIfJournaled(entity: SessionInfoEntity) {
+        if (hasJournalEvidence(entity.sessionId)) register(entity)
+    }
+
+    @Query("SELECT EXISTS(SELECT 1 FROM recording_transition WHERE session_id = :sessionId)")
+    suspend fun hasJournalEvidence(sessionId: String): Boolean
+
     /** @return rows updated (0 if the session isn't registered). */
     @Query("UPDATE session_info SET custom_title = :title WHERE session_id = :sessionId")
     suspend fun setTitle(sessionId: String, title: String?): Int

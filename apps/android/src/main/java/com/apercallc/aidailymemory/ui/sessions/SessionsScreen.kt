@@ -28,6 +28,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextOverflow
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.session.PartOfDay
@@ -61,7 +63,9 @@ fun SessionsScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         when {
-            days == null -> Unit
+            days == null -> item {
+                Text(stringResource(R.string.sessions_loading), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
             days.isEmpty() -> item {
                 Text(
                     text = stringResource(R.string.sessions_empty),

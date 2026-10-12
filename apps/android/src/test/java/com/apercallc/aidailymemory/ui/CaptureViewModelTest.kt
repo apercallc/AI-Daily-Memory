@@ -130,6 +130,9 @@ class CaptureViewModelTest {
 
         assertNull(viewModel.uiState.value.stopDecisionSessionId)
         assertEquals(sessionId.value, container.handledStopDecisionSessionId())
+        // The process-wide registry may consume COMPLETED only after deletion finishes.
+        // Reproduce that ordering explicitly: it must not recreate the removed session.
+        container.sessions.register(sessionId.value)
         assertEquals(
             emptyList<String>(),
             container.database.sessions().observeSince("2026-10-01").first()

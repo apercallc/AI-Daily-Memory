@@ -2,6 +2,8 @@ package com.apercallc.aidailymemory.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -184,6 +186,33 @@ class AccountSectionTest {
             .performClick()
 
         assertEquals(0, changes)
+    }
+
+    @Test
+    fun `server address starts empty so pasted addresses do not inherit a scheme`() {
+        show(AccountUi())
+        compose.onNodeWithText("Server address").assertTextEquals("Server address", "")
+    }
+
+    @Test
+    fun `connection inputs cannot change while their consent is being checked`() {
+        show(AccountUi(connecting = true))
+        compose.onNodeWithText("Server address").assertIsNotEnabled()
+        compose.onNodeWithText("Device token").assertIsNotEnabled()
+        compose.onNodeWithText("Also transcribe speech already recorded on this phone").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `storage modes expose single selection to accessibility services`() {
+        show(AccountUi(host = "api.example", storageMode = "phone_only"))
+        compose.onNodeWithText("Phone only — transcripts stay on this phone").assertIsSelected()
+    }
+
+    @Test
+    fun `connecting explains cloud processing even for phone only storage`() {
+        show(AccountUi())
+        compose.onNodeWithText("Speech is processed on your server even in Phone only mode. Recording works without an account.")
+            .assertExists()
     }
 
     @Test

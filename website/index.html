@@ -4,15 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Daily Memory — Your day, remembered.</title>
-<meta name="description" content="AI Daily Memory records your day on the Android phone you already carry and hands it back as a searchable, evidence-backed record of what was decided, promised, and worth keeping.">
+<meta name="description" content="A personal memory project for Android and Wear OS, in private device testing. Explore the approach, privacy choices, and current availability.">
 <meta name="theme-color" content="#f6f1e7">
 <meta property="og:title" content="AI Daily Memory — Your day, remembered.">
-<meta property="og:description" content="Record your day on the phone you already carry. Get back decisions, action items, and commitments — each with the timestamp it came from.">
+<meta property="og:description" content="A personal memory project for Android and Wear OS. In private device testing; no public download yet.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23211b14'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23c8361f'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root {
   --paper: #f6f1e7;
@@ -20,12 +18,12 @@
   --card: #fbf8f1;
   --ink: #211b14;
   --ink-soft: #57503f;
-  --ink-faint: #8a8170;
+  --ink-faint: #6e6555;
   --rule: #d9cfba;
   --red: #c8361f;
   --red-deep: #9c2612;
   --slate: #3d5a6c;
-  --star: #b98a1c;
+  --star: #806012;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
   --display: "Fraunces", Georgia, serif;
   --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -41,7 +39,7 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 17.5px;
+  font-size: 1.094rem;
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   position: relative;
@@ -59,14 +57,14 @@ a { color: inherit; }
 
 /* ---------- top bar ---------- */
 .topbar {
-  position: sticky; top: 0; z-index: 10;
+  position: relative; z-index: 10;
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--rule);
 }
 .topbar .wrap {
   display: flex; align-items: center; justify-content: space-between;
-  height: 62px;
+  min-height: 76px; padding-top: 12px; padding-bottom: 12px; gap: 12px 24px; flex-wrap: wrap;
 }
 .wordmark {
   font-family: var(--display); font-weight: 620; font-size: 19px;
@@ -81,7 +79,7 @@ a { color: inherit; }
   font-family: var(--mono); font-size: 12.5px; font-weight: 500;
   letter-spacing: 0.08em; text-transform: uppercase;
   text-decoration: none; text-align: center;
-  white-space: nowrap;
+  white-space: normal;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 13px 22px; border-radius: 999px;
   border: 1.5px solid var(--ink); cursor: pointer;
@@ -117,7 +115,7 @@ a { color: inherit; }
 }
 .hero h1 {
   font-family: var(--display);
-  font-size: clamp(52px, 8.4vw, 108px);
+  font-size: clamp(3rem, 8.4vw, 6.75rem);
   font-weight: 560;
   line-height: 0.98;
   letter-spacing: -0.025em;
@@ -135,7 +133,7 @@ a { color: inherit; }
 .hero .promise .dot-inline { color: var(--red); font-style: normal; animation: pulse 2.2s ease-out infinite; border-radius: 50%; }
 .hero-ctas { margin-top: 44px; display: flex; gap: 16px; flex-wrap: wrap; }
 
-/* hero side card: capture health, mirrors the app's real capture-health panel */
+/* Illustrative capture-health card; never connected to a device. */
 .hero-grid { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 60px; align-items: center; }
 .health-card {
   background: var(--card); border: 1px solid var(--rule); border-radius: 18px;
@@ -357,51 +355,87 @@ footer { background: var(--paper-deep); border-top: 1px solid var(--rule); paddi
   section { padding: 72px 0; }
   .hero { padding: 64px 0 60px; }
   .movements, .personas { grid-template-columns: 1fr; }
-  .topnav .hide-sm { display: none; }
+  .topbar .wrap { align-items: flex-start; }
+  .topnav { width: 100%; gap: 4px 20px; }
   .foot-links { gap: 32px; }
 }
 :focus-visible { outline: 2.5px solid var(--red); outline-offset: 3px; border-radius: 4px; }
+/* Reflow and keyboard access without a JavaScript menu. */
+body { overflow-wrap: anywhere; }
+.wrap { padding-inline: clamp(20px, 4vw, 28px); }
+.topnav { flex-wrap: wrap; }
+.topnav a, .foot-links a { display: inline-flex; align-items: center; min-height: 48px; }
+.topnav .btn { color: #fff; }
+.btn { min-height: 48px; max-width: 100%; }
+.hero-grid > *, .day-mock > *, .priv-grid > *, .dl-card > * { min-width: 0; }
+.health-card { width: 100%; }
+.hc-row { flex-wrap: wrap; }
+.hc-row .v { text-align: right; }
+.hc-head { flex-wrap: wrap; }
+.mode-name { flex-wrap: wrap; }
+.skip-link { position: absolute; top: 8px; left: 20px; padding: 12px 18px; background: var(--ink); color: var(--paper); transform: translateY(-200%); z-index: 20; }
+.skip-link:focus { transform: none; }
+main:focus { outline: none; }
+.example-label { font: 500 .6875rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--slate); margin-bottom: 16px; }
+.example-note { font-size: .9375rem; color: var(--ink-soft); padding-top: 16px; border-top: 1px dashed var(--rule); margin-top: 12px; }
+.hero .promise { font-style: normal; font-family: var(--serif); font-size: 1rem; color: var(--ink-soft); }
+.download .sec-label { color: #ffad9a; }
+.download :focus-visible { outline-color: #ffad9a; }
+.dl-meta, .dev-note { color: #cfc6b2; }
+.faq-list summary .qnum, .faq-list summary .plus { flex-shrink: 0; }
+.foot-links { flex-wrap: wrap; }
+.site-note { margin-top: 24px; max-width: 70ch; font-size: .9375rem; color: var(--ink-soft); }
+@media (max-width: 640px) {
+  .hero h1 { font-size: clamp(2.8rem, 12vw, 4rem); }
+  .hero-ctas { gap: 12px; }
+  .health-card, .modes, .status-col { padding: 24px 20px; }
+  .day-mock .dm-side, .day-mock .dm-lines { padding: 24px 20px; }
+  .priv-item { grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+  .faq-list summary { gap: 12px; }
+  .faq-list details .answer { padding-left: 4px; }
+}
 </style>
 </head>
 <body>
+<a class="skip-link" href="#top">Skip to content</a>
 
 <header class="topbar">
   <div class="wrap">
     <a class="wordmark" href="#top"><span class="dot" aria-hidden="true"></span>AI Daily Memory</a>
-    <nav class="topnav">
-      <a class="hide-sm" href="#what">What it is</a>
-      <a class="hide-sm" href="#who">Who it's for</a>
-      <a class="hide-sm" href="#privacy">Privacy</a>
-      <a class="hide-sm" href="#faq">FAQ</a>
-      <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-red" href="#get-it">Get the APK</a>
+    <nav class="topnav" aria-label="Main navigation">
+      <a href="#what">The idea</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+      <a class="btn btn-red" href="#availability">Availability</a>
     </nav>
   </div>
 </header>
 
-<main id="top">
+<main id="top" tabindex="-1">
 
   <!-- ============ HERO ============ -->
   <div class="hero">
     <div class="wrap hero-grid">
       <div>
-        <p class="kicker fade-1"><span class="pulse" aria-hidden="true"></span>Private device testing · Android + Wear OS</p>
+        <p class="kicker fade-1">In development · Android + Wear OS</p>
         <h1 class="fade-1">Your day, <em>remembered.</em></h1>
-        <p class="lede fade-2">AI Daily Memory records your day on the phone you already carry, then hands it back as a searchable, evidence-backed record of what was decided, promised, and worth keeping.</p>
-        <p class="promise fade-3">Start your day. Live normally. <span class="dot-inline">●</span> Later, remember what mattered.</p>
+        <p class="lede fade-2">A place to return to the conversations that matter. We’re building a personal memory system that connects decisions and commitments to the moments they came from.</p>
+        <p class="promise fade-3">Currently in private device testing. No public download yet.</p>
         <div class="hero-ctas fade-3">
-          <a class="btn btn-red" href="#get-it">Get the APK</a>
-          <a class="btn btn-ghost" href="#what">See how it works</a>
+          <a class="btn btn-red" href="#availability">Check availability</a>
+          <a class="btn btn-ghost" href="#what">Explore the idea</a>
         </div>
       </div>
       <div class="health-card" aria-label="Example of the app's capture health panel">
+        <p class="example-label">Illustrated example · not live</p>
         <div class="hc-head"><span class="dot" aria-hidden="true"></span> Recording <span class="time">3h 42m</span></div>
         <div class="hc-time">3:42:07</div>
         <div class="hc-state">● Capture healthy</div>
         <div class="hc-row"><span class="k">Last audio saved</span><span class="v">4 sec ago</span></div>
-        <div class="hc-row"><span class="k">Watch</span><span class="v ok">Connected</span></div>
+        <div class="hc-row"><span class="k">Capture device</span><span class="v">Phone</span></div>
         <div class="hc-row"><span class="k">Only on this phone</span><span class="v">12 min</span></div>
         <div class="hc-row"><span class="k">Local storage</span><span class="v ok">Good</span></div>
+        <p class="example-note">Sample values to illustrate capture health. This website does not record audio.</p>
       </div>
     </div>
   </div>
@@ -410,35 +444,35 @@ footer { background: var(--paper-deep); border-top: 1px solid var(--rule); paddi
   <section id="what">
     <div class="wrap">
       <p class="sec-label">01 · What it is</p>
-      <h2 class="sec-head">A memory system, not a transcription app.</h2>
-      <p class="sec-body">Recording is the means. The product is recall you can trust: every decision, action item, and commitment it shows you carries a timestamp and a link back to the exact moment it came from.</p>
+      <h2 class="sec-head">Come back to what mattered.</h2>
+      <p class="sec-body">The goal is to make a conversation useful long after it ends: find a decision, check who promised what, and return to the evidence. Capture is the current focus; daily reports and natural-language recall are still in development.</p>
 
       <div class="movements">
         <div class="movement">
           <span class="num">CAPTURE</span>
           <h3>The phone remembers</h3>
-          <p>A foreground service records your day in short, encrypted segments — offline, crash-resistant, with an honest health panel that never claims capture is fine when it isn't.</p>
+          <p>The Android build records short, encrypted audio segments without a network connection. Real-device reliability and endurance checks are still outstanding.</p>
         </div>
         <div class="movement">
           <span class="num">UNDERSTAND</span>
           <h3>Speech becomes structure</h3>
-          <p>When you connect an account, speech is transcribed and lifted into decisions, actions, commitments, ideas, and questions — each citing its transcript evidence.</p>
+          <p>Cloud transcription and structured extraction integrations exist, but are disabled by default. On-device transcription is not implemented.</p>
         </div>
         <div class="movement">
           <span class="num">REMEMBER</span>
           <h3>The day comes back to you</h3>
-          <p>A daily report for your memory day: what was decided, what you took on, what others promised — with timestamps, so you can check any claim against the source.</p>
+          <p>The planned daily report brings decisions and follow-ups together with their source timestamps. The illustration below shows the direction, not a shipped feature.</p>
         </div>
       </div>
 
       <div class="day-mock">
         <div class="dm-side">
-          <h4>The daily report</h4>
-          <p>Built from structured memory and evidence — never a summary of a summary. Every item below would link back to the moment it was said.</p>
+          <p class="example-label">Concept · fictional example</p>
+          <h3>The daily report</h3>
+          <p>A proposed way to review the day. These invented entries are not real recordings or AI output. Evidence links and report delivery are not available here.</p>
           <div class="dm-meta">
-            Memory day: Tuesday<br>
-            Sleep schedule aware<br>
-            Delivered at wake time
+            Sample day: Tuesday<br>
+            Planned report experience
           </div>
         </div>
         <div class="dm-lines">
@@ -451,9 +485,9 @@ footer { background: var(--paper-deep); border-top: 1px solid var(--rule); paddi
           <div class="dm-entry hot">
             <div class="dm-time">8:42 AM</div>
             <div class="dm-title">Daily standup</div>
-            <div class="dm-item"><span class="tag decision">Decision</span><div class="text">Use the new consumer implementation.</div></div>
-            <div class="dm-item"><span class="tag">Action</span><div class="text">Review failed messages.</div></div>
-            <div class="dm-item"><span class="tag star">★ Highlight</span><div class="text">Mid-launch, no new scope.</div></div>
+            <div class="dm-item"><span class="tag decision">Decision</span><div class="text">Keep the first release focused on the calendar.</div></div>
+            <div class="dm-item"><span class="tag">Action</span><div class="text">Send Maya the revised schedule.</div></div>
+            <div class="dm-item"><span class="tag star">Highlight</span><div class="text">Leave room for a week of testing.</div></div>
           </div>
           <div class="dm-entry">
             <div class="dm-time">11:16 AM</div>
@@ -474,31 +508,31 @@ footer { background: var(--paper-deep); border-top: 1px solid var(--rule); paddi
     <div class="wrap">
       <p class="sec-label">02 · Who it's for</p>
       <h2 class="sec-head">For people whose work lives in conversations.</h2>
-      <p class="sec-body">If your day happens in meetings, calls, and hallway decisions, the details disappear by design of memory itself. This keeps them.</p>
+      <p class="sec-body">Meetings end. Context gets scattered across notes and messages. These are the questions we want a personal memory system to help answer, when recording is appropriate and everyone has agreed.</p>
       <div class="personas">
         <div class="persona">
           <span class="glyph">● In meetings all day</span>
           <h3>The back-to-back professional</h3>
-          <p>Monday's decisions are gone by Friday. Ask your memory what was decided — with the timestamp to prove it.</p>
+          <p>A useful record would let you revisit Monday’s decisions without sorting through a week of notes.</p>
           <p class="q">What did I decide today?</p>
         </div>
         <div class="persona">
           <span class="glyph">● Leading a team</span>
           <h3>The founder or manager</h3>
-          <p>You promised twelve things to eight people this week. The commitments list keeps them from blurring together.</p>
+          <p>Follow-ups are easier to track when a promise has a source you can check.</p>
           <p class="q">What did someone promise to follow up on?</p>
         </div>
         <div class="persona">
           <span class="glyph">● Across many clients</span>
           <h3>The consultant or advisor</h3>
-          <p>Context-switching means details leak between projects. Each client's thread stays findable, months later.</p>
+          <p>Returning to the original conversation could help keep details from different projects separate.</p>
           <p class="q">What did we discuss about this project last week?</p>
         </div>
         <div class="persona">
           <span class="glyph">● Thinking out loud</span>
           <h3>The idea collector</h3>
-          <p>Your best ideas arrive mid-sentence, mid-drive. Highlight the moment from your watch; it's in the report tonight.</p>
-          <p class="q">What ideas did I mention while driving?</p>
+          <p>A passing thought deserves a way back. Marking a moment is part of the planned review experience.</p>
+          <p class="q">What was that idea I wanted to revisit?</p>
         </div>
       </div>
     </div>

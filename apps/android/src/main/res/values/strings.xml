@@ -110,6 +110,8 @@
 
     <!-- Sessions -->
     <string name="sessions_title">Your sessions</string>
+    <string name="sessions_loading">Loading sessions…</string>
+    <string name="transcript_loading">Loading transcript…</string>
     <string name="sessions_empty">No sessions yet. Tap Start My Day to begin.</string>
     <string name="day_today">Today</string>
     <string name="day_yesterday">Yesterday</string>
@@ -176,7 +178,7 @@
     <string name="time_use_dial">Use the clock</string>
     <string name="sleep_custom">Your sleep schedule was set up in a way this screen can\'t show, and it\'s still active.</string>
     <string name="sleep_custom_reset">Start over with 11 PM to 7 AM</string>
-    <string name="audio_not_yet_deleted">Automatic deletion starts once transcription arrives in a later update. Until then, recordings stay on this phone.</string>
+    <string name="audio_not_yet_deleted">Automatic deletion follows the setting below after processing and a recovery period. Audio still waiting for a transcript stays on this phone. Audio with no detected speech can also be deleted.</string>
     <string name="quiet_edit_title">Quiet time</string>
     <string name="quiet_label">Name, like Lunch or Gym</string>
     <string name="quiet_start">Starts</string>
@@ -204,7 +206,8 @@
     <string name="schedule_unreadable">Your previous schedule couldn\'t be read, so none is active. Set it again below.</string>
     <!-- Account link (Phase 1 uploads) -->
     <string name="account_title">Account</string>
-    <string name="account_explainer">Connect your account to turn speech into transcripts and your daily report. Only speech clips are sent, and only while charging on Wi-Fi.</string>
+    <string name="account_explainer">Connect to transcribe speech while your phone charges on Wi-Fi. Use the server address and device token provided by your server administrator.</string>
+    <string name="account_processing_disclosure">Speech is processed on your server even in Phone only mode. Recording works without an account.</string>
     <string name="account_rejected">Your account connection was signed out. Connect again with a new device token.</string>
     <string name="account_unreadable">This phone can no longer read its saved connection. Connect again.</string>
     <string name="account_url">Server address</string>

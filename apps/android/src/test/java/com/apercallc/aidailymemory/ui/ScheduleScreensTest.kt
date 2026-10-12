@@ -37,6 +37,37 @@ class ScheduleScreensTest {
     private val zone = ZoneId.of("America/Chicago")
 
     @Test
+    fun `loading sessions is visible rather than a blank screen`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                SessionsScreen(days = null, today = today, onRename = { _, _ -> })
+            }
+        }
+        compose.onNodeWithText("Loading sessions…").assertExists()
+    }
+
+    @Test
+    fun `audio settings describe active retention instead of a future update`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                RhythmSettingsScreen(
+                    rhythm = DailyRhythm.None,
+                    retention = AudioRetention.TRANSCRIPT_ONLY,
+                    nextChange = null,
+                    bytesPerHour = 15L * 1024 * 1024,
+                    showUnreadableNotice = false,
+                    onRhythmChange = {},
+                    onRetentionChange = {},
+                )
+            }
+        }
+        compose.onNodeWithText(
+            "Automatic deletion follows the setting below after processing and a recovery period. " +
+                "Audio still waiting for a transcript stays on this phone. Audio with no detected speech can also be deleted.",
+        ).performScrollTo().assertExists()
+    }
+
+    @Test
     fun `a session can be renamed, and invalid names can't be saved`() {
         val renames = mutableListOf<Pair<String, String>>()
         val start = ZonedDateTime.of(2026, 9, 22, 14, 0, 0, 0, zone)

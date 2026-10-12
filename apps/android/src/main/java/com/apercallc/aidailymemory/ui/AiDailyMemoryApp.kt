@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -477,10 +478,11 @@ private fun CaptureStats(overview: CaptureOverview) {
 
 @Composable
 private fun Stat(@StringRes label: Int, value: String) {
-    Row(
-        // Label and value are read together ("Saved audio, 1 h 5 min").
+    FlowRow(
+        // Wrap the value below the label on narrow screens and at large font scales.
+        // Label and value remain one TalkBack announcement.
         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(AiDailyMemoryTheme.spacing.md),
     ) {
         Text(
             text = stringResource(label),

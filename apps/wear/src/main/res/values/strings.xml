@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_title">Daily Memory</string>
+    <string name="phone_controller">Audio records on your phone.</string>
+    <string name="phone_disconnected">Phone not connected</string>
+    <string name="phone_waiting">Waiting for phone status…</string>
+    <string name="status_idle">Not recording</string>
+    <string name="status_starting">Starting on phone…</string>
+    <string name="status_recording">Recording on phone</string>
+    <string name="status_check_recording">Check recording on phone</string>
+    <string name="status_paused">Paused on phone</string>
+    <string name="status_resuming">Resuming on phone…</string>
+    <string name="status_interrupted">Recording interrupted</string>
+    <string name="status_recovering">Reconnecting microphone…</string>
+    <string name="status_stopping">Saving on phone…</string>
+    <string name="status_completed">Session saved</string>
+    <string name="status_unknown">Phone status unknown</string>
+    <string name="problem_permission">Allow microphone access in the phone settings.</string>
+    <string name="problem_microphone">The phone microphone is unavailable. Check the phone.</string>
+    <string name="problem_call">Paused for a phone call.</string>
+    <string name="problem_open_phone">Open the phone app to start recording.</string>
+    <string name="problem_storage">Free up storage on your phone to keep recording.</string>
+    <string name="problem_encryption">Audio couldn\'t be saved securely. Check the phone.</string>
+    <string name="problem_notifications">Turn on recording notifications in the phone settings.</string>
+    <string name="problem_app_closed">The phone app was closed. Recording was interrupted.</string>
+    <string name="problem_reboot">Your phone restarted. Recording was interrupted.</string>
+    <string name="problem_unknown">Recording needs attention. Check the phone.</string>
+    <string name="health_critical">Audio may not be saving. Check the phone.</string>
+    <string name="health_warning">Check the phone for a recording or storage warning.</string>
+    <string name="command_waiting">Waiting for phone confirmation…</string>
+    <string name="command_applied">Phone accepted the action.</string>
+    <string name="command_ignored">No change made on the phone.</string>
+    <string name="command_rejected">Action unavailable. Check the phone.</string>
+    <string name="command_unconfirmed">The phone hasn\'t confirmed this action. Check the phone or try again.</string>
+    <string name="action_retry">Try again</string>
+    <string name="phone_controls_waiting">Controls will be available when the phone confirms its status.</string>
+    <string name="action_check_phone">Check phone</string>
+    <string name="action_start">Start recording</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_highlight">Highlight</string>
+    <string name="action_quick_note">Quick note</string>
+</resources>

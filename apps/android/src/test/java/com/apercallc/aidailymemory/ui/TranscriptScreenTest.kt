@@ -40,6 +40,12 @@ class TranscriptScreenTest {
     }
 
     @Test
+    fun `loading a transcript is visible rather than a blank screen`() {
+        compose.setContent { AiDailyMemoryTheme { TranscriptScreen(lines = null) } }
+        compose.onNodeWithText("Loading transcript…").assertExists()
+    }
+
+    @Test
     fun `no transcript yet explains when one will appear`() {
         compose.setContent { AiDailyMemoryTheme { TranscriptScreen(lines = emptyList()) } }
 

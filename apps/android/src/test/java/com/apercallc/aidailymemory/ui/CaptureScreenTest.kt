@@ -1,11 +1,21 @@
 package com.apercallc.aidailymemory.ui
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.text.TextLayoutResult
+import org.robolectric.annotation.Config
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -43,6 +53,7 @@ class CaptureScreenTest {
         problem: CaptureProblem? = null,
         health: CaptureHealth = CaptureHealth.Unknown,
         overview: CaptureOverview? = null,
+        fontScale: Float = 1f,
     ) {
         val state = RecordingState(
             status = status,
@@ -51,7 +62,8 @@ class CaptureScreenTest {
             problem = problem,
         )
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+              AiDailyMemoryTheme(dynamicColor = false) {
                 CaptureScreen(
                     model = CaptureStatusPresenter.present(state, health),
                     overview = overview,
@@ -62,7 +74,10 @@ class CaptureScreenTest {
                     onStop = { actions += "stop" },
                     onMark = { actions += "mark:$it" },
                     onBatterySettings = { actions += "battery" },
+                    onOpenSessions = { actions += "sessions" },
+                    onOpenSettings = { actions += "settings" },
                 )
+              }
             }
         }
     }
@@ -135,6 +150,35 @@ class CaptureScreenTest {
         // The status card merges its children for TalkBack; count the individual texts.
         compose.onAllNodesWithText("1 h 5 min", useUnmergedTree = true).assertCountEquals(2)
         compose.onNodeWithText("2 h 5 min", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `navigation opens sessions and settings without changing recording`() {
+        show(RecordingStatus.RECORDING)
+        compose.onNodeWithText("Sessions").performScrollTo().performClick()
+        compose.onNodeWithText("Schedule & audio").performScrollTo().performClick()
+        assertEquals(listOf("sessions", "settings"), actions)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    fun `storage value stays readable at double font scale on a narrow phone`() {
+        show(
+            RecordingStatus.RECORDING,
+            overview = CaptureOverview(
+                health = CaptureHealth.Unknown,
+                summary = CaptureSummary(0, 0, 0, 0, null),
+                storage = StorageHealth(StorageLevel.OK, 125, pendingOverBudget = false),
+            ),
+            fontScale = 2f,
+        )
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("2 h 5 min", useUnmergedTree = true)
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue(layouts.isNotEmpty())
+        assertFalse(layouts.single().hasVisualOverflow)
+        assertTrue(layouts.single().size.width > 0)
     }
 
     @Test

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -134,7 +136,7 @@ private fun ConnectForm(
     onEdit: () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
-    var url by rememberSaveable { mutableStateOf("https://") }
+    var url by rememberSaveable { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
     var includeBacklog by rememberSaveable { mutableStateOf(false) }
     when (account.problem) {
@@ -146,6 +148,11 @@ private fun ConnectForm(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+    Text(
+        text = stringResource(R.string.account_processing_disclosure),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     val urlError = account.error == ConnectError.INVALID_URL
     val tokenError = account.error == ConnectError.INVALID_TOKEN || account.error == ConnectError.REJECTED
     val urlErrorText = stringResource(R.string.account_url_invalid)
@@ -159,6 +166,7 @@ private fun ConnectForm(
             onEdit()
         },
         label = { Text(stringResource(R.string.account_url)) },
+        enabled = !account.connecting,
         singleLine = true,
         isError = urlError,
         supportingText = { if (urlError) Text(urlErrorText) },
@@ -174,6 +182,7 @@ private fun ConnectForm(
             onEdit()
         },
         label = { Text(stringResource(R.string.account_token)) },
+        enabled = !account.connecting,
         singleLine = true,
         isError = tokenError,
         supportingText = { if (tokenError) Text(tokenErrorText) },
@@ -190,9 +199,14 @@ private fun ConnectForm(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = spacing.minTouchTarget)
-            .toggleable(value = includeBacklog, role = Role.Checkbox, onValueChange = { includeBacklog = it }),
+            .toggleable(
+                value = includeBacklog,
+                role = Role.Checkbox,
+                enabled = !account.connecting,
+                onValueChange = { includeBacklog = it },
+            ),
     ) {
-        Checkbox(checked = includeBacklog, onCheckedChange = null)
+        Checkbox(checked = includeBacklog, onCheckedChange = null, enabled = !account.connecting)
         Text(stringResource(R.string.account_include_backlog), style = MaterialTheme.typography.bodyMedium)
     }
     when (account.error) {
@@ -219,7 +233,7 @@ private fun StorageModePicker(mode: String?, updating: Boolean, onChange: (Strin
         text = stringResource(R.string.storage_mode_title),
         style = MaterialTheme.typography.titleSmall,
     )
-    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+    Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
         STORAGE_MODES.forEach { (value, labelRes) ->
             val selected = value == mode
             Row(
@@ -228,11 +242,11 @@ private fun StorageModePicker(mode: String?, updating: Boolean, onChange: (Strin
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = spacing.minTouchTarget)
-                    .toggleable(
-                        value = selected,
+                    .selectable(
+                        selected = selected,
                         role = Role.RadioButton,
                         enabled = !updating,
-                        onValueChange = { if (!selected) onChange(value) },
+                        onClick = { if (!selected) onChange(value) },
                     ),
             ) {
                 RadioButton(selected = selected, onClick = null, enabled = !updating)

@@ -126,6 +126,14 @@ class SessionMigrationTest {
         val rhythm = DailyRhythm(sleep = listOf(DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0))))
         val registry = SessionRegistry(db.sessions(), { rhythm }, { start }, { zone })
 
+        // Controller transitions are journaled before the registry observes their state.
+        db.openHelper.writableDatabase.execSQL(
+            "INSERT INTO recording_transition (revision, status, session_id, problem, cause, " +
+                "occurred_at_epoch_ms, timezone, utc_offset_minutes, local_date, " +
+                "elapsed_realtime_ms, boot_id) VALUES " +
+                "(1, 'STARTING', 's1', NULL, 'START', 1, 'America/Chicago', -300, " +
+                "'2026-09-23', 0, 'boot')",
+        )
         registry.register("s1")
         registry.register("s1") // idempotent
 

@@ -13,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
@@ -34,7 +36,9 @@ fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         when {
-            lines == null -> Unit
+            lines == null -> item {
+                Text(stringResource(R.string.transcript_loading), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
             lines.isEmpty() -> item {
                 Text(
                     text = stringResource(R.string.transcript_empty),

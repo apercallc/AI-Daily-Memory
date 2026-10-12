@@ -52,7 +52,7 @@ class SessionRegistry(
     suspend fun register(sessionId: String) {
         val at = now()
         val zoneId = zone()
-        dao.register(
+        dao.registerIfJournaled(
             SessionInfoEntity(
                 sessionId = sessionId,
                 memoryDay = MemoryDays.dayOf(at, zoneId, rhythm()).toString(),

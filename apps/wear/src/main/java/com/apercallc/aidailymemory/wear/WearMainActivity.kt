@@ -23,6 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
@@ -58,7 +63,7 @@ class WearMainActivity : ComponentActivity(),
             controlState = WearControlReducer.commandUnconfirmed(
                 controlState,
                 commandId,
-                reason = "Not confirmed. Do not assume it happened; retry the same command.",
+                reason = getString(R.string.command_unconfirmed),
             )
         }
     }
@@ -215,7 +220,7 @@ class WearMainActivity : ComponentActivity(),
                 controlState = WearControlReducer.commandUnconfirmed(
                     controlState,
                     commandId,
-                    "Delivery not confirmed. Retry uses the same command ID to avoid duplicates.",
+                    getString(R.string.command_unconfirmed),
                 )
             }
     }
@@ -283,7 +288,7 @@ class WearMainActivity : ComponentActivity(),
         val serviceAction = pendingPreferences.getString(PENDING_ACTION_KEY, null) ?: return
         val command = WatchCommand.entries.firstOrNull { it.serviceAction == serviceAction } ?: return
         controlState = WearControlReducer.commandPending(WearControlState(), commandId, command).copy(
-            error = "Previous command wasn't confirmed. Retry it with the same ID.",
+            error = getString(R.string.command_unconfirmed),
         )
     }
 
@@ -343,28 +348,35 @@ private fun WearHome(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Daily Memory", style = MaterialTheme.typography.titleMedium)
-        Text("Controls phone capture. The phone confirms every state change.")
         Text(
-            when {
-                !state.phoneConnected -> "Phone not connected"
-                snapshot == null -> "Waiting for phone state"
-                else -> snapshot.status.toDisplayStatus()
-            },
+            stringResource(R.string.app_title),
             style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() },
         )
-        snapshot?.problem?.let { Text("Phone issue: ${it.replace('_', ' ').lowercase()}") }
-        snapshot?.let { Text("Capture health: ${it.captureHealth.lowercase()}") }
+        Text(stringResource(R.string.phone_controller))
+        Text(
+            stringResource(WearStrings.headline(state)),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        // Cached details are not current status when the phone is disconnected.
+        if (state.phoneConnected) {
+            snapshot?.problem?.let { Text(stringResource(WearStrings.problem(it))) }
+            when (snapshot?.captureHealth) {
+                "CRITICAL" -> Text(stringResource(R.string.health_critical))
+                "WARNING" -> Text(stringResource(R.string.health_warning))
+            }
+        }
         if (state.pendingCommandId != null && state.error == null) {
-            Text("Waiting for phone confirmation…")
+            Text(stringResource(R.string.command_waiting))
         }
         state.lastAcknowledgement?.let { ack ->
-            Text("Phone ${ack.outcome.name.lowercase()} command")
+            Text(stringResource(WearStrings.acknowledgement(ack.outcome)))
         }
         state.error?.let { Text(it) }
         if (state.pendingCommandId != null && state.error != null) {
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("Retry same command")
+                Text(stringResource(R.string.action_retry))
             }
         }
 
@@ -372,10 +384,10 @@ private fun WearHome(
             if (state.phoneConnected) {
                 // Connected, but the phone's acknowledged state has not arrived; a retry
                 // re-requests the snapshot instead of leaving the watch a dead end.
-                Text("Controls stay unavailable until the phone shares its state.")
+                Text(stringResource(R.string.phone_controls_waiting))
             }
             Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("Check phone")
+                Text(stringResource(R.string.action_check_phone))
             }
         } else {
             // needsPhoneCheck false means the watch holds a phone-acknowledged snapshot.
@@ -386,33 +398,19 @@ private fun WearHome(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
-                    Text(command.label)
+                    Text(stringResource(command.label))
                 }
             }
         }
-        Text("Report generation isn't available yet.")
     }
 }
 
-private val WatchCommand.label: String
+private val WatchCommand.label: Int
     get() = when (this) {
-        WatchCommand.Start -> "Start recording"
-        WatchCommand.Pause -> "Pause"
-        WatchCommand.Resume -> "Resume"
-        WatchCommand.Stop -> "Stop"
-        WatchCommand.Highlight -> "Highlight"
-        WatchCommand.QuickNote -> "Quick note"
+        WatchCommand.Start -> R.string.action_start
+        WatchCommand.Pause -> R.string.action_pause
+        WatchCommand.Resume -> R.string.action_resume
+        WatchCommand.Stop -> R.string.action_stop
+        WatchCommand.Highlight -> R.string.action_highlight
+        WatchCommand.QuickNote -> R.string.action_quick_note
     }
-
-private fun String.toDisplayStatus(): String = when (this) {
-    "IDLE" -> "Not recording"
-    "STARTING" -> "Starting on phone"
-    "RECORDING" -> "Recording on phone"
-    "PAUSED" -> "Paused on phone"
-    "RESUMING" -> "Resuming on phone"
-    "INTERRUPTED" -> "Recording interrupted"
-    "RECOVERING" -> "Recovering on phone"
-    "STOPPING" -> "Stopping on phone"
-    "COMPLETED" -> "Session complete"
-    else -> "Phone state unknown"
-}
