@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.db import get_session
-from app.db.models import DailyReportRow, User
+from app.db.models import DailyReportRow
 from app.errors import ErrorResponse, error_response
 
 router = APIRouter(tags=["reports"])
@@ -30,13 +30,6 @@ _ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s
 
 @router.get("/reports/{memory_day}", responses=_ERRORS)
 async def get_report(memory_day: date, session: Session, reader: Reader) -> dict[str, object]:
-    mode = await session.scalar(select(User.storage_mode).where(User.id == reader.user_id))
-    if mode != "full_cloud":
-        return error_response(  # type: ignore[return-value]
-            403,
-            "Daily reports need full-cloud storage mode.",
-            code="cloud_storage_required",
-        )
     row = await session.scalar(
         select(DailyReportRow).where(
             DailyReportRow.user_id == reader.user_id,
