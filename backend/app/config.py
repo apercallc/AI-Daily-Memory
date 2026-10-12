@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     extraction_provider: Literal["disabled", "claude"] = "disabled"
     claude_api_key: SecretStr | None = None
     claude_model: str = "claude-sonnet-5"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, value: object) -> object:
+        # Managed platforms (Railway, Heroku) inject "postgres://" or "postgresql://"
+        # URLs. psycopg3 is the only Postgres driver installed (ADR-0009), so map the
+        # bare schemes onto its dialect instead of failing at connect time.
+        if isinstance(value, str) and value.startswith(("postgres://", "postgresql://")):
+            return "postgresql+psycopg://" + value.split("://", 1)[1]
+        return value
 
     @property
     def expose_api_docs(self) -> bool:
