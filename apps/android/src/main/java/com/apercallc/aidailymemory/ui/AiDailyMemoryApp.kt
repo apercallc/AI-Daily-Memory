@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -56,6 +55,9 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.core.os.UserManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -500,19 +502,21 @@ private fun CaptureStats(overview: CaptureOverview) {
 
 @Composable
 private fun Stat(@StringRes label: Int, value: String) {
-    FlowRow(
-        // Wrap the value below the label on narrow screens and at large font scales.
-        // Label and value remain one TalkBack announcement.
-        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-        horizontalArrangement = Arrangement.spacedBy(AiDailyMemoryTheme.spacing.md),
-    ) {
-        Text(
-            text = stringResource(label),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
-    }
+    // One wrapping Text, not a FlowRow: a FlowRow measures the value against the label's
+    // leftover line width and never remeasures when it moves the item to its own line, so
+    // at large font scales the value is laid out ~10px wide and visually overflows. One
+    // annotated string wraps as a whole and stays a single TalkBack announcement.
+    Text(
+        text = buildAnnotatedString {
+            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                append(stringResource(label))
+            }
+            append("  ")
+            append(value)
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

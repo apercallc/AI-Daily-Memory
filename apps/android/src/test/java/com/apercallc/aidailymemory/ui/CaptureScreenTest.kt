@@ -148,8 +148,8 @@ class CaptureScreenTest {
         )
 
         // The status card merges its children for TalkBack; count the individual texts.
-        compose.onAllNodesWithText("1 h 5 min", useUnmergedTree = true).assertCountEquals(2)
-        compose.onNodeWithText("2 h 5 min", useUnmergedTree = true).assertExists()
+        compose.onAllNodesWithText("1 h 5 min", substring = true, useUnmergedTree = true).assertCountEquals(2)
+        compose.onNodeWithText("2 h 5 min", substring = true, useUnmergedTree = true).assertExists()
     }
 
     @Test
@@ -173,7 +173,7 @@ class CaptureScreenTest {
             fontScale = 2f,
         )
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("2 h 5 min", useUnmergedTree = true)
+        compose.onNodeWithText("2 h 5 min", substring = true, useUnmergedTree = true)
             .performScrollTo()
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue(layouts.isNotEmpty())
