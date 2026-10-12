@@ -9,12 +9,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 # Dependency layer first so source edits do not invalidate it.
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project --no-editable
 COPY alembic.ini ./
 COPY app ./app
 COPY migrations ./migrations
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
 FROM python:3.13-slim-bookworm AS runtime
