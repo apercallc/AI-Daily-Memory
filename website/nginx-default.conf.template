@@ -1,0 +1,14 @@
+server {
+    listen ${PORT};
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Single-page static site; everything that is not a file is the page itself.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # No server-side secrets exist here, but never advertise server internals.
+    server_tokens off;
+}
