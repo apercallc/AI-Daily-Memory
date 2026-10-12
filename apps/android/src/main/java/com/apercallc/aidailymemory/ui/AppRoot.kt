@@ -39,6 +39,8 @@ import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
+import com.apercallc.aidailymemory.ui.memory.MemoryScreen
+import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
 import com.apercallc.aidailymemory.ui.settings.NextChange
 import com.apercallc.aidailymemory.ui.settings.AccountActions
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
@@ -49,7 +51,7 @@ import com.apercallc.aidailymemory.update.UpdateViewModel
 import java.time.Instant
 import java.time.ZoneId
 
-enum class AppScreen { CAPTURE, SESSIONS, SETTINGS, TRANSCRIPT }
+enum class AppScreen { CAPTURE, SESSIONS, MEMORY, SETTINGS, TRANSCRIPT }
 
 private const val NEXT_CHANGE_REFRESH_MS = 30_000L
 
@@ -61,6 +63,7 @@ private const val NEXT_CHANGE_REFRESH_MS = 30_000L
 fun AppRoot(
     capture: CaptureViewModel,
     sessions: () -> SessionsViewModel,
+    memory: () -> MemoryViewModel,
     settings: () -> SettingsViewModel,
     updates: () -> UpdateViewModel,
     permissions: Permissions,
@@ -82,6 +85,7 @@ fun AppRoot(
             updates = updates(),
             permissions = permissions,
             onOpenSessions = { screen = AppScreen.SESSIONS },
+            onOpenMemory = { screen = AppScreen.MEMORY },
             onOpenSettings = { screen = AppScreen.SETTINGS },
         )
         AppScreen.SESSIONS -> SessionsRoute(sessions(), onBack = back) { id, title ->
@@ -89,6 +93,7 @@ fun AppRoot(
             openTitle = title
             screen = AppScreen.TRANSCRIPT
         }
+        AppScreen.MEMORY -> MemoryRoute(memory(), onBack = back)
         AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
         AppScreen.TRANSCRIPT -> {
             val id = openSession
@@ -125,6 +130,14 @@ private fun SessionsRoute(
             onOpen = onOpen,
             onDelete = viewModel::delete,
         )
+    }
+}
+
+@Composable
+private fun MemoryRoute(viewModel: MemoryViewModel, onBack: () -> Unit) {
+    val days by viewModel.days.collectAsStateWithLifecycle()
+    SecondaryScreen(stringResource(R.string.memory_title), onBack, snackbar = null) { modifier ->
+        MemoryScreen(days = days, modifier = modifier)
     }
 }
 

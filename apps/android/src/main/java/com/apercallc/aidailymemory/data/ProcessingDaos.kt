@@ -32,6 +32,12 @@ interface MemoryItemDao {
 
     @Query("SELECT COUNT(*) FROM memory_item WHERE memory_day = :memoryDay AND kind = :kind AND dismissed_at_epoch_ms IS NULL")
     suspend fun countForDay(memoryDay: String, kind: String): Int
+
+    @Query("SELECT * FROM memory_item WHERE session_id = :sessionId AND dismissed_at_epoch_ms IS NULL ORDER BY kind, extracted_at_epoch_ms")
+    suspend fun forSession(sessionId: String): List<MemoryItemEntity>
+
+    @Query("SELECT * FROM memory_item WHERE memory_day = :memoryDay AND dismissed_at_epoch_ms IS NULL ORDER BY kind, extracted_at_epoch_ms")
+    suspend fun forDay(memoryDay: String): List<MemoryItemEntity>
 }
 
 @Dao

@@ -1,5 +1,7 @@
 package com.apercallc.aidailymemory.recording.processing
 
+import kotlinx.serialization.Serializable
+
 /**
  * The daily report contract — the unit of memory that the phone stores and optionally syncs to
  * a second brain (ADR-0020). This is the on-device equivalent of the backend's
@@ -14,6 +16,7 @@ package com.apercallc.aidailymemory.recording.processing
  * The report is built on-device after extraction completes for a session. It is the primary
  * thing the user sees in the daily timeline and the primary thing that syncs out.
  */
+@Serializable
 data class DailyReport(
     val memoryDay: String,
     val zoneId: String,
@@ -30,6 +33,7 @@ data class DailyReport(
  * One memory item in a daily report, with its evidence quote for verification.
  * The user can expand the summary to see the full transcript; this quote is the inline preview.
  */
+@Serializable
 data class ReportItem(
     val kind: String,
     val text: String,
@@ -48,6 +52,7 @@ data class ReportItem(
  * How much of the day was captured and processed. Honest coverage (ADR-0015): the report
  * distinguishes not recording, recording with no speech, speech not yet processed, and gaps.
  */
+@Serializable
 data class ReportCoverage(
     val recordedMs: Long,
     val speechMs: Long,
@@ -59,6 +64,7 @@ data class ReportCoverage(
 /**
  * A named gap in the day's coverage (paused, quiet time, asleep, or speech over plan limit).
  */
+@Serializable
 data class CoverageGap(
     val kind: String,
     val startEpochMs: Long,

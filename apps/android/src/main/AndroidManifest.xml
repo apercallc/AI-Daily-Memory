@@ -42,6 +42,18 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- On-device processing job (ADR-0020): transcribes + extracts while charging. -->
+        <service
+            android:name=".processing.ProcessingJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Sync job (ADR-0020): pushes memory to user's second brain on Wi-Fi + charging. -->
+        <service
+            android:name=".processing.SyncJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Serves the downloaded update APK to the system installer (app-private cache only). -->
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -98,6 +110,12 @@
         <!-- Clip uploads while charging on unmetered networks (ADR-0015). System-bound only. -->
         <service
             android:name=".upload.UploadJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Second-brain sync while charging on unmetered networks (ADR-0020). System-bound only. -->
+        <service
+            android:name=".processing.SyncJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

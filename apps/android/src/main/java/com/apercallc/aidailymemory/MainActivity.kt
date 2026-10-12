@@ -5,10 +5,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import com.apercallc.aidailymemory.service.RecordingService
 import com.apercallc.aidailymemory.ui.AppRoot
 import com.apercallc.aidailymemory.ui.CaptureViewModel
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
+import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import com.apercallc.aidailymemory.update.UpdateViewModel
@@ -28,6 +31,10 @@ class MainActivity : ComponentActivity() {
         SessionsViewModel.Factory(container)
     }
 
+    private val memoryViewModel: MemoryViewModel by viewModels {
+        MemoryViewModelFactory(container)
+    }
+
     private val settingsViewModel: SettingsViewModel by viewModels {
         SettingsViewModel.Factory(container)
     }
@@ -45,6 +52,7 @@ class MainActivity : ComponentActivity() {
                 AppRoot(
                     capture = viewModel,
                     sessions = { sessionsViewModel },
+                    memory = { memoryViewModel },
                     settings = { settingsViewModel },
                     updates = { updateViewModel },
                     permissions = container.permissions,
@@ -52,4 +60,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+class MemoryViewModelFactory(
+    private val container: AppContainer,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = MemoryViewModel(container) as T
 }

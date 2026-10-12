@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
@@ -18,6 +19,12 @@ import com.apercallc.aidailymemory.net.LinkStore
 import com.apercallc.aidailymemory.upload.ClipUploader
 import com.apercallc.aidailymemory.upload.DeliveryReceiver
 import com.apercallc.aidailymemory.upload.UploadScheduler
+import com.apercallc.aidailymemory.processing.ProcessingPipeline
+import com.apercallc.aidailymemory.processing.ProcessingScheduler
+import com.apercallc.aidailymemory.processing.StubTranscriptionProvider
+import com.apercallc.aidailymemory.processing.StubExtractionProvider
+import com.apercallc.aidailymemory.processing.ApiKeyTranscriptionProvider
+import com.apercallc.aidailymemory.processing.ApiKeyExtractionProvider
 import com.apercallc.aidailymemory.capture.AudioCaptureEngine
 import com.apercallc.aidailymemory.capture.CaptureHealthTracker
 import com.apercallc.aidailymemory.capture.CaptureOverview
@@ -35,6 +42,7 @@ import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
 import com.apercallc.aidailymemory.schedule.RhythmRunner
 import com.apercallc.aidailymemory.schedule.SessionRegistry
 import com.apercallc.aidailymemory.settings.SettingsStore
+import com.apercallc.aidailymemory.settings.ProcessingSettings
 import com.apercallc.aidailymemory.update.UpdateChecker
 import com.apercallc.aidailymemory.update.UpdateClient
 import com.apercallc.aidailymemory.data.CaptureDatabase
@@ -43,6 +51,8 @@ import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.platform.StorageMonitor
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.processing.SyncManager
+import com.apercallc.aidailymemory.processing.SyncScheduler
 import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.CaptureSignal
 import com.apercallc.aidailymemory.recording.RecordingState
@@ -99,9 +109,16 @@ class AppContainer(context: Context) {
     val database: CaptureDatabase by lazy { CaptureDatabase.open(app) }
     val clock = DeviceClock(app.contentResolver)
     val ids = UuidV7Generator()
+    /** Stable per-app-signing-key device ID for sync payloads (Settings.Secure.ANDROID_ID). */
+    @Suppress("HardwareIds")
+    val deviceId: String = Settings.Secure.getString(app.contentResolver, Settings.Secure.ANDROID_ID)
+        ?: "unknown"
     val permissions = Permissions(app)
     val settings = SettingsStore(
         app.getSharedPreferences(SettingsStore.FILE_NAME, Context.MODE_PRIVATE),
+    )
+    val processingSettings = ProcessingSettings(
+        app.getSharedPreferences(ProcessingSettings.FILE_NAME, Context.MODE_PRIVATE),
     )
     private val stopDecisionPreferences by lazy {
         app.getSharedPreferences(STOP_DECISION_PREFERENCES, Context.MODE_PRIVATE)
@@ -338,6 +355,60 @@ class AppContainer(context: Context) {
     val accountApi: AccountApi get() = backend
 
     val uploadScheduler = UploadScheduler(app)
+
+    /** Second-brain sync (ADR-0020); runs only when sync is enabled and configured. */
+    val syncScheduler = SyncScheduler(app)
+    val syncManager by lazy {
+        SyncManager(
+            database = database,
+            settings = processingSettings,
+            deviceId = deviceId,
+        )
+    }
+
+    /** On-device processing (ADR-0020); transcribes + extracts while charging. */
+    val processingScheduler = ProcessingScheduler(app)
+    val processingPipeline by lazy {
+        val tp = when (processingSettings.transcriptionProvider.value) {
+            ProcessingSettings.PROVIDER_USER_API -> {
+                val url = processingSettings.transcriptionApiUrl
+                val key = processingSettings.transcriptionApiKey
+                if (url != null && key != null) {
+                    ApiKeyTranscriptionProvider(url, key, "user-model")
+                } else {
+                    StubTranscriptionProvider()
+                }
+            }
+            else -> StubTranscriptionProvider()
+        }
+        val ep = when (processingSettings.extractionProvider.value) {
+            ProcessingSettings.PROVIDER_USER_API -> {
+                val url = processingSettings.extractionApiUrl
+                val key = processingSettings.extractionApiKey
+                val model = processingSettings.extractionModel
+                if (url != null && key != null && model != null) {
+                    ApiKeyExtractionProvider(url, key, model)
+                } else {
+                    StubExtractionProvider()
+                }
+            }
+            else -> StubExtractionProvider()
+        }
+        ProcessingPipeline(
+            segments = segments,
+            segmentDao = database.segments(),
+            speechDao = database.speech(),
+            clipDao = database.clips(),
+            memoryItemDao = database.memoryItems(),
+            dailyReportDao = database.dailyReports(),
+            localTranscriptDao = database.localTranscripts(),
+            processingStateDao = database.processingState(),
+            transcriptionProvider = tp,
+            extractionProvider = ep,
+            settings = processingSettings,
+            ids = ids,
+        )
+    }
 
     /** Self-update (GitHub Releases): checked once per app open, installed on user tap. */
     val updates: UpdateChecker by lazy { UpdateChecker(UpdateClient()) }

@@ -99,6 +99,7 @@ fun AiDailyMemoryApp(
     updates: UpdateViewModel,
     permissions: Permissions,
     onOpenSessions: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -167,6 +168,7 @@ fun AiDailyMemoryApp(
             context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         },
         onOpenSessions = onOpenSessions,
+        onOpenMemory = onOpenMemory,
         onOpenSettings = onOpenSettings,
     )
 
@@ -299,6 +301,7 @@ fun CaptureScreen(
     onBatterySettings: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenSessions: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
@@ -371,6 +374,10 @@ fun CaptureScreen(
                     modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
                     onClick = onOpenSessions,
                 ) { Text(stringResource(R.string.nav_sessions)) }
+                TextButton(
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
+                    onClick = onOpenMemory,
+                ) { Text(stringResource(R.string.nav_memory)) }
                 TextButton(
                     modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
                     onClick = onOpenSettings,

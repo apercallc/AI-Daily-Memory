@@ -230,6 +230,26 @@ class SegmentStore(
     }
 
     /**
+     * Deletes a single segment's audio files after on-device transcription (ADR-0020). Unlike
+     * [deleteSessionAudio], this has no safety checks — the caller (ProcessingPipeline) already
+     * knows the session is completed and the transcript is stored. The segment state transitions
+     * to DELETED so retention never re-touches it.
+     */
+    suspend fun deleteSegmentAudio(entity: SegmentEntity) {
+        val result = lifecycle.reduce(entity.toSegment(), SegmentEvent.UserDelete)
+        when (result) {
+            is SegmentTransition.Applied -> {
+                deleteSegmentFiles(entity)
+                dao.update(entity.withSegment(result.segment))
+            }
+            is SegmentTransition.Ignored -> deleteSegmentFiles(entity)
+            is SegmentTransition.Rejected -> {
+                // Already deleted — nothing to do.
+            }
+        }
+    }
+
+    /**
      * Every clip of this segment has its transcript stored on this phone (ADR-0014): the audio
      * has served its purpose, and the retention setting may now delete it after the recovery
      * window. The segment's own checksum is what the acknowledgement is recorded against.
