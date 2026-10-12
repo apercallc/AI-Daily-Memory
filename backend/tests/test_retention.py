@@ -175,6 +175,47 @@ async def test_the_database_clock_is_the_default(database: Database, db: Engine)
     assert row(db, abandoned) == ("failed", "upload_abandoned")
 
 
+async def test_failed_delayed_prefix_purge_is_retained_for_retry(
+    database: Database,
+    db: Engine,
+) -> None:
+    account_id = uuid.uuid4()
+    key = f"users/{account_id}/audio/late-put.aac"
+    store = FakeObjectStore()
+    store.put(key, b"late upload")
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pending_account_object_deletions (account_id, purge_after) "
+                "VALUES (:account_id, :purge_after)"
+            ),
+            {"account_id": account_id, "purge_after": NOW - timedelta(seconds=1)},
+        )
+
+    class DownPrefixStore(FakeObjectStore):
+        async def delete_prefix(self, prefix: str) -> int:
+            raise RuntimeError("store unavailable")
+
+    failing_store = DownPrefixStore(objects=store.objects.copy())
+    result = await sweep(
+        database.sessions,
+        failing_store,
+        url_ttl_seconds=TTL,
+        now=NOW,
+    )
+
+    assert result.errors == 1
+    assert result.account_prefixes_purged == 0
+    assert key in failing_store.objects
+    with db.connect() as connection:
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM pending_account_object_deletions"),
+            )
+            == 1
+        )
+
+
 async def test_nothing_to_sweep_is_quiet(database: Database) -> None:
     result = await sweep(database.sessions, FakeObjectStore(), url_ttl_seconds=TTL, now=NOW)
 

@@ -6,17 +6,21 @@ DELETE /v1/me              delete this account and its server-side data
 DELETE /v1/tokens/current  revoke the calling token (Disconnect; AGENTS rule 4)
 """
 
+from datetime import timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require, revoke_token
+from app.config import MAX_UPLOAD_URL_TTL_SECONDS
 from app.db import get_session
-from app.db.models import AudioUpload, User
+from app.db.models import AudioUpload, DeletedAccountObjectPurge, User
 from app.errors import ErrorResponse
+from app.retention import PENDING_GRACE
 from app.storage import DeleteIncompleteError, ObjectStore, user_prefix
 
 router = APIRouter(tags=["account"])
@@ -91,6 +95,18 @@ async def delete_me(request: Request, session: Session, device: Device) -> Respo
                 status_code=503,
                 detail="Account data deletion is incomplete. Retry later.",
             ) from error
+
+    if store is not None:
+        purge = pg_insert(DeletedAccountObjectPurge).values(
+            account_id=device.user_id,
+            purge_after=func.now() + timedelta(seconds=MAX_UPLOAD_URL_TTL_SECONDS) + PENDING_GRACE,
+        )
+        await session.execute(
+            purge.on_conflict_do_update(
+                index_elements=[DeletedAccountObjectPurge.account_id],
+                set_={"purge_after": purge.excluded.purge_after},
+            ),
+        )
 
     await session.execute(delete(User).where(User.id == device.user_id))
     await session.commit()

@@ -21,8 +21,8 @@ from typing import Final
 from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import AudioUpload, ProcessingJob, SealedDelivery
-from app.storage import ObjectStore
+from app.db.models import AudioUpload, DeletedAccountObjectPurge, ProcessingJob, SealedDelivery
+from app.storage import ObjectStore, user_prefix
 
 logger = logging.getLogger("app.retention")
 
@@ -41,6 +41,7 @@ class SweepResult:
     errors: int
     deliveries_expired: int = 0
     metadata_purged: int = 0
+    account_prefixes_purged: int = 0
 
 
 async def sweep(
@@ -112,15 +113,22 @@ async def sweep(
             )
             counts[code] += int(getattr(moved, "rowcount", 0))
         await session.commit()
+    account_prefixes_purged, account_purge_errors = await _purge_deleted_account_prefixes(
+        sessions,
+        store,
+        clock,
+        limit=limit,
+    )
     result = SweepResult(
         abandoned=counts["upload_abandoned"],
         dead=counts["transcription_failed"],
         expired=counts["retention_expired"],
-        errors=errors,
+        errors=errors + account_purge_errors,
         deliveries_expired=await _expire_deliveries(sessions, clock),
         metadata_purged=await _purge_finished(sessions, clock),
+        account_prefixes_purged=account_prefixes_purged,
     )
-    if rows or result.deliveries_expired:
+    if rows or result.deliveries_expired or result.account_prefixes_purged:
         logger.info(
             "retention_sweep",
             extra={
@@ -129,9 +137,43 @@ async def sweep(
                 "expired": result.expired,
                 "errors": result.errors,
                 "deliveries_expired": result.deliveries_expired,
+                "account_prefixes_purged": result.account_prefixes_purged,
             },
         )
     return result
+
+
+async def _purge_deleted_account_prefixes(
+    sessions: async_sessionmaker[AsyncSession],
+    store: ObjectStore,
+    clock: datetime | ColumnElement[datetime],
+    *,
+    limit: int,
+) -> tuple[int, int]:
+    """Retry prefix deletion after every presigned PUT URL for the deleted account has expired."""
+    purged = 0
+    errors = 0
+    async with sessions() as session:
+        rows = (
+            await session.scalars(
+                select(DeletedAccountObjectPurge)
+                .where(DeletedAccountObjectPurge.purge_after <= clock)
+                .order_by(DeletedAccountObjectPurge.purge_after)
+                .limit(limit)
+                .with_for_update(skip_locked=True),
+            )
+        ).all()
+        for row in rows:
+            try:
+                await store.delete_prefix(user_prefix(row.account_id))
+            except Exception:
+                logger.exception("account_deletion_object_purge_failed")
+                errors += 1
+                continue
+            await session.delete(row)
+            purged += 1
+        await session.commit()
+    return purged, errors
 
 
 async def _expire_deliveries(

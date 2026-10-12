@@ -4,6 +4,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+MAX_UPLOAD_URL_TTL_SECONDS = 3_600
+
 
 class Settings(BaseSettings):
     """Process configuration. Values come from the environment only; see `.env.example`."""
@@ -32,7 +34,11 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_access_key_id: SecretStr | None = None
     s3_secret_access_key: SecretStr | None = None
-    upload_url_ttl_seconds: int = Field(default=900, ge=60, le=3_600)
+    upload_url_ttl_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=MAX_UPLOAD_URL_TTL_SECONDS,
+    )
 
     # Upload limits; plan-based entitlements replace the daily quota in Phase 10.
     max_upload_bytes: int = Field(default=20 * 1_048_576, gt=0)

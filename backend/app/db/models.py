@@ -86,6 +86,19 @@ class User(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class DeletedAccountObjectPurge(Base):
+    """A minimal deletion tombstone that outlives the user's cascading database delete.
+
+    The worker removes objects written through any still-valid presigned URL after its TTL.
+    """
+
+    __tablename__ = "pending_account_object_deletions"
+    __table_args__ = (Index("ix_pending_account_object_deletions_purge_after", "purge_after"),)
+
+    account_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    purge_after: Mapped[datetime]
+
+
 class Credential(Base):
     """Email + password for self-service sign-in (TODO Phase 1 "Account sign-in flow"). Kept
     separate from `User` so an admin-provisioned, password-less account stays representable."""

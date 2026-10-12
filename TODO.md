@@ -593,7 +593,10 @@ Goal: prove reliable Android capture before building AI infrastructure.
   - [ ] Export delivered via scoped, short-TTL signed URL, never inline in the API response
   - [ ] Export requests rate-limited and idempotent; re-request within TTL does not regenerate
   - [ ] Export is excluded from third-party/API-key scopes by default (self-service only)
-- [ ] Account deletion, including cleanup after already-issued signed PUT URLs expire
+- [x] Serialize account deletion with upload reservations and enqueue a delayed object-prefix purge
+  after issued signed PUT URLs expire plus a grace period (backend implementation + PostgreSQL tests).
+- [ ] Deploy the worker that consumes the deletion outbox and verify late-upload cleanup against
+  production object storage.
 - [ ] Child/minor policy before broad release
 - [ ] Abuse review for covert recording scenarios
 

@@ -41,12 +41,15 @@ Sentry's US region. Before sending, SDK hooks remove error messages, request URL
 bodies, account identifiers, user/device contexts, breadcrumbs, local variables, and
 source-code context. The mobile apps also disable screenshots, view hierarchies, tracing,
 profiling, replay, and automatic session tracking. The website fetches its error-only SDK
-from Sentry's CDN; the SDK request exposes the visitor's network address to that CDN, while
-an error event is sent only when a JavaScript error occurs. The authentication throttle keeps
-request client addresses in bounded process memory only; it does not log them or store them
-in the database. In production, it uses Railway's edge-overwritten `X-Real-IP` only when
-explicitly enabled. Private-network requests are not covered by that trust rule. These
-reports do not include audio, transcripts, or memory content.
+from Sentry's CDN; the SDK request exposes the visitor's network address to that CDN. Sentry
+may also attach the sender's IP address to a received error event even when the SDK removes
+user context. The Sentry project-level setting to prevent IP-address storage has not been
+verified, so web error reporting is not privacy-verified for production. An error event is
+sent only when a JavaScript error occurs. The authentication throttle keeps request client
+addresses in bounded process memory only; it does not log them or store them in the database.
+In production, it uses Railway's edge-overwritten `X-Real-IP` only when explicitly enabled.
+Private-network requests are not covered by that trust rule. These reports do not include
+audio, transcripts, or memory content.
 
 ## What we must NOT claim
 

@@ -1,8 +1,8 @@
 import asyncio
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event
 from typing import Any
 
@@ -10,7 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from app.config import MAX_UPLOAD_URL_TTL_SECONDS
+from app.db import Database
 from app.main import create_app
+from app.retention import PENDING_GRACE, sweep
 from app.storage import DeleteIncompleteError, PresignedPut
 from tests.conftest import FakeObjectStore, make_account, settings_for
 
@@ -20,6 +23,13 @@ pytestmark = pytest.mark.anyio
 class IncompleteObjectStore(FakeObjectStore):
     async def delete_prefix(self, prefix: str) -> int:
         raise DeleteIncompleteError(1, frozenset({"AccessDenied"}))
+
+
+@pytest.fixture
+async def database(database_url: str) -> AsyncIterator[Database]:
+    database = Database(database_url)
+    yield database
+    await database.dispose()
 
 
 @pytest.fixture
@@ -72,6 +82,52 @@ def test_account_deletion_removes_storage_and_cascades_database_rows(
             )
             == 1
         )
+
+
+async def test_account_deletion_schedules_and_executes_late_upload_purge(
+    db: Engine,
+    database_url: str,
+    store: FakeObjectStore,
+    database: Database,
+) -> None:
+    account = make_account(db)
+    deletion_started = datetime.now(UTC)
+
+    with TestClient(
+        create_app(
+            settings_for(database_url, upload_url_ttl_seconds=60),
+            object_store=store,
+        ),
+    ) as client:
+        response = client.delete("/v1/me", headers=account.headers)
+
+    assert response.status_code == 204
+    late_key = f"users/{account.user_id}/audio/late-put.aac"
+    store.put(late_key, b"uploaded with a still-valid URL")
+    with db.connect() as connection:
+        purge_after = connection.scalar(
+            text(
+                "SELECT purge_after FROM pending_account_object_deletions WHERE account_id = :user"
+            ),
+            {"user": account.user_id},
+        )
+    assert purge_after is not None
+    assert (
+        purge_after
+        >= deletion_started + timedelta(seconds=MAX_UPLOAD_URL_TTL_SECONDS) + PENDING_GRACE
+    )
+
+    result = await sweep(
+        database.sessions,
+        store,
+        url_ttl_seconds=MAX_UPLOAD_URL_TTL_SECONDS,
+        now=purge_after + timedelta(seconds=1),
+    )
+
+    assert result.account_prefixes_purged == 1
+    assert late_key not in store.objects
+    with db.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM pending_account_object_deletions")) == 0
 
 
 def test_incomplete_storage_deletion_keeps_account_for_retry(

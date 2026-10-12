@@ -43,7 +43,7 @@ audio accepted with nowhere to go.
 
 The API/worker Sentry SDKs are disabled until `SENTRY_DSN` is set. Configure the backend project DSN on the API service and on the worker if it is deployed separately. Set `APP_ENV=production` and `SENTRY_RELEASE` (or allow Railway's commit SHA fallback) in each process. Keep the backend DSN in the platform's protected environment variables. Android and Wear use the public client DSN for their shared mobile project; the website uses its public web DSN and integrity-pinned browser SDK.
 
-All three integrations discard event messages, request details, user context, breadcrumbs, and source locals before sending. They capture errors only, with tracing, replay, screenshots, and view hierarchy disabled. Before enabling production reporting, send a synthetic error from a staging build and confirm the Sentry event has the expected environment and release and contains no message, request, user, or source context.
+All three integrations discard event messages, request details, user context, breadcrumbs, and source locals before sending. They capture errors only, with tracing, replay, screenshots, and view hierarchy disabled. Sentry may enrich received events with the sender's IP address even when the SDK scrubs user context. Enable the Sentry project's "Prevent Storing of IP Addresses" setting, then verify a staging probe contains no IP, before enabling production reporting. The project setting is not currently verified.
 
 ## Public authentication limits
 
@@ -51,7 +51,7 @@ All three integrations discard event messages, request details, user context, br
 
 ## Account deletion and outstanding storage race
 
-`DELETE /v1/me` removes the user's object-storage prefix before the database cascade and returns 503 if object deletion is incomplete. A signed PUT URL remains usable until it expires, so an upload already in flight can recreate an object after the prefix sweep. Keep upload URL TTL short and configure the bucket lifecycle backstop. A durable post-expiry prefix cleanup is still required before claiming complete account deletion under concurrent uploads; the current single-process worker is not deployed in production.
+`DELETE /v1/me` removes the user's object-storage prefix, writes a minimal durable tombstone, then deletes the account and its cascading database rows. After the maximum PUT URL TTL plus a one-hour grace period, the worker deletes that user's prefix again, covering an object written after the immediate sweep. Failed late-prefix deletes remain queued for retry. The production worker service is not currently deployed, so this cleanup is implemented and tested but not operational in production until that service is deployed.
 
 ## Health and sanity checks
 
@@ -64,4 +64,4 @@ Watch for in logs (event names, no payloads): `upload_completed`, `job_dead_lett
 
 ## Remaining production gates
 
-DB roles, backup-and-restore drills, deletion cleanup after signed URL expiry, a shared auth limiter before horizontal scaling, a production Sentry DSN and event-ingestion check, and phone/watch accessibility and endurance runs still require operator or physical-device verification. Do not treat a private-test deployment as hardened.
+DB roles, backup-and-restore drills, production worker deployment and late-upload cleanup verification, a shared auth limiter before horizontal scaling, Sentry IP-address prevention plus a production DSN and event-ingestion check, and phone/watch accessibility and endurance runs still require operator or physical-device verification. Do not treat a private-test deployment as hardened.

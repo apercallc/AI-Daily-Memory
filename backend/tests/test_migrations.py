@@ -57,7 +57,8 @@ def test_migrations_downgrade_to_empty_and_upgrade_again(database_url: str) -> N
 def test_every_user_owned_table_cascades_from_users(migrated: Engine) -> None:
     inspector = inspect(migrated)
     for table in Base.metadata.sorted_tables:
-        if table.name == "users":
+        if table.name in {"users", "pending_account_object_deletions"}:
+            # This outbox must outlive the user row so delayed storage cleanup can finish.
             continue
         assert "user_id" in table.columns, table.name
         user_fks = [
