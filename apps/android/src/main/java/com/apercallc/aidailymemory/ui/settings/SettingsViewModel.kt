@@ -110,6 +110,67 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 
+    // --- Processing & sync settings (ADR-0020) ---
+
+    private val pSettings = container.processingSettings
+
+    val processing: StateFlow<ProcessingUi> = combine(
+        pSettings.processingEnabled,
+        pSettings.transcriptionProvider,
+        pSettings.deleteAudioAfterTranscription,
+    ) { enabled, tp, deleteAudio ->
+        ProcessingUi(
+            enabled = enabled,
+            transcriptionProvider = tp,
+            transcriptionApiKey = pSettings.transcriptionApiKey ?: "",
+            transcriptionApiUrl = pSettings.transcriptionApiUrl ?: "",
+            extractionProvider = pSettings.extractionProvider.value,
+            extractionApiKey = pSettings.extractionApiKey ?: "",
+            extractionApiUrl = pSettings.extractionApiUrl ?: "",
+            extractionModel = pSettings.extractionModel ?: "",
+            deleteAudioAfterTranscription = deleteAudio,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
+
+    val sync: StateFlow<SyncUi> = combine(
+        pSettings.syncEnabled,
+        pSettings.syncIncludeTranscripts,
+    ) { enabled, includeTranscripts ->
+        SyncUi(
+            enabled = enabled,
+            url = pSettings.syncUrl ?: "",
+            token = pSettings.syncToken ?: "",
+            includeTranscripts = includeTranscripts,
+            lastSyncEpochMs = pSettings.lastSyncEpochMs,
+            lastSyncFailed = false,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncUi())
+
+    val processingActions = ProcessingActions(
+        onEnableChange = pSettings::setProcessingEnabled,
+        onTranscriptionProviderChange = pSettings::setTranscriptionProvider,
+        onTranscriptionApiKeyChange = { v -> pSettings.transcriptionApiKey = v },
+        onTranscriptionApiUrlChange = { v -> pSettings.transcriptionApiUrl = v },
+        onExtractionProviderChange = pSettings::setExtractionProvider,
+        onExtractionApiKeyChange = { v -> pSettings.extractionApiKey = v },
+        onExtractionApiUrlChange = { v -> pSettings.extractionApiUrl = v },
+        onExtractionModelChange = { v -> pSettings.extractionModel = v },
+        onDeleteAudioChange = pSettings::setDeleteAudioAfterTranscription,
+    )
+
+    val syncActions = SyncActions(
+        onEnableChange = pSettings::setSyncEnabled,
+        onUrlChange = { v -> pSettings.syncUrl = v },
+        onTokenChange = { v -> pSettings.syncToken = v },
+        onIncludeTranscriptsChange = pSettings::setSyncIncludeTranscripts,
+    )
+
+    /** Schedules processing + sync when settings change to enabled. */
+    fun onProcessingSettingsChanged() {
+        if (pSettings.processingEnabled.value) container.processingScheduler.schedule()
+        if (pSettings.syncEnabled.value) container.syncScheduler.schedule()
+    }
+
     /** Switches storage mode server-side; audio already uploaded is unaffected (ADR-0014). */
     fun changeStorageMode(mode: String) {
         val link = container.links.link.value ?: return

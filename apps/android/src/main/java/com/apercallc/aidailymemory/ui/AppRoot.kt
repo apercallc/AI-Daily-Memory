@@ -160,6 +160,8 @@ private fun SettingsRoute(
     val retention by viewModel.retention.collectAsStateWithLifecycle()
     val account by viewModel.account.collectAsStateWithLifecycle()
     val update by updates.state.collectAsStateWithLifecycle()
+    val processing by viewModel.processing.collectAsStateWithLifecycle()
+    val sync by viewModel.sync.collectAsStateWithLifecycle()
     // Recomputed on a slow tick too, so "Next: …" never shows a time that already passed.
     val next by produceState<NextChange?>(initialValue = null, rhythm) {
         while (true) {
@@ -190,6 +192,10 @@ private fun SettingsRoute(
             onUpdateCheck = updates::check,
             onUpdateDownload = updates::download,
             onUpdateInstall = updates::install,
+            processing = processing,
+            processingActions = viewModel.processingActions,
+            sync = sync,
+            syncActions = viewModel.syncActions,
             modifier = modifier,
         )
     }

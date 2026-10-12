@@ -566,10 +566,14 @@ class AppContainer(context: Context) {
             controller.awaitRestored()
             applyRetention()
             speechScheduler.schedule()
+            if (processingSettings.processingEnabled.value) processingScheduler.schedule()
+            if (processingSettings.syncEnabled.value) syncScheduler.schedule()
             controller.state.collect {
                 if (it.status == RecordingStatus.COMPLETED) {
                     applyRetention()
                     speechScheduler.schedule()
+                    if (processingSettings.processingEnabled.value) processingScheduler.schedule()
+                    if (processingSettings.syncEnabled.value) syncScheduler.schedule()
                 }
             }
         }

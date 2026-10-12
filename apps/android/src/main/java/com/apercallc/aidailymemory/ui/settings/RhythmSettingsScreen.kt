@@ -87,6 +87,10 @@ fun RhythmSettingsScreen(
     onUpdateCheck: () -> Unit = {},
     onUpdateDownload: () -> Unit = {},
     onUpdateInstall: () -> Unit = {},
+    processing: ProcessingUi = ProcessingUi(),
+    processingActions: ProcessingActions = ProcessingActions(),
+    sync: SyncUi = SyncUi(),
+    syncActions: SyncActions = SyncActions(),
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(
@@ -118,6 +122,16 @@ fun RhythmSettingsScreen(
             onCheck = onUpdateCheck,
             onDownload = onUpdateDownload,
             onInstall = onUpdateInstall,
+        )
+        ProcessingSettingsSection(
+            processing = processing,
+            actions = processingActions,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        SyncSettingsSection(
+            sync = sync,
+            actions = syncActions,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
