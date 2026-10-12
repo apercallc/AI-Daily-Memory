@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Daily Memory — Your day, remembered.</title>
-<meta name="description" content="A personal memory project for Android and Wear OS, in private device testing. Explore the approach, privacy choices, and current availability.">
+<meta name="description" content="A personal memory project for Android and Wear OS. Free direct APK download with in-app updates — explore the approach and privacy choices.">
 <meta name="theme-color" content="#f6f1e7">
 <meta property="og:title" content="AI Daily Memory — Your day, remembered.">
-<meta property="og:description" content="A personal memory project for Android and Wear OS. In private device testing; no public download yet.">
+<meta property="og:description" content="A personal memory project for Android and Wear OS. Free direct APK download — the app updates itself in-app.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23211b14'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23c8361f'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="fonts/fonts.css">
@@ -394,6 +394,31 @@ main:focus { outline: none; }
   .faq-list summary { gap: 12px; }
   .faq-list details .answer { padding-left: 4px; }
 }
+
+/* Download feedback toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(16px);
+  background: #1c1a17;
+  color: var(--paper);
+  font-size: .9375rem;
+  line-height: 1.45;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 241, 231, 0.18);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  max-width: min(34rem, calc(100vw - 32px));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms ease;
+  z-index: 60;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
 </style>
 </head>
 <body>
@@ -406,7 +431,7 @@ main:focus { outline: none; }
       <a href="#what">The idea</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
-      <a class="btn btn-red" href="#availability">Availability</a>
+      <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download</a>
     </nav>
   </div>
 </header>
@@ -420,9 +445,9 @@ main:focus { outline: none; }
         <p class="kicker fade-1">In development · Android + Wear OS</p>
         <h1 class="fade-1">Your day, <em>remembered.</em></h1>
         <p class="lede fade-2">A place to return to the conversations that matter. We’re building a personal memory system that connects decisions and commitments to the moments they came from.</p>
-        <p class="promise fade-3">Currently in private device testing. No public download yet.</p>
+        <p class="promise fade-3">Free direct download for Android. The app updates itself — no store needed.</p>
         <div class="hero-ctas fade-3">
-          <a class="btn btn-red" href="#availability">Check availability</a>
+          <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download for Android</a>
           <a class="btn btn-ghost" href="#what">Explore the idea</a>
         </div>
       </div>
@@ -673,16 +698,16 @@ main:focus { outline: none; }
     <div class="wrap">
       <p class="sec-label">06 · Get it</p>
       <h2 class="sec-head">Android first. Straight from the source.</h2>
-      <p class="sec-body">The phone app will ship as an APK from GitHub Releases — automatic releases and update notifications are coming. It's not on Google Play yet, and we're not rushing it there.</p>
+      <p class="sec-body">The phone app ships as a signed APK straight from GitHub Releases. Tap below to start the download — and once installed, the app checks for updates by itself every time it opens. It's not on Google Play yet, and we're not rushing it there.</p>
       <div class="dl-card">
         <div>
           <h3>AI Daily Memory for Android</h3>
-          <p>Private device testing is underway now. Watch the repository to get the release announcement the day the first APK drops.</p>
-          <p class="dl-meta">Android 10+ · Wear OS companion · APK via GitHub Releases</p>
+          <p>Tap Download, open the file when it lands, and allow installs from your browser when Android asks. Updates after that happen inside the app.</p>
+          <p class="dl-meta">Android 10+ · Wear OS companion · Signed APK via GitHub Releases</p>
         </div>
         <div class="dl-actions">
-          <a class="btn btn-red" href="https://github.com/apercallc/AI-Daily-Memory/subscription" target="_blank" rel="noopener">Watch on GitHub</a>
-          <a class="btn btn-ghost" href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener" aria-disabled="true">Releases — coming soon</a>
+          <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download APK</a>
+          <a class="btn btn-ghost" href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener">All releases &amp; watch</a>
         </div>
       </div>
       <p class="dev-note">Developer? The whole system is on GitHub: <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">apercallc/AI-Daily-Memory</a> — clone it and run <code>./gradlew :apps:android:assembleDebug</code>. There's also a read-only MCP server in <code>interfaces/mcp</code> for wiring your memory into your own agents.</p>
@@ -764,5 +789,24 @@ main:focus { outline: none; }
   </div>
 </footer>
 
+<div class="toast" id="dl-toast" role="status" aria-live="polite"></div>
+<script>
+(function () {
+  "use strict";
+  var toast = document.getElementById("dl-toast");
+  var hideTimer = null;
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { toast.classList.remove("show"); }, 6000);
+  }
+  document.addEventListener("click", function (event) {
+    var link = event.target && event.target.closest ? event.target.closest(".js-apk-dl") : null;
+    if (!link) return;
+    showToast("Download starting — AI Daily Memory for Android (APK). On Android, open it when it lands to install.");
+  });
+})();
+</script>
 </body>
 </html>
