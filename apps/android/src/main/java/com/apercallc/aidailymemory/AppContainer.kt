@@ -64,6 +64,7 @@ import com.apercallc.aidailymemory.recording.storage.StoragePolicy
 import com.apercallc.aidailymemory.service.CaptureNotifications
 import com.apercallc.aidailymemory.service.WatchCommandBridge
 import com.apercallc.aidailymemory.service.WatchDataLayerTransport
+import com.apercallc.aidailymemory.service.WatchRevisionWatermark
 import com.apercallc.aidailymemory.service.WatchSnapshotFactory
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -100,6 +101,21 @@ class AppContainer(context: Context) {
     )
     private val stopDecisionPreferences by lazy {
         app.getSharedPreferences(STOP_DECISION_PREFERENCES, Context.MODE_PRIVATE)
+    }
+
+    /**
+     * Highest revision ever handed to a watch, persisted so a journal that went backwards
+     * (deleting the newest session) is still detectable after the next process start.
+     *
+     * Loaded on first access (whoever that is): [currentWatchSnapshot] is called from the
+     * service's main thread as well as from process-start coroutines, and a reader that ran
+     * before a separate `load()` coroutine would see a null watermark and publish a non-reset
+     * snapshot the watch discards.
+     */
+    private val watchRevisions: WatchRevisionWatermark by lazy {
+        WatchRevisionWatermark(
+            app.getSharedPreferences(WATCH_WATERMARK_PREFERENCES, Context.MODE_PRIVATE),
+        ).apply { load() }
     }
 
     fun handledStopDecisionSessionId(): String? =
@@ -233,6 +249,9 @@ class AppContainer(context: Context) {
             evaluator = CaptureHealthEvaluator(HealthPolicy.Provisional),
             elapsedRealtimeMs = clock::elapsedRealtimeMs,
             scope = appScope,
+            // With no account connected there is nothing to upload to: hours of local audio
+            // are the design, not a backlog to warn about (private device-test milestone).
+            expectUploads = { links.isLinked },
         )
     }
 
@@ -400,14 +419,16 @@ class AppContainer(context: Context) {
         return WatchSnapshotFactory.from(
             state = state,
             captureHealth = health.overview.value?.health?.level?.name ?: "UNKNOWN",
-            reset = state.revision == 0L,
+            reset = WatchSnapshotFactory.needsReset(state.revision, watchRevisions.lastPublished),
         )
     }
 
     fun publishCurrentWatchSnapshot() {
         appScope.launch {
             controller.awaitRestored()
-            WatchDataLayerTransport.publishSnapshot(app, currentWatchSnapshot())
+            val snapshot = currentWatchSnapshot()
+            WatchDataLayerTransport.publishSnapshot(app, snapshot)
+            watchRevisions.published(snapshot.revision)
         }
     }
 
@@ -418,17 +439,23 @@ class AppContainer(context: Context) {
     fun restoreOnProcessStart() {
         controller.restore()
         appScope.launch {
-            val restored = controller.awaitRestored()
-            val reset = restored.restored.state.revision == 0L
+            // The watermark loads on first access (see `watchRevisions`): whichever path
+            // touches it first — this collector, or `currentWatchSnapshot` from the service —
+            // a journal that restored *below* what a watch has already seen (the newest
+            // session was deleted) is flagged reset and the watch accepts it (ADR-0008).
+            controller.awaitRestored()
             combine(controller.state, health.overview) { state, overview ->
                 WatchSnapshotFactory.from(
                     state = state,
                     captureHealth = overview?.health?.level?.name ?: "UNKNOWN",
-                    reset = reset && state.revision == 0L,
+                    reset = WatchSnapshotFactory.needsReset(state.revision, watchRevisions.lastPublished),
                 )
             }
                 .distinctUntilChanged()
-                .collect { snapshot -> WatchDataLayerTransport.publishSnapshot(app, snapshot) }
+                .collect { snapshot ->
+                    WatchDataLayerTransport.publishSnapshot(app, snapshot)
+                    watchRevisions.published(snapshot.revision)
+                }
         }
         // Keystore work off the main thread; the settings screen shows it once loaded.
         appScope.launch { links.ensureLoaded() }
@@ -482,6 +509,7 @@ class AppContainer(context: Context) {
         const val TAG = "AppContainer"
         const val STOP_DECISION_PREFERENCES = "stop_decisions"
         const val STOP_DECISION_SESSION_KEY = "handled_session_id"
+        const val WATCH_WATERMARK_PREFERENCES = "watch_revision_watermark"
 
         /** Acknowledged audio stays on the phone this long before retention may delete it. */
         const val RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000L

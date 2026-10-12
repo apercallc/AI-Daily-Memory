@@ -6,7 +6,9 @@ import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class WearControlReducerTest {
     @Test
@@ -83,6 +85,20 @@ class WearControlReducerTest {
             WearControlReducer.availableCommands(snapshot(3, "PAUSED")),
         )
         assertEquals(emptyList(), WearControlReducer.availableCommands(snapshot(4, "STOPPING")))
+    }
+
+    @Test
+    fun `a way forward exists while disconnected and until the first snapshot arrives`() {
+        // Fresh watch, phone not checked yet.
+        assertTrue(WearControlReducer.needsPhoneCheck(WearControlState()))
+        // First run dead-end fix: connected, but no phone-acknowledged state yet.
+        assertTrue(WearControlReducer.needsPhoneCheck(WearControlState(phoneConnected = true)))
+        // With an acknowledged snapshot the controls take over instead.
+        assertFalse(
+            WearControlReducer.needsPhoneCheck(
+                WearControlState(phoneConnected = true, snapshot = snapshot(1, "IDLE")),
+            ),
+        )
     }
 
     private fun snapshot(revision: Long, status: String) = PhoneRecordingSnapshot(

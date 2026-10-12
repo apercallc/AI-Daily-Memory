@@ -39,12 +39,19 @@ sealed interface RestoredState {
 object JournalCodec {
     private const val SCHEDULED_PAUSE_CAUSE = "command:ScheduledPause"
 
+    /**
+     * A scheduled pause applied during an interruption (see the reducer): quiet time must not
+     * let its end reopen the microphone by itself, so this pause is *not* a schedule pause.
+     * It needs its own cause, because [restore] derives `pausedBySchedule` from the cause.
+     */
+    private const val SCHEDULED_PAUSE_AFTER_INTERRUPT_CAUSE = "command:ScheduledPauseAfterInterrupt"
+
     fun encode(transition: Transition.Applied): JournalRecord = JournalRecord(
         revision = transition.state.revision,
         status = transition.state.status.name,
         sessionId = transition.state.sessionId?.value,
         problem = transition.state.problem?.name,
-        cause = causeOf(transition.event),
+        cause = causeOf(transition.event, transition.state),
     )
 
     /** @param latest the record with the highest revision, or null for a fresh install. */
@@ -78,20 +85,29 @@ object JournalCodec {
         )
     }
 
-    fun causeOf(event: RecordingEvent): String = when (event) {
-        is RecordingCommand.Start -> "command:Start"
-        RecordingCommand.Pause -> "command:Pause"
-        RecordingCommand.Resume -> "command:Resume"
-        RecordingCommand.Stop -> "command:Stop"
-        RecordingCommand.Reset -> "command:Reset"
-        RecordingCommand.ScheduledPause -> SCHEDULED_PAUSE_CAUSE
-        RecordingCommand.ScheduledResume -> "command:ScheduledResume"
-        RecordingCommand.ScheduledStop -> "command:ScheduledStop"
-        is CaptureSignal.Started -> "signal:Started"
-        is CaptureSignal.StartFailed -> "signal:StartFailed"
-        is CaptureSignal.Interrupted -> "signal:Interrupted"
-        is CaptureSignal.RecoveryStarted -> "signal:RecoveryStarted"
-        is CaptureSignal.Recovered -> "signal:Recovered"
-        is CaptureSignal.Stopped -> "signal:Stopped"
+    fun causeOf(event: RecordingEvent, appliedState: RecordingState? = null): String {
+        // The same event can mean two things: a ScheduledPause applied during an interruption
+        // becomes an ordinary user-resumable pause, unlike one from an active capture state.
+        if (event == RecordingCommand.ScheduledPause && appliedState != null &&
+            !appliedState.pausedBySchedule
+        ) {
+            return SCHEDULED_PAUSE_AFTER_INTERRUPT_CAUSE
+        }
+        return when (event) {
+            is RecordingCommand.Start -> "command:Start"
+            RecordingCommand.Pause -> "command:Pause"
+            RecordingCommand.Resume -> "command:Resume"
+            RecordingCommand.Stop -> "command:Stop"
+            RecordingCommand.Reset -> "command:Reset"
+            RecordingCommand.ScheduledPause -> SCHEDULED_PAUSE_CAUSE
+            RecordingCommand.ScheduledResume -> "command:ScheduledResume"
+            RecordingCommand.ScheduledStop -> "command:ScheduledStop"
+            is CaptureSignal.Started -> "signal:Started"
+            is CaptureSignal.StartFailed -> "signal:StartFailed"
+            is CaptureSignal.Interrupted -> "signal:Interrupted"
+            is CaptureSignal.RecoveryStarted -> "signal:RecoveryStarted"
+            is CaptureSignal.Recovered -> "signal:Recovered"
+            is CaptureSignal.Stopped -> "signal:Stopped"
+        }
     }
 }

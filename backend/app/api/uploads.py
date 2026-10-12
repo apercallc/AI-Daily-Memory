@@ -293,10 +293,18 @@ async def complete_upload(
         .returning(AudioUpload.id),
     )
     if moved is None:
-        # Someone else moved it first (a concurrent complete): report what it is now.
+        # Someone else moved it first (a concurrent complete), or the phone lost this id and a
+        # concurrent re-create replaced the row. `refresh` would raise on the replaced case,
+        # so re-select; a row that is gone entirely is an honest 404.
         await session.rollback()
-        await session.refresh(row)
-        return UploadStatus(upload_id=row.id, state=_state(row))
+        current = await session.scalar(
+            select(AudioUpload)
+            .where(AudioUpload.id == upload_id, AudioUpload.user_id == principal.user_id)
+            .execution_options(populate_existing=True),
+        )
+        if current is None:
+            raise HTTPException(status_code=404, detail="Upload not found.")
+        return UploadStatus(upload_id=current.id, state=_state(current))
     await enqueue(
         session,
         user_id=row.user_id,

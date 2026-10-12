@@ -13,6 +13,7 @@ that cite `transcript_segments` by id.
 
 import logging
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal, Protocol
@@ -38,6 +39,11 @@ from app.transcription import JobError
 logger = logging.getLogger("app.extraction")
 
 _MAX_ITEM_TEXT = 280
+# The report contract bounds these too (app/reports/daily.py); a provider value outside the
+# bound dead-letters here instead of crashing the insert (or the report build) later.
+_MAX_QUOTE = 280
+_MAX_NAME = 80
+_MAX_EVIDENCE_PER_ITEM = 5
 _MAX_ITEMS_PER_SESSION = 50
 
 
@@ -82,7 +88,10 @@ class ExtractionProvider(Protocol):
 
 def validate(result: ExtractionResult, segment_count: int) -> None:
     """Rejects output that would corrupt evidence or overflow storage: everything must point at
-    a real segment, and every kind-specific field must be present exactly where it's required."""
+    a real segment, every kind-specific field must be present exactly where it's required, and
+    every bounded field must fit both its column and the report contract (ADR-0019: "every
+    field of the response is schema- and range-checked" — a violation dead-letters the job
+    rather than crashing a later insert or report build)."""
     if len(result.items) > _MAX_ITEMS_PER_SESSION:
         raise JobError("invalid_extraction_result", retryable=False)
     for item in result.items:
@@ -90,12 +99,21 @@ def validate(result: ExtractionResult, segment_count: int) -> None:
             raise JobError("invalid_extraction_result", retryable=False)
         if not (1 <= len(item.text) <= _MAX_ITEM_TEXT):
             raise JobError("invalid_extraction_result", retryable=False)
-        if not item.evidence_segment_indices or any(
-            i < 0 or i >= segment_count for i in item.evidence_segment_indices
+        if item.quote is not None and len(item.quote) > _MAX_QUOTE:
+            raise JobError("invalid_extraction_result", retryable=False)
+        if item.owner is not None and (item.kind != "action" or len(item.owner) > _MAX_NAME):
+            raise JobError("invalid_extraction_result", retryable=False)
+        evidence = item.evidence_segment_indices
+        if (
+            not evidence
+            or len(evidence) > _MAX_EVIDENCE_PER_ITEM
+            or any(i < 0 or i >= segment_count for i in evidence)
         ):
             raise JobError("invalid_extraction_result", retryable=False)
         if item.kind == "commitment" and (
-            item.direction not in COMMITMENT_DIRECTIONS or not item.counterpart
+            item.direction not in COMMITMENT_DIRECTIONS
+            or not item.counterpart
+            or len(item.counterpart) > _MAX_NAME
         ):
             raise JobError("invalid_extraction_result", retryable=False)
         if item.kind != "commitment" and (item.direction is not None or item.counterpart):
@@ -137,23 +155,35 @@ class ExtractHandler:
                         AudioUpload.session_id == session_id,
                         AudioUpload.active_transcript_id.is_not(None),
                     )
-                    .order_by(AudioUpload.offset_ms),
+                    # Clip order, then span order (ADR-0019). captured_at breaks offset ties
+                    # (two segments can both start at offset 0), so a provider's evidence
+                    # indices mean the same lines on every run.
+                    .order_by(AudioUpload.offset_ms, AudioUpload.captured_at),
                 )
             ).all()
             if not rows:
                 raise JobError("nothing_transcribed_yet", retryable=False)
 
+            # One query for every clip's segments: fetching them per clip was an N+1 (a
+            # session's line numbering walked the transcript table once per clip).
+            spans_by_transcript: dict[uuid.UUID, list[TranscriptSegment]] = defaultdict(list)
+            for span in (
+                await db.scalars(
+                    select(TranscriptSegment)
+                    .where(
+                        TranscriptSegment.transcript_id.in_(
+                            [transcript.id for _, transcript in rows]
+                        )
+                    )
+                    .order_by(TranscriptSegment.transcript_id, TranscriptSegment.start_ms)
+                )
+            ).all():
+                spans_by_transcript[span.transcript_id].append(span)
+
             segments: list[tuple[uuid.UUID, datetime]] = []  # (segment_id, absolute start time)
             lines: list[Numbered] = []
             for upload, transcript in rows:
-                spans = (
-                    await db.scalars(
-                        select(TranscriptSegment)
-                        .where(TranscriptSegment.transcript_id == transcript.id)
-                        .order_by(TranscriptSegment.start_ms),
-                    )
-                ).all()
-                for span in spans:
+                for span in spans_by_transcript[transcript.id]:
                     at = upload.captured_at + timedelta(milliseconds=span.start_ms)
                     segments.append((span.id, at))
                     lines.append(Numbered(index=len(lines), speaker=span.speaker, text=span.text))

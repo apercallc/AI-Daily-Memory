@@ -177,6 +177,19 @@ def test_validate_accepts_well_formed_items() -> None:
     validate(ExtractionResult(items=(action(), commitment())), segment_count=1)
 
 
+def test_validate_accepts_values_at_the_contract_bounds() -> None:
+    # Every bounded field at exactly its cap (the report contract's own limits).
+    validate(
+        ExtractionResult(
+            items=(
+                action(quote="q" * 280, owner="n" * 80, evidence_segment_indices=(0, 0, 0, 0, 0)),
+                commitment(counterpart="n" * 80, quote="q" * 280),
+            )
+        ),
+        segment_count=1,
+    )
+
+
 @pytest.mark.parametrize(
     "item",
     [
@@ -184,12 +197,18 @@ def test_validate_accepts_well_formed_items() -> None:
         action(confidence="sure"),
         action(text=""),
         action(text="x" * 281),
+        action(quote="q" * 281),
+        action(owner="n" * 81),
+        action(kind="idea", owner="me"),  # owner belongs to action items only
         action(evidence_segment_indices=()),
         action(evidence_segment_indices=(5,)),
         action(evidence_segment_indices=(-1,)),
+        action(evidence_segment_indices=(0, 0, 0, 0, 0, 0)),  # the contract allows five
         commitment(direction=None),
         commitment(counterpart=None),
+        commitment(counterpart="n" * 81),
         commitment(direction="sideways"),
+        commitment(quote="q" * 281),
         action(direction="i_owe"),  # a non-commitment must not carry commitment fields
         action(counterpart="Sam"),
     ],

@@ -266,8 +266,10 @@ Goal: prove reliable Android capture before building AI infrastructure.
 - [x] User-scoped schema from the first migration: user_id on every user-owned table, cascading FKs (ADR-0009)
 - [ ] Backend is the only DB client; Supabase Data API disabled, RLS deny-all backstop (ADR-0009)
 - [ ] Separate DB roles: migration owner, app (DML only), read-only
-- [x] Bearer-token auth: hashed, scoped, revocable device tokens and API keys (sign-in flow still owed)
-- [ ] Add auth once multi-user testing starts (account sign-in; tokens issued after it)
+- [x] Bearer-token auth: hashed, scoped, revocable device tokens and API keys
+- [x] Add auth once multi-user testing starts (account sign-in: POST /v1/signup + /v1/login,
+  argon2 credentials with lockout; the Android app still expects a pasted token — no
+  in-app signup form yet)
 - [x] Add per-user authorization checks
 - [ ] Add rate limiting before public exposure
 - [x] Add payload/body size limits (declared and streamed; 413)

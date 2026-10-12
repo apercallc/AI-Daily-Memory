@@ -4,7 +4,7 @@ All routes are under `/v1` (see [VERSIONING.md](VERSIONING.md)). Every response 
 shared envelope: `{"error": {"code": "...", "message": "...", "request_id": "..."}}`. Clients
 branch on `error.code`, never on the message.
 
-Authentication is `Authorization: Bearer adm_...`. Tokens are stored only as SHA-256 hashes.
+Authentication is `Authorization: Bearer <token>`. Tokens are stored only as SHA-256 hashes.
 Unknown, revoked, and expired tokens all get the same `401`.
 
 ## Health
@@ -13,15 +13,24 @@ Unknown, revoked, and expired tokens all get the same `401`.
 | --- | --- | --- | --- |
 | GET | `/v1/health` | none | Liveness |
 
+## Sign-in (self-service)
+
+| Method | Path | Scope | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/signup` | none | Email + password → device token (shown exactly once) |
+| POST | `/v1/login` | none | Email + password → device token |
+
+Argon2id hashing; repeated wrong passwords lock the credential for 15 minutes
+(`account_locked`). The operator CLI (`python -m app.admin`) remains available for
+operator-issued tokens.
+
 ## Account (device tokens)
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/me` | `upload:write` | Verify a token; returns `storage_mode` and scopes |
+| PUT | `/v1/me` | `upload:write` | Switch storage mode (`phone_only` / `reports_cloud` / `full_cloud`; affects future uploads only) |
 | DELETE | `/v1/tokens/current` | `upload:write` | Revoke the calling token (Disconnect). Also revokes its device key and deletes transcripts sealed to it |
-
-Tokens are issued by `python -m app.admin` until account sign-in exists
-(`create-account`, `issue-device-token`, `list-tokens`, `revoke-token`).
 
 ## Uploads (speech clips, ADR-0015)
 
@@ -57,8 +66,20 @@ Sealing: HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-256-GCM; c
 with `v: 1`, the upload and segment ids, `offset_ms`, provider/model/language, and `spans`
 (`start_ms`, `end_ms`, `text`, `speaker`, `confidence`).
 
+## Reports (ADR-0019)
+
+| Method | Path | Scope | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/reports/{memory_day}` | `memory:read` | The daily report contract v1; `404 report_not_found` if nothing was generated; `403 cloud_storage_required` for phone-only accounts |
+
+Reports only exist for cloud storage modes (a full_cloud account is the only one with
+server-side plaintext to extract from, ADR-0014/0019). `memory:read` is also the scope of
+API keys (`kind=api`, read-only by default, `app/auth.py`); the read-only MCP server
+([interfaces/mcp](../../interfaces/mcp)) uses this endpoint exclusively.
+
 ## Coming later
 
-Recall (`ask_memory`, `search_memory`, `get_day`, `get_daily_report`, ...) for API keys and
-MCP arrives in Phase 5, through the Memory Query Service only, and only for server-held data
-(reports-in-cloud or full-cloud storage modes).
+Recall (`ask_memory`, `search_memory`, ...) for API keys and MCP arrives with Phase 4's
+query engine, through the Memory Query Service only, and only for server-held data
+(reports-in-cloud or full-cloud storage modes). API-key management UI and per-key rate
+limits are Phase 5/10 items.

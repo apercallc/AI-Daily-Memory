@@ -13,6 +13,7 @@ lifecycle rule (docs/operations/OBJECT_STORAGE.md) is the last-resort backstop.
 
 import logging
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
@@ -83,6 +84,9 @@ async def sweep(
 
     counts = {"upload_abandoned": 0, "transcription_failed": 0, "retention_expired": 0}
     errors = 0
+    # Rows are marked only after their object is deleted, and only if still in the state the
+    # candidate query saw; a row someone else resolved mid-sweep keeps their outcome.
+    to_mark: dict[tuple[str, str], list[uuid.UUID]] = defaultdict(list)
     for upload_id, key, state in rows:
         code = (
             "upload_abandoned"
@@ -98,8 +102,16 @@ async def sweep(
             logger.exception("retention_delete_failed", extra={"upload_id": str(upload_id)})
             errors += 1
             continue
-        if await _mark_failed(sessions, upload_id, state, code):
-            counts[code] += 1
+        to_mark[(state, code)].append(upload_id)
+    async with sessions() as session:
+        for (state, code), ids in to_mark.items():
+            moved = await session.execute(
+                update(AudioUpload)
+                .where(AudioUpload.id.in_(ids), AudioUpload.state == state)
+                .values(state="failed", failure_code=code)
+            )
+            counts[code] += int(getattr(moved, "rowcount", 0))
+        await session.commit()
     result = SweepResult(
         abandoned=counts["upload_abandoned"],
         dead=counts["transcription_failed"],
@@ -120,23 +132,6 @@ async def sweep(
             },
         )
     return result
-
-
-async def _mark_failed(
-    sessions: async_sessionmaker[AsyncSession],
-    upload_id: uuid.UUID,
-    state: str,
-    code: str,
-) -> bool:
-    async with sessions() as session:
-        moved = await session.scalar(
-            update(AudioUpload)
-            .where(AudioUpload.id == upload_id, AudioUpload.state == state)
-            .values(state="failed", failure_code=code)
-            .returning(AudioUpload.id),
-        )
-        await session.commit()
-    return moved is not None
 
 
 async def _expire_deliveries(

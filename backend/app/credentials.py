@@ -9,6 +9,7 @@ wrong passwords in a row lock the credential for 15 minutes; the lock clears on 
 correct password.
 """
 
+import asyncio
 import re
 import uuid
 from dataclasses import dataclass
@@ -77,12 +78,14 @@ async def sign_up(
     user = User(id=uuid.uuid4())
     session.add(user)
     await session.flush()
+    # Argon2 is deliberately slow (~100 ms); it is CPU work, so keep it off the event loop.
+    password_hash = await asyncio.to_thread(_hasher.hash, password)
     session.add(
         Credential(
             id=uuid.uuid4(),
             user_id=user.id,
             email=normalized,
-            password_hash=_hasher.hash(password),
+            password_hash=password_hash,
         ),
     )
     try:
@@ -105,13 +108,13 @@ async def log_in(session: AsyncSession, *, email: str, password: str, device_nam
     now = datetime.now(UTC)
     if credential is None:
         # Pay the same hashing cost as a real check so response timing doesn't reveal whether
-        # the email is registered.
-        _hasher.hash(password)
+        # the email is registered. Off the event loop like the real check below.
+        await asyncio.to_thread(_hasher.hash, password)
         raise LoginError("invalid_credentials")
     if credential.locked_until is not None and credential.locked_until > now:
         raise LoginError("account_locked")
     try:
-        _hasher.verify(credential.password_hash, password)
+        await asyncio.to_thread(_hasher.verify, credential.password_hash, password)
     except (VerificationError, InvalidHashError) as e:
         credential.failed_attempts += 1
         if credential.failed_attempts >= _MAX_FAILED_ATTEMPTS:

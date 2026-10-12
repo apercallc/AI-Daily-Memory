@@ -368,14 +368,19 @@ private fun WearHome(
             }
         }
 
-        if (!state.phoneConnected) {
+        if (WearControlReducer.needsPhoneCheck(state)) {
+            if (state.phoneConnected) {
+                // Connected, but the phone's acknowledged state has not arrived; a retry
+                // re-requests the snapshot instead of leaving the watch a dead end.
+                Text("Controls stay unavailable until the phone shares its state.")
+            }
             Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("Check phone")
             }
-        } else if (snapshot == null) {
-            Text("Controls stay unavailable until the phone shares its state.")
         } else {
-            WearControlReducer.availableCommands(snapshot).forEach { command ->
+            // needsPhoneCheck false means the watch holds a phone-acknowledged snapshot.
+            val confirmed = checkNotNull(snapshot)
+            WearControlReducer.availableCommands(confirmed).forEach { command ->
                 Button(
                     onClick = { onCommand(command) },
                     enabled = enabled,

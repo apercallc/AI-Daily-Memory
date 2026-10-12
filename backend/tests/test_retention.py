@@ -115,6 +115,38 @@ async def test_every_lingering_clip_is_deleted_then_marked_with_why(
     assert len(store.objects) == 2
 
 
+async def test_a_row_resolved_mid_sweep_keeps_that_outcome(database: Database, db: Engine) -> None:
+    """A candidate whose state changes between selection and marking (here: a concurrent
+    complete) keeps the other writer's outcome — the mark is fenced on the state the
+    candidate query saw, and the sweep must not count it as its own."""
+
+    class CompletedMidDelete(FakeObjectStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.key: str | None = None
+
+        async def delete(self, key: str) -> None:
+            if key == self.key:
+                with db.connect() as connection:
+                    connection.execute(
+                        text("UPDATE audio_uploads SET state = 'received' WHERE id = :id"),
+                        {"id": upload_id},
+                    )
+                    connection.commit()
+            await super().delete(key)
+
+    store = CompletedMidDelete()
+    stale = NOW - timedelta(seconds=TTL) - PENDING_GRACE - timedelta(minutes=1)
+    upload_id, key = upload(db, store, state="pending", created_at=stale)
+    store.key = key
+
+    result = await sweep(database.sessions, store, url_ttl_seconds=TTL, now=NOW)
+
+    assert result.abandoned == 0
+    assert result.errors == 0
+    assert row(db, upload_id) == ("received", None)
+
+
 async def test_a_failed_delete_leaves_the_row_for_the_next_sweep(
     database: Database,
     db: Engine,

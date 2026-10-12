@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Daily Memory — Your day, remembered.</title>
+<meta name="description" content="AI Daily Memory records your day on the Android phone you already carry and hands it back as a searchable, evidence-backed record of what was decided, promised, and worth keeping.">
+<meta name="theme-color" content="#f6f1e7">
+<meta property="og:title" content="AI Daily Memory — Your day, remembered.">
+<meta property="og:description" content="Record your day on the phone you already carry. Get back decisions, action items, and commitments — each with the timestamp it came from.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23211b14'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23c8361f'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f6f1e7;
+  --paper-deep: #efe8d9;
+  --card: #fbf8f1;
+  --ink: #211b14;
+  --ink-soft: #57503f;
+  --ink-faint: #8a8170;
+  --rule: #d9cfba;
+  --red: #c8361f;
+  --red-deep: #9c2612;
+  --slate: #3d5a6c;
+  --star: #b98a1c;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --display: "Fraunces", Georgia, serif;
+  --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --max: 1120px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17.5px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.028'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 3;
+}
+::selection { background: var(--red); color: var(--paper); }
+a { color: inherit; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 28px; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar .wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 62px;
+}
+.wordmark {
+  font-family: var(--display); font-weight: 620; font-size: 19px;
+  letter-spacing: -0.01em; text-decoration: none;
+  display: flex; align-items: center; gap: 9px;
+}
+.wordmark .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); flex: none; }
+.topnav { display: flex; align-items: center; gap: 26px; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.topnav a { text-decoration: none; color: var(--ink-soft); }
+.topnav a:hover { color: var(--red); }
+.btn {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  text-decoration: none; text-align: center;
+  white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 22px; border-radius: 999px;
+  border: 1.5px solid var(--ink); cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-solid { background: var(--ink); color: var(--paper); }
+.btn-solid:hover { background: var(--red); border-color: var(--red); }
+.btn-ghost { background: transparent; color: var(--ink); }
+.btn-ghost:hover { border-color: var(--red); color: var(--red); }
+.btn-red { background: var(--red); border-color: var(--red); color: #fff; }
+.btn-red:hover { background: var(--red-deep); border-color: var(--red-deep); }
+.btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+.btn[aria-disabled="true"]:hover { transform: none; background: var(--ink); border-color: var(--ink); }
+
+/* ---------- hero ---------- */
+.hero { padding: 96px 0 84px; position: relative; overflow: hidden; }
+.hero .wrap { position: relative; }
+.kicker {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 30px;
+}
+.kicker .pulse {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--red); flex: none;
+  animation: pulse 2.2s ease-out infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(200, 54, 31, 0.45); }
+  70% { box-shadow: 0 0 0 11px rgba(200, 54, 31, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(200, 54, 31, 0); }
+}
+.hero h1 {
+  font-family: var(--display);
+  font-size: clamp(52px, 8.4vw, 108px);
+  font-weight: 560;
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  max-width: 13ch;
+}
+.hero h1 em { font-style: italic; font-weight: 480; color: var(--red); }
+.hero .lede {
+  margin-top: 34px; max-width: 58ch; font-size: clamp(18px, 2.2vw, 21px);
+  color: var(--ink-soft);
+}
+.hero .promise {
+  margin-top: 26px; font-family: var(--display); font-style: italic;
+  font-size: 20px; color: var(--ink);
+}
+.hero .promise .dot-inline { color: var(--red); font-style: normal; animation: pulse 2.2s ease-out infinite; border-radius: 50%; }
+.hero-ctas { margin-top: 44px; display: flex; gap: 16px; flex-wrap: wrap; }
+
+/* hero side card: capture health, mirrors the app's real capture-health panel */
+.hero-grid { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 60px; align-items: center; }
+.health-card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 18px;
+  box-shadow: 0 24px 60px -30px rgba(33, 27, 20, 0.45), 0 1px 0 rgba(255,255,255,0.6) inset;
+  padding: 26px 26px 20px; max-width: 360px; justify-self: end;
+  animation: rise 700ms cubic-bezier(.2,.7,.2,1) 120ms both;
+}
+.health-card .hc-head { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: 14px; border-bottom: 1px dashed var(--rule); }
+.health-card .hc-head .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); animation: pulse 2.2s ease-out infinite; }
+.health-card .hc-head .time { margin-left: auto; color: var(--ink-faint); }
+.health-card .hc-time { font-family: var(--display); font-size: 46px; font-weight: 560; letter-spacing: -0.02em; margin: 12px 0 2px; }
+.health-card .hc-state { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--red); margin-bottom: 16px; }
+.hc-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14.5px; padding: 7.5px 0; border-top: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
+.hc-row .k { color: var(--ink-faint); }
+.hc-row .v { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.hc-row .v.ok { color: var(--slate); }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.hero .fade-1, .hero .fade-2, .hero .fade-3 { animation: rise 700ms cubic-bezier(.2,.7,.2,1) both; }
+.hero .fade-2 { animation-delay: 90ms; }
+.hero .fade-3 { animation-delay: 180ms; }
+
+/* ---------- sections ---------- */
+section { padding: 104px 0; }
+section + section { border-top: 1px solid var(--rule); }
+.sec-label {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--red);
+  display: flex; align-items: center; gap: 12px; margin-bottom: 22px;
+}
+.sec-label::after { content: ""; height: 1px; flex: 1; background: var(--rule); }
+.sec-head {
+  font-family: var(--display); font-weight: 560;
+  font-size: clamp(30px, 4.4vw, 46px); line-height: 1.08; letter-spacing: -0.015em;
+  max-width: 22ch;
+}
+.sec-body { margin-top: 20px; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+/* what it is — three movements + timeline */
+.movements { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 54px; }
+.movement { border-top: 2px solid var(--ink); padding-top: 18px; }
+.movement .num { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; color: var(--red); }
+.movement h3 { font-family: var(--display); font-size: 24px; font-weight: 600; margin: 8px 0 8px; }
+.movement p { color: var(--ink-soft); font-size: 16px; }
+
+.day-mock {
+  margin-top: 64px; background: var(--card);
+  border: 1px solid var(--rule); border-radius: 20px;
+  box-shadow: 0 30px 70px -38px rgba(33, 27, 20, 0.5);
+  overflow: hidden;
+  display: grid; grid-template-columns: 0.9fr 1.4fr;
+}
+.day-mock .dm-side {
+  background: var(--paper-deep); border-right: 1px solid var(--rule);
+  padding: 34px 30px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.day-mock .dm-side h4 { font-family: var(--display); font-size: 21px; font-weight: 640; }
+.day-mock .dm-side p { font-size: 15px; color: var(--ink-soft); }
+.day-mock .dm-side .dm-meta { margin-top: auto; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); line-height: 2; }
+.day-mock .dm-lines { padding: 30px 34px 34px; position: relative; }
+.dm-lines .ruler {
+  position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 33px, color-mix(in srgb, var(--slate) 12%, transparent) 33px, color-mix(in srgb, var(--slate) 12%, transparent) 34px);
+}
+.dm-day { font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em; color: var(--ink-faint); margin-bottom: 18px; }
+.dm-entry { position: relative; padding: 0 0 26px 22px; border-left: 1px solid var(--rule); }
+.dm-entry:last-child { padding-bottom: 0; }
+.dm-entry::before {
+  content: ""; position: absolute; left: -4.5px; top: 7px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ink);
+}
+.dm-entry.hot::before { background: var(--red); box-shadow: 0 0 0 4px rgba(200,54,31,0.14); }
+.dm-time { font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); }
+.dm-title { font-family: var(--display); font-size: 19px; font-weight: 600; margin-top: 1px; }
+.dm-item { margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--rule); }
+.dm-item .tag { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate); }
+.dm-item .tag.decision { color: var(--red); }
+.dm-item .tag.star { color: var(--star); }
+.dm-item .text { font-size: 16.5px; }
+.dm-item .text::before { content: "“"; color: var(--ink-faint); }
+.dm-item .text::after { content: "”"; color: var(--ink-faint); }
+
+/* personas */
+.personas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 54px; }
+.persona {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 16px;
+  padding: 26px 24px 22px; display: flex; flex-direction: column; gap: 12px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.persona:hover { transform: translateY(-4px); box-shadow: 0 22px 44px -26px rgba(33,27,20,0.4); border-color: color-mix(in srgb, var(--red) 40%, var(--rule)); }
+.persona .glyph { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--red); text-transform: uppercase; }
+.persona h3 { font-family: var(--display); font-size: 21px; font-weight: 620; line-height: 1.15; }
+.persona p { font-size: 15.5px; color: var(--ink-soft); flex: 1; }
+.persona .q { font-style: italic; font-size: 15px; color: var(--ink); padding-top: 12px; border-top: 1px dashed var(--rule); }
+.persona .q::before { content: "“"; color: var(--red); }
+.persona .q::after { content: "”"; color: var(--red); }
+
+/* how it works — flow */
+.flow { margin-top: 54px; display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr; align-items: stretch; gap: 0; }
+.flow-node {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 16px;
+  padding: 26px 26px 22px; display: flex; flex-direction: column;
+}
+.flow-node .fn-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 12px; }
+.flow-node h3 { font-family: var(--display); font-size: 22px; font-weight: 620; margin-bottom: 10px; }
+.flow-node ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.flow-node li { font-size: 15px; color: var(--ink-soft); padding-left: 18px; position: relative; }
+.flow-node li::before { content: "—"; position: absolute; left: 0; color: var(--red); }
+.flow-node.phone .fn-label { color: var(--red); }
+.flow-node.cloud .fn-label { color: var(--slate); }
+.flow-node.cloud { border-style: dashed; }
+.flow-node.report .fn-label { color: var(--star); }
+.flow-arrow { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-family: var(--mono); font-size: 20px; }
+.flow-note {
+  margin-top: 26px; padding: 18px 22px; border-left: 3px solid var(--red);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  font-size: 16.5px; color: var(--ink-soft); max-width: 80ch;
+}
+.flow-note strong { color: var(--ink); font-weight: 640; }
+
+/* privacy */
+.priv-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 64px; margin-top: 54px; align-items: start; }
+.priv-list { display: flex; flex-direction: column; }
+.priv-item { display: grid; grid-template-columns: 56px 1fr; gap: 18px; padding: 22px 0; border-top: 1px solid var(--rule); }
+.priv-item .n { font-family: var(--display); font-size: 30px; font-weight: 560; color: var(--red); line-height: 1; }
+.priv-item h3 { font-family: var(--display); font-size: 20px; font-weight: 620; margin-bottom: 6px; }
+.priv-item p { font-size: 16px; color: var(--ink-soft); }
+.modes { background: var(--ink); color: var(--paper); border-radius: 20px; padding: 34px 32px 28px; position: sticky; top: 92px; }
+.modes h3 { font-family: var(--display); font-size: 24px; font-weight: 620; margin-bottom: 6px; }
+.modes .modes-sub { font-size: 14.5px; color: #b8ae99; margin-bottom: 24px; font-style: italic; }
+.mode { padding: 18px 0; border-top: 1px solid rgba(246, 241, 231, 0.16); }
+.mode .mode-name { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.14em; text-transform: uppercase; }
+.mode .mode-name .badge { font-size: 10px; letter-spacing: 0.1em; color: #f6f1e7; background: var(--red); border-radius: 4px; padding: 2px 7px; }
+.mode p { margin-top: 8px; font-size: 15px; color: #cfc6b2; }
+.mode .leak { font-family: var(--mono); font-size: 12px; margin-top: 10px; color: #98d7a4; }
+.mode .leak.off-cloud { color: #f0b429; }
+
+/* status */
+.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 54px; }
+.status-col { border: 1px solid var(--rule); border-radius: 18px; background: var(--card); padding: 32px 30px; }
+.status-col.works { border-top: 3px solid var(--red); }
+.status-col.next { border-top: 3px solid var(--slate); }
+.status-col h3 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 20px; }
+.status-col.works h3 { color: var(--red); }
+.status-col.next h3 { color: var(--slate); }
+.status-col ul { list-style: none; display: flex; flex-direction: column; }
+.status-col li { padding: 10px 0 10px 26px; position: relative; font-size: 16px; color: var(--ink-soft); border-top: 1px dashed color-mix(in srgb, var(--rule) 60%, transparent); }
+.status-col li:first-child { border-top: none; }
+.status-col.works li::before { content: "●"; position: absolute; left: 0; color: var(--red); font-size: 11px; top: 14px; }
+.status-col.next li::before { content: "○"; position: absolute; left: 0; color: var(--slate); font-size: 13px; top: 13px; }
+.status-note { margin-top: 26px; font-size: 16px; color: var(--ink-soft); font-style: italic; max-width: 70ch; }
+
+/* download */
+.download { background: var(--ink); color: var(--paper); border-top: 1px solid var(--rule); }
+.download .sec-label { color: var(--red); }
+.download .sec-label::after { background: rgba(246, 241, 231, 0.18); }
+.download .sec-head { color: var(--paper); }
+.download .sec-body { color: #cfc6b2; }
+.dl-card {
+  margin-top: 54px; border: 1px solid rgba(246, 241, 231, 0.2); border-radius: 20px;
+  background: rgba(246, 241, 231, 0.05);
+  display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 44px; padding: 40px 40px; align-items: center;
+}
+.dl-card h3 { font-family: var(--display); font-size: 30px; font-weight: 620; margin-bottom: 12px; }
+.dl-card p { color: #cfc6b2; font-size: 16.5px; max-width: 52ch; }
+.dl-meta { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #98906f; margin-top: 18px; line-height: 2; }
+.dl-actions { display: flex; flex-direction: column; gap: 14px; }
+.dl-actions .btn { width: 100%; }
+.dl-actions .btn-ghost { color: var(--paper); border-color: rgba(246, 241, 231, 0.35); }
+.dl-actions .btn-ghost:hover { border-color: var(--red); color: #fff; }
+.dev-note { margin-top: 30px; font-size: 15px; color: #98906f; }
+.dev-note a { color: #cfc6b2; }
+
+/* faq */
+.faq-list { margin-top: 54px; max-width: 860px; }
+.faq-list details { border-top: 1px solid var(--rule); }
+.faq-list details:last-child { border-bottom: 1px solid var(--rule); }
+.faq-list summary {
+  cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 18px;
+  padding: 24px 4px; font-family: var(--display); font-size: 21px; font-weight: 600;
+  transition: color 150ms ease;
+}
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list summary:hover { color: var(--red); }
+.faq-list summary .qnum { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); letter-spacing: 0.1em; }
+.faq-list summary .plus { margin-left: auto; font-family: var(--mono); font-size: 18px; color: var(--red); transition: transform 200ms ease; }
+.faq-list details[open] summary .plus { transform: rotate(45deg); }
+.faq-list details .answer { padding: 0 4px 28px 44px; max-width: 68ch; color: var(--ink-soft); font-size: 16.5px; }
+.faq-list details .answer a { color: var(--red); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+/* footer */
+footer { background: var(--paper-deep); border-top: 1px solid var(--rule); padding: 56px 0 40px; }
+.foot-grid { display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap; align-items: flex-start; }
+.foot-brand .wordmark { font-size: 21px; margin-bottom: 12px; }
+.foot-brand p { max-width: 40ch; color: var(--ink-soft); font-size: 15px; }
+.foot-links { display: flex; gap: 56px; font-size: 15px; }
+.foot-links div { display: flex; flex-direction: column; gap: 8px; }
+.foot-links .fh { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+.foot-links a { color: var(--ink-soft); text-decoration: none; }
+.foot-links a:hover { color: var(--red); }
+.foot-legal { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; color: var(--ink-faint); }
+.foot-legal .rec { color: var(--red); }
+
+/* responsive */
+@media (max-width: 980px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 44px; }
+  .health-card { justify-self: start; }
+  .movements, .personas { grid-template-columns: 1fr 1fr; }
+  .day-mock { grid-template-columns: 1fr; }
+  .day-mock .dm-side { border-right: none; border-bottom: 1px solid var(--rule); }
+  .flow { grid-template-columns: 1fr; gap: 14px; }
+  .flow-arrow { transform: rotate(90deg); padding: 6px 0; }
+  .priv-grid { grid-template-columns: 1fr; gap: 40px; }
+  .modes { position: static; }
+  .status-grid { grid-template-columns: 1fr; }
+  .dl-card { grid-template-columns: 1fr; padding: 30px 24px; gap: 26px; }
+}
+@media (max-width: 640px) {
+  section { padding: 72px 0; }
+  .hero { padding: 64px 0 60px; }
+  .movements, .personas { grid-template-columns: 1fr; }
+  .topnav .hide-sm { display: none; }
+  .foot-links { gap: 32px; }
+}
+:focus-visible { outline: 2.5px solid var(--red); outline-offset: 3px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="wordmark" href="#top"><span class="dot" aria-hidden="true"></span>AI Daily Memory</a>
+    <nav class="topnav">
+      <a class="hide-sm" href="#what">What it is</a>
+      <a class="hide-sm" href="#who">Who it's for</a>
+      <a class="hide-sm" href="#privacy">Privacy</a>
+      <a class="hide-sm" href="#faq">FAQ</a>
+      <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-red" href="#get-it">Get the APK</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <div class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="kicker fade-1"><span class="pulse" aria-hidden="true"></span>Private device testing · Android + Wear OS</p>
+        <h1 class="fade-1">Your day, <em>remembered.</em></h1>
+        <p class="lede fade-2">AI Daily Memory records your day on the phone you already carry, then hands it back as a searchable, evidence-backed record of what was decided, promised, and worth keeping.</p>
+        <p class="promise fade-3">Start your day. Live normally. <span class="dot-inline">●</span> Later, remember what mattered.</p>
+        <div class="hero-ctas fade-3">
+          <a class="btn btn-red" href="#get-it">Get the APK</a>
+          <a class="btn btn-ghost" href="#what">See how it works</a>
+        </div>
+      </div>
+      <div class="health-card" aria-label="Example of the app's capture health panel">
+        <div class="hc-head"><span class="dot" aria-hidden="true"></span> Recording <span class="time">3h 42m</span></div>
+        <div class="hc-time">3:42:07</div>
+        <div class="hc-state">● Capture healthy</div>
+        <div class="hc-row"><span class="k">Last audio saved</span><span class="v">4 sec ago</span></div>
+        <div class="hc-row"><span class="k">Watch</span><span class="v ok">Connected</span></div>
+        <div class="hc-row"><span class="k">Only on this phone</span><span class="v">12 min</span></div>
+        <div class="hc-row"><span class="k">Local storage</span><span class="v ok">Good</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ WHAT IT IS ============ -->
+  <section id="what">
+    <div class="wrap">
+      <p class="sec-label">01 · What it is</p>
+      <h2 class="sec-head">A memory system, not a transcription app.</h2>
+      <p class="sec-body">Recording is the means. The product is recall you can trust: every decision, action item, and commitment it shows you carries a timestamp and a link back to the exact moment it came from.</p>
+
+      <div class="movements">
+        <div class="movement">
+          <span class="num">CAPTURE</span>
+          <h3>The phone remembers</h3>
+          <p>A foreground service records your day in short, encrypted segments — offline, crash-resistant, with an honest health panel that never claims capture is fine when it isn't.</p>
+        </div>
+        <div class="movement">
+          <span class="num">UNDERSTAND</span>
+          <h3>Speech becomes structure</h3>
+          <p>When you connect an account, speech is transcribed and lifted into decisions, actions, commitments, ideas, and questions — each citing its transcript evidence.</p>
+        </div>
+        <div class="movement">
+          <span class="num">REMEMBER</span>
+          <h3>The day comes back to you</h3>
+          <p>A daily report for your memory day: what was decided, what you took on, what others promised — with timestamps, so you can check any claim against the source.</p>
+        </div>
+      </div>
+
+      <div class="day-mock">
+        <div class="dm-side">
+          <h4>The daily report</h4>
+          <p>Built from structured memory and evidence — never a summary of a summary. Every item below would link back to the moment it was said.</p>
+          <div class="dm-meta">
+            Memory day: Tuesday<br>
+            Sleep schedule aware<br>
+            Delivered at wake time
+          </div>
+        </div>
+        <div class="dm-lines">
+          <div class="ruler" aria-hidden="true"></div>
+          <p class="dm-day">TUESDAY</p>
+          <div class="dm-entry">
+            <div class="dm-time">8:03 AM</div>
+            <div class="dm-title">Started the day</div>
+          </div>
+          <div class="dm-entry hot">
+            <div class="dm-time">8:42 AM</div>
+            <div class="dm-title">Daily standup</div>
+            <div class="dm-item"><span class="tag decision">Decision</span><div class="text">Use the new consumer implementation.</div></div>
+            <div class="dm-item"><span class="tag">Action</span><div class="text">Review failed messages.</div></div>
+            <div class="dm-item"><span class="tag star">★ Highlight</span><div class="text">Mid-launch, no new scope.</div></div>
+          </div>
+          <div class="dm-entry">
+            <div class="dm-time">11:16 AM</div>
+            <div class="dm-title">Conversation</div>
+            <div class="dm-item"><span class="tag">Idea</span><div class="text">Add a watch shortcut.</div></div>
+          </div>
+          <div class="dm-entry">
+            <div class="dm-time">1:04 PM</div>
+            <div class="dm-title">Resumed after lunch pause</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHO IT'S FOR ============ -->
+  <section id="who">
+    <div class="wrap">
+      <p class="sec-label">02 · Who it's for</p>
+      <h2 class="sec-head">For people whose work lives in conversations.</h2>
+      <p class="sec-body">If your day happens in meetings, calls, and hallway decisions, the details disappear by design of memory itself. This keeps them.</p>
+      <div class="personas">
+        <div class="persona">
+          <span class="glyph">● In meetings all day</span>
+          <h3>The back-to-back professional</h3>
+          <p>Monday's decisions are gone by Friday. Ask your memory what was decided — with the timestamp to prove it.</p>
+          <p class="q">What did I decide today?</p>
+        </div>
+        <div class="persona">
+          <span class="glyph">● Leading a team</span>
+          <h3>The founder or manager</h3>
+          <p>You promised twelve things to eight people this week. The commitments list keeps them from blurring together.</p>
+          <p class="q">What did someone promise to follow up on?</p>
+        </div>
+        <div class="persona">
+          <span class="glyph">● Across many clients</span>
+          <h3>The consultant or advisor</h3>
+          <p>Context-switching means details leak between projects. Each client's thread stays findable, months later.</p>
+          <p class="q">What did we discuss about this project last week?</p>
+        </div>
+        <div class="persona">
+          <span class="glyph">● Thinking out loud</span>
+          <h3>The idea collector</h3>
+          <p>Your best ideas arrive mid-sentence, mid-drive. Highlight the moment from your watch; it's in the report tonight.</p>
+          <p class="q">What ideas did I mention while driving?</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section id="how">
+    <div class="wrap">
+      <p class="sec-label">03 · How it works</p>
+      <h2 class="sec-head">Phone captures. Watch controls. Cloud is optional.</h2>
+      <div class="flow">
+        <div class="flow-node phone">
+          <span class="fn-label">On your phone</span>
+          <h3>Offline capture</h3>
+          <ul>
+            <li>All-day recording in short encrypted segments</li>
+            <li>Crash and reboot recovery; gaps reported, never hidden</li>
+            <li>Sleep schedule and quiet times built in</li>
+          </ul>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node cloud">
+          <span class="fn-label">Opt-in · only when you connect an account</span>
+          <h3>Processing</h3>
+          <ul>
+            <li>Speech clips upload at night, on Wi-Fi, while charging</li>
+            <li>Transcription and structured extraction</li>
+            <li>Temporary audio deleted after the transcript is stored</li>
+          </ul>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node report">
+          <span class="fn-label">Back to you</span>
+          <h3>Evidence-backed memory</h3>
+          <ul>
+            <li>Daily report: decisions, actions, commitments, ideas</li>
+            <li>Every item cites the moment it came from</li>
+            <li>Corrections never overwrite the original evidence</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-note"><strong>No account? Capture still works.</strong> Recording and local speech analysis work without an account. When cloud processing is enabled and an account is connected, clips may upload temporarily even in "On this phone" mode; that mode means they are not retained server-side after processing. Today both provider stages are disabled by default, so the backend refuses uploads.</div>
+    </div>
+  </section>
+
+  <!-- ============ PRIVACY ============ -->
+  <section id="privacy">
+    <div class="wrap">
+      <p class="sec-label">04 · Privacy</p>
+      <h2 class="sec-head">Built like it's recording your life. Because it is.</h2>
+      <p class="sec-body">This app can capture real conversations with real people in them, so privacy is a product requirement here — not a settings page.</p>
+      <div class="priv-grid">
+        <div class="priv-list">
+          <div class="priv-item">
+            <span class="n">1</span>
+            <div><h3>Recording is always visible</h3><p>A persistent notification and on-screen indicator exist whenever capture runs. Pause or stop from the phone, the watch, or the notification itself. Hiding recording state is against this product's own rules.</p></div>
+          </div>
+          <div class="priv-item">
+            <span class="n">2</span>
+            <div><h3>Audio is encrypted on your phone</h3><p>Each segment is sealed with AES-256-GCM under keys held in the Android Keystore, and excluded from backups and device transfers.</p></div>
+          </div>
+          <div class="priv-item">
+            <span class="n">3</span>
+            <div><h3>Nothing is retained server-side by default</h3><p>In "On this phone" mode, data is not kept on our server after processing. When a provider is enabled, speech clips are sent transiently for transcription and the transcript is sealed to your phone's key. Today both providers are disabled by default, so uploads are refused until an operator enables them.</p></div>
+          </div>
+          <div class="priv-item">
+                      <span class="n">4</span>
+                      <div><h3>Cloud processing is temporary</h3><p>When enabled, audio clips leave the phone for processing; temporary copies are deleted after the verified transcript is stored or the job reaches terminal failure. The phone keeps the original until the transcript is stored locally.</p></div>
+                    </div>
+          <div class="priv-item">
+            <span class="n">5</span>
+            <div><h3>Transcripts are sealed to your key</h3><p>In phone storage modes, transcript lines are encrypted to your phone's own key before delivery. The server holds only a temporary encrypted copy while waiting for your phone to acknowledge receipt (maximum 7 days).</p></div>
+          </div>
+          <div class="priv-item">
+            <span class="n">6</span>
+            <div><h3>Deletion is honest</h3><p>Stop asks Keep or Delete. Deleting removes that session's audio and derived data. We say plainly what deletion does — and what it can't, like physical flash erasure — instead of over-promising.</p></div>
+          </div>
+        </div>
+        <aside class="modes" aria-label="The three storage modes">
+          <h3>Three storage modes</h3>
+          <p class="modes-sub">Where your memory lives is your call, per mode. Switchable in settings.</p>
+          <div class="mode">
+            <div class="mode-name">On this phone <span class="badge">Default</span></div>
+            <p>Long-term memory stays on your phone. If cloud processing is enabled, clips are sent temporarily for transcription and the transcript is sealed back to your phone's key. Today processing is disabled by default.</p>
+            <div class="leak off-cloud">→ transient processing when enabled; no server-side memory retained</div>
+          </div>
+          <div class="mode">
+            <div class="mode-name">Reports in my cloud account</div>
+            <p>Designed to retain daily reports and structured items server-side while keeping full transcripts on your phone. This mode is a product target; report retention for this mode is not implemented yet.</p>
+            <div class="leak off-cloud">→ not available yet</div>
+          </div>
+          <div class="mode">
+            <div class="mode-name">Full cloud</div>
+            <p>Server-held transcripts and memory for API/MCP access. This requires an explicit choice; provider stages are disabled by default.</p>
+            <div class="leak off-cloud">→ readable server-side, by choice and only when enabled</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATUS ============ -->
+  <section id="status">
+    <div class="wrap">
+      <p class="sec-label">05 · Where it stands</p>
+      <h2 class="sec-head">Honest status, as of today.</h2>
+      <div class="status-grid">
+        <div class="status-col works">
+          <h3>Working in private testing</h3>
+          <ul>
+            <li>All-day phone capture with crash and reboot recovery</li>
+            <li>Encrypted local segments and capture-health reporting</li>
+            <li>Sleep schedule, quiet times, and memory days</li>
+            <li>Sessions with automatic titles and transcripts view</li>
+            <li>Watch remote control: start, pause, resume, stop, highlight, Quick Note</li>
+            <li>Nightly speech analysis while charging (nothing leaves the phone)</li>
+            <li>Account sign-in and Wi-Fi upload queue when connected</li>
+          </ul>
+        </div>
+        <div class="status-col next">
+          <h3>On the roadmap</h3>
+          <ul>
+            <li>Transcription and structured extraction, behind privacy and cost gates</li>
+            <li>The in-app daily report screen</li>
+            <li>Ask My Memory — natural-language recall with evidence</li>
+            <li>MCP/API access for your own AI agents (read-only server already exists)</li>
+            <li>Automatic APK releases with in-app updates</li>
+            <li>iPhone and Apple Watch, once Android is proven</li>
+          </ul>
+        </div>
+      </div>
+      <p class="status-note">Private testing is by invitation, on real hardware, before anything public. Play Store listing and pricing come after the reliability gates pass — not before.</p>
+    </div>
+  </section>
+
+  <!-- ============ DOWNLOAD ============ -->
+  <section class="download" id="get-it">
+    <div class="wrap">
+      <p class="sec-label">06 · Get it</p>
+      <h2 class="sec-head">Android first. Straight from the source.</h2>
+      <p class="sec-body">The phone app will ship as an APK from GitHub Releases — automatic releases and update notifications are coming. It's not on Google Play yet, and we're not rushing it there.</p>
+      <div class="dl-card">
+        <div>
+          <h3>AI Daily Memory for Android</h3>
+          <p>Private device testing is underway now. Watch the repository to get the release announcement the day the first APK drops.</p>
+          <p class="dl-meta">Android 10+ · Wear OS companion · APK via GitHub Releases</p>
+        </div>
+        <div class="dl-actions">
+          <a class="btn btn-red" href="https://github.com/apercallc/AI-Daily-Memory/subscription" target="_blank" rel="noopener">Watch on GitHub</a>
+          <a class="btn btn-ghost" href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener" aria-disabled="true">Releases — coming soon</a>
+        </div>
+      </div>
+      <p class="dev-note">Developer? The whole system is on GitHub: <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">apercallc/AI-Daily-Memory</a> — clone it and run <code>./gradlew :apps:android:assembleDebug</code>. There's also a read-only MCP server in <code>interfaces/mcp</code> for wiring your memory into your own agents.</p>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section id="faq">
+    <div class="wrap">
+      <p class="sec-label">07 · Questions</p>
+      <h2 class="sec-head">Asked and answered.</h2>
+      <div class="faq-list">
+        <details>
+          <summary><span class="qnum">Q1</span>Is this just another transcription app?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">No. Recording and transcription are the means; the product is a memory you can query and trust. The difference is evidence: every decision, action item, or commitment it extracts links back to the timestamped moment it came from, and your corrections never touch the original.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q2</span>Can it record people without them knowing?<span class="qnum" aria-hidden="true"></span><span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">It's not built for that, and it isn't designed to hide recording state — a persistent notification and on-screen indicator are product requirements, and pausing is always one tap away from the phone, the watch, or the notification. Recording laws vary by place and situation; follow yours.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q3</span>Where does my audio actually live?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">Audio is stored on your phone by default, encrypted with keys in the Android Keystore, and excluded from backups. If an account is connected and a provider is enabled, speech clips may be sent transiently for transcription even in "On this phone" mode; that mode means the server doesn't keep memory after processing. Today both providers are disabled by default, so uploads are refused. Raw audio is not kept as an archive.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q4</span>Do I need an account for it to be useful?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">No. The phone records, organizes sessions, tracks capture health, and runs speech analysis entirely offline. An account only matters when you want processing, reports, or access from other tools — and you can connect one later, with recording from before staying on the phone unless you say otherwise.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q5</span>Does it work offline?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">Capture is offline-first by design: recording never depends on the network or a server. Uploads happen later, on Wi-Fi, while charging. If the connection drops mid-session, nothing is lost — the queue waits.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q6</span>What about my watch?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">The Wear OS app is a controller: start, pause, resume, stop, highlight, or drop a Quick Note from your wrist. It always shows what the phone has acknowledged — never an assumed success. The watch never records on its own.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q7</span>What will it cost?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">Private testing is free. When it's public there will be a subscription — all-day transcription and AI processing have real per-user costs — with the honest details (free tier, limits, what's metered) published before anyone is asked to pay.</div>
+        </details>
+        <details>
+          <summary><span class="qnum">Q8</span>Can I delete everything?<span class="plus" aria-hidden="true">+</span></summary>
+          <div class="answer">Yes. Stopping a session asks Keep or Delete; deleting removes that session's audio and its derived data. Retention is a setting, and full account deletion — including derived memory — is planned as a right, not an upsell.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="wordmark" href="#top"><span class="dot" aria-hidden="true"></span>AI Daily Memory</a>
+        <p>A private, searchable memory of your day — from the Android phone and Wear OS watch you already carry.</p>
+      </div>
+      <div class="foot-links">
+        <div>
+          <span class="fh">Product</span>
+          <a href="#what">What it is</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#status">Status</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div>
+          <span class="fh">Development</span>
+          <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="https://github.com/apercallc/AI-Daily-Memory/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-legal">
+      <span>© 2026 Aperca · AI Daily Memory</span>
+      <span><span class="rec">●</span> The app never hides recording state.</span>
+      <span>Security issues: report privately, never in a public issue.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

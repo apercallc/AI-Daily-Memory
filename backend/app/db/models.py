@@ -132,6 +132,9 @@ class AudioUpload(Base):
         UniqueConstraint("user_id", "segment_id", "offset_ms"),
         # The daily quota sums a user's recent uploads.
         Index("ix_audio_uploads_user_id_created_at", "user_id", "created_at"),
+        # The retention sweep selects candidates by state and age (app/retention.py); without
+        # this every pass was a full-table scan.
+        Index("ix_audio_uploads_state_created_at", "state", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)

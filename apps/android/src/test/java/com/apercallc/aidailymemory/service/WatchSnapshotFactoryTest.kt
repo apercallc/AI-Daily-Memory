@@ -5,6 +5,8 @@ import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.SessionId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WatchSnapshotFactoryTest {
@@ -33,5 +35,18 @@ class WatchSnapshotFactoryTest {
         assertEquals(0L, snapshot.revision)
         assertEquals("IDLE", snapshot.status)
         assertEquals(true, snapshot.reset)
+    }
+
+    @Test
+    fun `a journal that restored below what a watch saw is flagged reset`() {
+        // Fresh journal (first install, or app data cleared): always reset.
+        assertTrue(WatchSnapshotFactory.needsReset(0, lastPublishedRevision = null))
+        assertTrue(WatchSnapshotFactory.needsReset(0, lastPublishedRevision = 50))
+        // A revision at or past everything published: ordinary, comparable snapshots.
+        assertFalse(WatchSnapshotFactory.needsReset(42, lastPublishedRevision = 42))
+        assertFalse(WatchSnapshotFactory.needsReset(43, lastPublishedRevision = 42))
+        // Deleting the newest session removed its journal rows: the restored revision is
+        // below what a watch has already shown, so the snapshot must be accepted unconditionally.
+        assertTrue(WatchSnapshotFactory.needsReset(30, lastPublishedRevision = 42))
     }
 }

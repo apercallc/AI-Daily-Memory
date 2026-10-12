@@ -10,7 +10,7 @@ from sqlalchemy import Engine, text
 
 from app.config import Settings
 from app.main import create_app
-from app.storage import audio_key
+from app.storage import StoredObject, audio_key
 from tests.conftest import Account, FakeObjectStore, make_account, settings_for
 
 AUDIO = b"\xff\xf1" + bytes(998)
@@ -202,6 +202,101 @@ def test_complete_verifies_and_queues_transcription_once(
     status = client.get(f"/v1/uploads/{upload_id}", headers=account.headers)
     assert status.json()["state"] == "received"
     assert status.json()["upload"] is None
+
+
+def test_a_complete_that_races_a_recreate_under_a_new_id_is_a_404(
+    client: TestClient,
+    account: Account,
+    store: FakeObjectStore,
+    db: Engine,
+) -> None:
+    """The concurrent-complete branch when the row is gone entirely: the phone lost this id
+    and a re-create replaced the row between the ownership check and the state move. The
+    old row's id must 404 instead of crashing on a stale ORM instance."""
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    upload_id = uuid.UUID(body["upload_id"])
+    store.put(audio_key(account.user_id, upload_id), AUDIO)
+
+    real_stat = store.stat
+
+    async def stat_that_replaces_the_row(key: str) -> StoredObject | None:
+        with db.connect() as connection:
+            connection.execute(text("DELETE FROM audio_uploads WHERE id = :id"), {"id": upload_id})
+            connection.commit()
+        return await real_stat(key)
+
+    store.stat = stat_that_replaces_the_row  # type: ignore[method-assign]
+
+    response = client.post(f"/v1/uploads/{upload_id}/complete", headers=account.headers)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_a_complete_that_races_another_complete_reports_the_new_state(
+    client: TestClient,
+    account: Account,
+    store: FakeObjectStore,
+    db: Engine,
+) -> None:
+    """The concurrent-complete branch when the row survived but someone else moved it out of
+    `pending`: the response reports what the row is now, not what this request saw."""
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    upload_id = uuid.UUID(body["upload_id"])
+    store.put(audio_key(account.user_id, upload_id), AUDIO)
+
+    real_stat = store.stat
+
+    async def stat_that_completes_first(key: str) -> StoredObject | None:
+        with db.connect() as connection:
+            connection.execute(
+                text("UPDATE audio_uploads SET state = 'received' WHERE id = :id"),
+                {"id": upload_id},
+            )
+            connection.commit()
+        return await real_stat(key)
+
+    store.stat = stat_that_completes_first  # type: ignore[method-assign]
+
+    response = client.post(f"/v1/uploads/{upload_id}/complete", headers=account.headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"upload_id": str(upload_id), "state": "received", "upload": None}
+
+
+def test_a_complete_does_not_report_a_row_that_changed_owners(
+    client: TestClient,
+    account: Account,
+    store: FakeObjectStore,
+    db: Engine,
+) -> None:
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    upload_id = uuid.UUID(body["upload_id"])
+    store.put(audio_key(account.user_id, upload_id), AUDIO)
+    other_account = make_account(db, storage_mode="full_cloud")
+
+    real_stat = store.stat
+
+    async def stat_that_changes_owners(key: str) -> StoredObject | None:
+        with db.connect() as connection:
+            connection.execute(
+                text(
+                    "UPDATE audio_uploads SET user_id = :user_id, state = 'received' WHERE id = :id"
+                ),
+                {"user_id": other_account.user_id, "id": upload_id},
+            )
+            connection.commit()
+        return await real_stat(key)
+
+    store.stat = stat_that_changes_owners  # type: ignore[method-assign]
+
+    response = client.post(f"/v1/uploads/{upload_id}/complete", headers=account.headers)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 def test_complete_before_uploading_says_so(client: TestClient, account: Account) -> None:

@@ -6,6 +6,9 @@ The phone is the reliable capture engine. The watch is the lightweight control s
 
 > **Core promise:** Start your day, live normally, and later remember what mattered.
 
+New here? [website/index.html](website/index.html) is the plain-language product page —
+who it's for, how it works, where your data lives, FAQ, and download links.
+
 ## Getting Started
 
 The repository is now scaffolded for Android-first development.
@@ -56,16 +59,25 @@ Status:
   cuts it into clips, and, once an account is connected, uploads only those clips on Wi-Fi.
   Transcripts come back sealed to the phone's own key and show on each session's transcript
   screen. Audio is released for deletion only after its transcript is stored on the phone.
-- **Backend:** user-scoped PostgreSQL schema, hashed device tokens, the upload protocol
-  (presigned PUTs verified by size and SHA-256), a Postgres job queue, sealed delivery for
-  phone storage modes, and a retention sweep for temporary audio.
-- **Not yet:** transcription is disabled until Gate B (provider, cost model, consent review),
-  so nothing reaches a provider and uploads are refused with `processing_unavailable`.
-  Extraction, the daily report generation, recall, and MCP come in later phases (TODO.md).
+- **Backend:** user-scoped PostgreSQL schema, self-service sign-in (email + password) plus
+  hashed device tokens and API keys, the upload protocol (presigned PUTs verified by size and
+  SHA-256), a Postgres job queue, sealed delivery for phone storage modes, storage-mode
+  switching, structured extraction and daily report generation for full-cloud accounts
+  (ADR-0019), and a retention sweep for temporary audio.
+- **MCP:** a read-only server ([interfaces/mcp](interfaces/mcp)) exposes daily reports, the
+  session timeline, decisions, action items, and commitments over the backend's query API —
+  one process per account, authenticated with that account's own `memory:read` API key.
+- **Deliberately off:** transcription (Deepgram, ADR-0018) and extraction (Claude, ADR-0019)
+  are wired behind provider seams but ship `disabled` by default. Until Gate B's provider
+  terms, consent, and cost reviews pass, uploads are refused with `processing_unavailable`
+  and nothing reaches any AI provider. Recall ("Ask My Memory") and the in-app report screen
+  come in later phases (TODO.md).
 
-Connecting a phone for development: create an account and a device token with
-`uv run python -m app.admin create-account --device-name "My phone"`, then enter the server
-address and token under Settings → Account.
+Connecting a phone for development: either create an account through the API
+(`POST /v1/signup` with email + password — the token is shown once) or use the operator
+CLI `uv run python -m app.admin create-account --device-name "My phone"`, then enter the
+server address and token under Settings → Account. (The Android app has no in-app signup
+form yet; it expects a pasted token either way.)
 
 
 ---
@@ -92,6 +104,33 @@ The differentiator is not recording audio. It is building a trustworthy personal
 - What ideas did I mention while driving?
 - What did we discuss about a project last week?
 - What important moments did I explicitly highlight?
+
+## How the system fits together
+
+```mermaid
+flowchart LR
+    subgraph you["You"]
+        W["Wear OS watch — remote control"]
+        P["Android phone — capture + local memory"]
+    end
+    P <-->|"Wear Data Layer: commands in, acknowledged state out"| W
+    P -->|"opt-in: night job, charging + Wi-Fi"| API
+    subgraph backend["Backend"]
+        API["FastAPI — auth, upload protocol, query API"]
+        WK["Worker — transcribe → extract → report"]
+        DB[("PostgreSQL — evidence + memory items")]
+        OBJ[("Temporary object storage — deleted after processing")]
+        PR["AI providers — off by default"]
+    end
+    API --> OBJ
+    API --> DB
+    WK --> OBJ
+    WK --> PR
+    WK --> DB
+    MCP["MCP / CLI — read-only"] --> API
+```
+
+The phone records and stores locally first; the backend only ever sees data in a cloud mode you explicitly chose. The watch never records on its own — it sends commands and displays phone-acknowledged state.
 
 ---
 
@@ -262,11 +301,11 @@ Never build separate memory logic for Android, web, CLI, or MCP.
 
 ## Initial order
 
-1. REST API
-2. Android Ask / Search
-3. MCP
-4. CLI
-5. Web frontend
+1. REST API — shipped (upload + account + reports endpoints)
+2. Android Ask / Search — planned (Phase 4)
+3. MCP — shipped, read-only ([interfaces/mcp](interfaces/mcp))
+4. CLI — planned (scaffold exists)
+5. Web Frontend — planned
 
 The web frontend should not block the core product.
 
@@ -297,18 +336,20 @@ MCP and the public API serve only server-held data. Users in the default "On thi
 mode must opt into a cloud mode before creating an API key
 ([ADR-0014](docs/adr/0014-where-memory-lives.md)).
 
-Initial read-only MCP tools may include:
+The read-only MCP server ships today in [interfaces/mcp](interfaces/mcp) (FastMCP, stdio
+transport, one process per account using that account's own `memory:read` API key):
 
 ```text
-ask_memory
-search_memory
-get_day
-get_timeline
-get_decisions
-get_action_items
-get_commitments
-get_highlights
+get_daily_report     the full report for one memory day
+get_day              alias for get_daily_report
+get_timeline         the day's sessions, in order
+get_decisions        decisions, with confidence and evidence
+get_action_items     action items, with owner and optional due date
+get_commitments      commitments, with direction and counterpart
 ```
+
+Deliberately not implemented: `ask_memory` / `search_memory` (need semantic recall —
+Gate F, not crossed) and `get_highlights` (no highlight data is populated yet).
 
 Prefer structured tool results and evidence references instead of returning large transcript dumps.
 
@@ -406,6 +447,37 @@ Implemented as a pure reducer in `core/recording`:
 
 Everything else is `Ignored` (duplicate command) or `Rejected`. `RecordingStateMachineTest`
 checks every status × event pair against this table.
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> STARTING: Start
+    COMPLETED --> STARTING: Start
+    STARTING --> RECORDING: Started
+    STARTING --> IDLE: StartFailed
+    RECORDING --> PAUSED: Pause
+    PAUSED --> RESUMING: Resume
+    RESUMING --> RECORDING: Started
+    RESUMING --> INTERRUPTED: Interrupted
+    RECORDING --> INTERRUPTED: Interrupted
+    RECOVERING --> INTERRUPTED: Interrupted
+    INTERRUPTED --> RECOVERING: RecoveryStarted
+    RECOVERING --> RECORDING: Recovered
+    RESUMING --> PAUSED: Pause
+    INTERRUPTED --> PAUSED: Pause
+    RECOVERING --> PAUSED: Pause
+    STARTING --> STOPPING: Stop
+    RECORDING --> STOPPING: Stop
+    PAUSED --> STOPPING: Stop
+    RESUMING --> STOPPING: Stop
+    INTERRUPTED --> STOPPING: Stop
+    RECOVERING --> STOPPING: Stop
+    STOPPING --> COMPLETED: Stopped
+    COMPLETED --> IDLE: Reset
+```
+
+User commands drive the left edge of every transition; only the engine's `Started` signal ever
+puts the app into RECORDING. A privacy pause always beats auto-recovery.
 
 Contract:
 
@@ -527,6 +599,28 @@ Raw audio is temporary by default.
 6. Verify persistence.
 7. Delete temporary cloud audio.
 8. Delete local audio after the recovery window.
+
+## On-phone capture pipeline
+
+```mermaid
+flowchart TD
+    M["Microphone"] --> A["AudioRecord — AAC-LC/ADTS, 60 s segments"]
+    A --> E["Encrypt per segment — Tink AEAD, Android Keystore key"]
+    E --> R["Room row written first — WRITING"]
+    R --> S["fsync + atomic rename — SEALED"]
+    S --> H{"Seal-time checks"}
+    H -->|"corrupt or zero bytes"| Q["QUARANTINED — surfaced, never silent"]
+    H -->|"ok"| G["GapDetector — gaps become data"]
+    S --> D["DigitalSilenceDetector — blocked-mic signal"]
+    G --> V["Nightly speech analysis — on the charger, phone-local"]
+    D --> V
+    V -->|"speech found"| C["ClipPlanner — speech clips + SHA-256"]
+    V -->|"no speech"| ACK["ACKNOWLEDGED immediately — retention applies (ADR-0017)"]
+    C --> U["Upload queue — only with a connected account"]
+    U -->|"server acknowledged + transcript stored on the phone"| DEL["Local audio becomes deletable"]
+```
+
+Every step before the upload queue runs entirely on the phone, with no account and no network.
 
 Long-term audio retention is not an MVP requirement.
 
@@ -916,6 +1010,35 @@ One backend owns:
 - evidence assembly
 - Ask My Memory
 
+## What happens to an uploaded clip
+
+```mermaid
+sequenceDiagram
+    participant Ph as Phone
+    participant API as Backend API
+    participant OBJ as Temporary storage
+    participant W as Worker
+    participant Pr as AI provider (off by default)
+
+    Ph->>API: create upload (session/clip IDs, SHA-256)
+    API-->>Ph: presigned PUT (scoped, short TTL)
+    Ph->>OBJ: PUT audio clip
+    Ph->>API: complete (idempotency key)
+    API->>API: verify size + checksum, quota, storage mode
+    Note over API: transcription disabled → 503 processing_unavailable, nothing accepted
+    API->>W: enqueue job (claim/lease, bounded backoff)
+    W->>OBJ: fetch clip
+    W->>Pr: transcribe (opt-in provider)
+    W->>API: persist transcript (sealed to the phone's key per mode)
+    Note over W: full_cloud only: extract items → build daily report
+    API-->>Ph: transcript lines / daily report
+    Ph->>API: acknowledge
+    Note over Ph: local audio deletable only after its transcript is on the phone
+    OBJ->>OBJ: temporary audio deleted
+```
+
+Retries are idempotent at every stage, so a duplicate upload never creates duplicate evidence.
+
 A database-backed job table is sufficient for the first beta.
 
 ---
@@ -928,12 +1051,12 @@ A database-backed job table is sufficient for the first beta.
 - Jetpack Compose
 - Coroutines / Flow
 - Room / SQLite
-- WorkManager
-- Android Keystore
+- JobScheduler for the charging + unmetered upload/analysis jobs
+- Android Keystore + Tink (streaming AEAD)
 - native microphone APIs
 - foreground service
-- OkHttp / Retrofit or Ktor
-- Opus where practical
+- plain `HttpURLConnection` for the backend client (three calls per clip don't justify an HTTP library)
+- AAC-LC/ADTS 16 kHz capture today (Opus remains an open benchmark, ADR-0007)
 
 ## Wear OS
 
@@ -959,9 +1082,10 @@ A database-backed job table is sufficient for the first beta.
 
 ## Authentication
 
-- Supabase Auth or another managed provider
-
-Authentication should not block local Phase 0 development.
+- Self-hosted email + password (argon2id, `backend/app/credentials.py`), with account
+  lockout after repeated failures
+- Hashed bearer tokens: device tokens and `memory:read`-scoped API keys, stored only as
+  SHA-256 hashes (`backend/app/auth.py`); no third-party auth dependency
 
 ## Temporary Audio
 
@@ -1015,60 +1139,37 @@ Keep the schema relational and evidence-centered. Rules that apply to every tabl
 - derived rows record how they were produced (see Processing Versioning)
 - foreign keys to user-owned parents cascade on delete
 
-## Identity and access
-
-| Table | Purpose / key columns |
-| --- | --- |
-| `users` | account; `status`, `created_at`, `deleted_at` (deletion job state) |
-| `devices` | registered phones and watches; `user_id`, `kind`, `last_seen_at` |
-| `api_keys` | Phase 5/10: `user_id`, `key_hash`, `prefix`, `scopes`, `last_used_at`, `revoked_at` |
-| `audit_log` | sensitive access (MCP/API tool calls, exports, deletions); no content, only references |
-
-## Capture layer (Level 1 inputs, created on device)
+## Implemented today (migrations 0001–0005)
 
 | Table | Key columns |
 | --- | --- |
-| `recording_sessions` | `id`, `user_id`, `device_id`, `kind` (`day` / `quick_note`), `started_at`, `ended_at`, `status` |
-| `audio_segments` | `id`, `session_id`, `sequence`, `occurred_at`, `duration_ms`, `sha256`, `byte_size`, `codec`, `upload_state`, `storage_key`, `retention_expires_at` |
-| `capture_gaps` | `session_id`, `started_at`, `ended_at`, `problem` — interruptions reported by the device, so gaps are data, not silence |
-| `highlights` | `id`, `session_id`, `occurred_at`, `source` (`phone` / `watch` / `notification`), optional `note` |
+| `users` | account root |
+| `credentials` | email + argon2 password hash; `failed_attempts`, `locked_until` (locks after repeated wrong passwords) |
+| `access_tokens` | hashed bearer tokens; `kind` = `device` or `api`, `scopes` (API keys default `memory:read`), `last_used_at`, `revoked_at` |
+| `audio_uploads` | one speech clip: `user_id`, `session_id`, `segment_id`, `offset_ms`, `duration_ms`, `sha256`, `state`, `object_key`, storage mode |
+| `processing_jobs` | durable jobs: `stage`, `idempotency_key` (unique), `state`, `attempts`, `lease_expires_at`, `next_attempt_at`, `last_error` |
+| `transcripts` | one per upload: revision, provider/model/version metadata |
+| `transcript_segments` | evidence rows: `started_at`, `ended_at`, `text`, `speaker_label`, confidence |
+| `device_keys` | the phone's HPKE public key (X25519), one per token |
+| `sealed_deliveries` | transcript lines sealed to that key; `state` (`pending` / `acked` / `expired`), ack tracking |
+| `memory_items` | extracted decisions/actions/commitments/ideas/questions: `kind`, `text`, `owner`, `direction`, `counterpart`, `due_at`, `confidence`, `dismissed_at` |
+| `memory_item_evidence` | many-to-many item → `transcript_segments` with quote |
+| `daily_reports` | the assembled report contract v1, JSONB, one row per user per memory day |
 
 Device-only lifecycle (`WRITING`, `SEALED`, …; ADR-0007) stays in Room and is not
 mirrored on the server.
 
-## Evidence (Level 1)
+Memory item kinds: `decision`, `action`, `commitment`, `idea`, `question`
+(`fact` and `highlight` are contract room, not extracted yet).
 
-| Table | Key columns |
-| --- | --- |
-| `transcript_segments` | `id`, `audio_segment_id`, `revision`, `is_active`, `started_at`, `ended_at`, `text`, `speaker_label`, `confidence`, transcription provider/model/version |
-
-Rows are never updated except `is_active` when a newer transcription revision replaces
-them. Full-text index on `text`.
-
-## Derived memory (Levels 2–4)
-
-| Table | Key columns |
-| --- | --- |
-| `events` | `id`, `session_id`, `started_at`, `ended_at`, `title`, `summary`, extraction version |
-| `event_segments` | `event_id`, `transcript_segment_id` |
-| `memory_items` | `id`, `user_id`, `event_id`, `type`, `title`, `body`, `owner_entity_id`, `lifecycle_state`, `review_state`, `occurred_at`, `local_date`, `due_at`, `superseded_by_id`, extraction version |
-| `memory_item_evidence` | `memory_item_id`, `transcript_segment_id`, optional char span — many-to-many |
-| `memory_item_corrections` | `memory_item_id`, `action` (`confirm` / `edit` / `dismiss` / `supersede`), `patch`, `created_at` |
-| `entities`, `entity_aliases`, `entity_mentions` | normalized people/projects/places; mentions link to segments and items |
-| `daily_summaries` | navigation only, never evidence; `local_date`, source item IDs, generator version |
-| `embeddings` | only when Gate E passes; linked to events and memory items |
-
-Memory item types: `decision`, `action`, `commitment`, `idea`, `fact`, `question`.
-Highlights are user input, stored in the capture layer, and boost ranking.
-
-## Operations and commercial
+## Planned (not in the schema yet)
 
 | Table | Purpose |
 | --- | --- |
-| `processing_jobs` | durable jobs: `stage`, `idempotency_key` (unique), `state`, `attempts`, `lease_expires_at`, `next_attempt_at`, `last_error` |
-| `usage_counters` | metering per user/period (recorded, transcribed minutes, tokens, API calls) |
-| `entitlements` | Phase 10: server-authoritative plan state |
-| `export_jobs` | Phase 8/10: self-service export requests, TTL, delivered object key |
+| `entities`, `entity_aliases`, `entity_mentions` | Phase 4: normalized people/projects/places |
+| `memory_item_corrections` | Phase 2 remainder: confirm/edit/supersede stored apart from evidence (dismiss exists today via `memory_items.dismissed_at`) |
+| `daily_summaries` | replaced so far by `daily_reports`; navigation only, never evidence |
+| `usage_counters`, `entitlements`, `export_jobs`, `audit_log` | Phase 8/10: metering, billing state, self-service export, sensitive-access audit |
 
 ---
 
@@ -1098,22 +1199,35 @@ Approximate vector indexes trade some retrieval recall for speed, so they should
 
 All clients use the same backend contracts.
 
-Initial endpoints:
+## Implemented today (`/v1`)
 
 ```text
-/sessions
-/uploads
-/transcripts
-/highlights
-/events
-/memory
-/summary
-/health
-/search
-/ask
+GET    /health                        liveness + config state
+POST   /signup                        email + password → device token (shown once)
+POST   /login                         email + password → device token
+GET    /me                            account + storage mode
+PUT    /me                            switch storage mode (phone_only / reports_cloud / full_cloud)
+DELETE /tokens/current                revoke this token (disconnects the device)
+POST   /uploads                       create upload → presigned PUT + TTL + quota
+POST   /uploads/{id}/complete         idempotent finalize (size + SHA-256 verified)
+GET    /uploads/{id}                  upload status for retry/backoff logic
+PUT    /device-key                    publish the phone's HPKE public key
+GET    /deliveries                    sealed transcript lines pending for this phone
+POST   /deliveries/ack                acknowledge a delivery (releases local audio)
+GET    /reports/{memory_day}          the daily report contract v1 (cloud modes)
 ```
 
-Example:
+`/uploads` returns `503 processing_unavailable` while transcription is disabled — by design
+until Gate B's reviews pass (ADR-0018).
+
+## Planned
+
+```text
+POST /v1/ask                          natural-language recall with evidence (Phase 4)
+GET  /v1/export                       self-service account export (Phase 8/10)
+```
+
+Planned example:
 
 ```http
 POST /v1/ask
@@ -1232,6 +1346,30 @@ This application can capture highly sensitive conversations.
 - no access tokens in logs
 - no raw transcripts in ordinary logs
 - audio retention jobs
+
+## Data flow by storage mode (ADR-0014)
+
+```mermaid
+flowchart LR
+    subgraph phoneOnly["On this phone — default"]
+        A1["Encrypted local audio + memory"] --> A2["When processing enabled: clips sent transiently"]
+        A2 --> A3["Transcript sealed to phone key; no server memory retained"]
+    end
+    subgraph reportsCloud["Reports in my cloud account — planned"]
+        B1["Transcript stays on phone"] --> B2["Daily report + structured items retained"]
+    end
+    subgraph fullCloud["Full cloud — explicit opt-in"]
+        C1["Speech clips upload at night"] --> C2["Transcripts + memory stored server-side"]
+        C2 --> C3["Daily reports + MCP/API tools"]
+    end
+    OFF["Current default: transcription + extraction disabled"] -.-> A2
+    OFF -.-> C1
+```
+
+`phone_only` means no long-term server retention, not that data never leaves the phone:
+ADR-0014 requires transient cloud processing when a provider is enabled. Both provider stages
+ship disabled today, so uploads are refused by default. `reports_cloud` report retention is not
+implemented yet. API keys and MCP access currently require `full_cloud`.
 
 ## AI Providers
 
@@ -1388,33 +1526,38 @@ Possible later changes:
 ```text
 AI-Daily-Memory/
 ├── apps/
-│   ├── android/
-│   └── wear/
+│   ├── android/        # phone app: Compose UI + recording foreground service
+│   └── wear/           # Wear OS controller (acknowledged state only)
+│
+├── core/recording/     # pure Kotlin recording domain: state machine, policies,
+│                       # capture-health evaluation, clip planning — no Android deps
 │
 ├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   ├── capture/
-│   │   ├── memory/
-│   │   ├── retrieval/
-│   │   └── processing/
-│   ├── migrations/
+│   ├── app/            # FastAPI: api/ (routers), db/, reports/
+│   │                   # + auth, jobs, transcription, extraction, sealing,
+│   │                   # retention, storage, worker, admin, middleware
+│   ├── migrations/      # Alembic (user-scoped from 0001)
 │   └── tests/
 │
 ├── interfaces/
-│   ├── mcp/
-│   └── cli/
+│   ├── mcp/            # read-only MCP server over the Memory Query API
+│   └── cli/            # placeholder
 │
 ├── contracts/
-│   └── openapi/
+│   └── daily-report.v1.schema.json
 │
 ├── docs/
-│   ├── architecture/
-│   ├── product/
-│   └── adr/
+│   ├── adr/            # ADR-0001 … ADR-0019
+│   ├── api/            # endpoint inventory, versioning policy
+│   ├── architecture/   # review, edge-case catalog, performance & scale plan
+│   ├── operations/     # object storage lifecycle
+│   ├── performance/    # measurement process + Phase 0 capture measurements
+│   ├── product/        # daily report example
+│   └── quality/        # release quality gates
 │
-├── .github/
-│   └── workflows/
+├── website/            # landing page (static, self-contained index.html)
+│
+├── .github/workflows/  # CI: Android qualityCheck, backend (real Postgres), MCP
 │
 └── README.md
 ```
@@ -1438,7 +1581,10 @@ Use Architecture Decision Records for decisions that are expensive to reverse.
 | [0013](docs/adr/0013-opt-in-local-audio-retention.md) | Transcripts by default; opt-in, local-only audio keeping |
 | [0014](docs/adr/0014-where-memory-lives.md) | memory on the phone by default; cloud modes opt-in; API/MCP needs a cloud mode |
 | [0015](docs/adr/0015-speech-gating-and-night-processing.md) | transcribe speech only; VAD + clip upload at night on the charger |
-| [0016](docs/adr/0016-owner-voice-attribution.md) | on-device owner voice (Me vs others) for action-item attribution |
+| [0016](docs/adr/0016-owner-voice-attribution.md) | On-device owner voice (Me vs others) for action-item attribution |
+| [0017](docs/adr/0017-no-speech-retention.md) | No-speech segments are acknowledged immediately; retention applies (amends ADR-0013) |
+| [0018](docs/adr/0018-transcription-provider.md) | Deepgram wired as the MVP transcription provider; default stays `disabled` until Gate B reviews |
+| [0019](docs/adr/0019-structured-extraction-and-report-generation.md) | Structured extraction + daily report generation for full-cloud accounts; extraction provider default `disabled` |
 
 ---
 

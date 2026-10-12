@@ -43,6 +43,15 @@ data class CaptureOverview(
 private data class SessionSegments(val summary: CaptureSummary, val gaps: List<CaptureGap>)
 
 /**
+ * The pending-upload duration the health evaluator should judge, given whether an account is
+ * linked. The evaluator's backlog warning presumes uploads are expected; with no account,
+ * audio staying on this phone is the design (private device-test milestone), so a long local
+ * day must not paint a healthy recording as a warning.
+ */
+internal fun backlogPendingMs(summary: CaptureSummary, uploadsExpected: Boolean): Long =
+    if (uploadsExpected) summary.pendingUploadMs else 0L
+
+/**
  * Feeds [CaptureHealthEvaluator] from live sources. Runs only while someone is watching
  * (UI or notification), and ticks slowly: stall detection needs seconds, not frames.
  */
@@ -56,6 +65,8 @@ class CaptureHealthTracker(
     elapsedRealtimeMs: () -> Long,
     scope: CoroutineScope,
     tickMs: Long = 5_000,
+    /** Whether uploads are expected at all (an account is linked). */
+    private val expectUploads: () -> Boolean = { true },
 ) {
     private val gapDetector = GapDetector()
 
@@ -119,7 +130,7 @@ class CaptureHealthTracker(
                 lastSealedSegmentEndElapsedMs = engine.lastSealedElapsedMs,
                 storage = storageNow,
                 microphoneSilent = engine.microphoneSilent,
-                pendingUploadMs = summary.pendingUploadMs,
+                pendingUploadMs = backlogPendingMs(summary, expectUploads()),
                 // Phase 3 wires the Data Layer; until then there is no watch to report.
                 watch = WatchLink.NOT_PAIRED,
             ),

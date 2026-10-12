@@ -36,6 +36,14 @@ object WearControlReducer {
     fun connection(state: WearControlState, connected: Boolean): WearControlState =
         state.copy(phoneConnected = connected, error = if (connected) null else state.error)
 
+    /**
+     * The watch offers a way forward whenever it cannot show phone-confirmed state: a
+     * disconnected phone, or one that is connected but has not shared a snapshot yet. The
+     * second case is the fresh-watch first run — without a retry it is a dead-end screen.
+     */
+    fun needsPhoneCheck(state: WearControlState): Boolean =
+        !state.phoneConnected || state.snapshot == null
+
     fun phoneSnapshot(
         state: WearControlState,
         incoming: PhoneRecordingSnapshot,

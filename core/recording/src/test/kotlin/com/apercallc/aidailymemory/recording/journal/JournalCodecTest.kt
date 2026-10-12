@@ -61,6 +61,44 @@ class JournalCodecTest {
     }
 
     @Test
+    fun `a schedule pause during an interruption stays the user's pause after restore`() {
+        // Quiet time begins while the session is interrupted: the reducer deliberately makes
+        // that an ordinary pause, so quiet time ending can never reopen the mic by itself.
+        var state = RecordingStateMachine.reduce(RecordingState.Initial, RecordingCommand.Start(session)).state
+        state = RecordingStateMachine.reduce(state, CaptureSignal.Started(session)).state
+        state = RecordingStateMachine.reduce(
+            state,
+            CaptureSignal.Interrupted(session, CaptureProblem.PHONE_CALL),
+        ).state
+        val applied =
+            assertIs<Transition.Applied>(RecordingStateMachine.reduce(state, RecordingCommand.ScheduledPause))
+        assertEquals(false, applied.state.pausedBySchedule)
+
+        val restored = JournalCodec.restore(JournalCodec.encode(applied))
+
+        assertEquals(RestoredState.Intact(applied.state), restored)
+        assertEquals(false, restored.state.pausedBySchedule)
+        // Without the distinct cause, restore flipped the flag and this became an Applied resume.
+        assertIs<Transition.Ignored>(
+            RecordingStateMachine.reduce(restored.state, RecordingCommand.ScheduledResume),
+        )
+    }
+
+    @Test
+    fun `a schedule pause from an active capture still restores as a schedule pause`() {
+        var state = RecordingStateMachine.reduce(RecordingState.Initial, RecordingCommand.Start(session)).state
+        state = RecordingStateMachine.reduce(state, CaptureSignal.Started(session)).state
+        val applied =
+            assertIs<Transition.Applied>(RecordingStateMachine.reduce(state, RecordingCommand.ScheduledPause))
+        assertEquals(true, applied.state.pausedBySchedule)
+
+        val restored = JournalCodec.restore(JournalCodec.encode(applied))
+
+        assertEquals(RestoredState.Intact(applied.state), restored)
+        assertEquals(true, restored.state.pausedBySchedule)
+    }
+
+    @Test
     fun `an empty journal restores the initial state`() {
         assertEquals(RestoredState.Intact(RecordingState.Initial), JournalCodec.restore(null))
     }

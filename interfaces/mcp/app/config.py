@@ -1,6 +1,8 @@
-"""Configuration for the MCP server. Values come from the environment only — there is no config
-file, so a client's MCP launcher config (env vars in its own settings) is the only place a
-secret needs to live.
+"""Configuration for the MCP server. Values come from real environment variables only —
+no .env file is read, because an MCP server's working directory is whatever the launching
+client set it to; a stray .env there would silently override the client's own env config.
+A client's MCP launcher config (env vars in its own settings) is the only place a secret
+needs to live.
 """
 
 from pydantic import Field, SecretStr
@@ -8,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ADM_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ADM_", extra="ignore")
 
     # The backend to call. https:// only in practice; loopback exists for local development
     # against the backend's own dev server.
