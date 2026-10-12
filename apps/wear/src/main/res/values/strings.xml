@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_title">Daily Memory</string>
+    <string name="sentry_dsn">https://559258c22138d64370262bdc425ba58d@o4508955926396928.ingest.us.sentry.io/4512245212315648</string>
     <string name="phone_controller">Audio records on your phone.</string>
     <string name="phone_disconnected">Phone not connected</string>
     <string name="phone_waiting">Waiting for phone status…</string>

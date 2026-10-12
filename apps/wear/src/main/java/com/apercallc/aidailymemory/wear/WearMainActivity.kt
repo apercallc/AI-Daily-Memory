@@ -58,6 +58,12 @@ class WearMainActivity : ComponentActivity(),
         getSharedPreferences(PENDING_COMMAND_PREFERENCES, Context.MODE_PRIVATE)
     }
     private val handler = Handler(Looper.getMainLooper())
+    private val connectionWatcher = object : Runnable {
+        override fun run() {
+            refreshConnection(forceSnapshot = false)
+            handler.postDelayed(this, CONNECTION_POLL_INTERVAL_MS)
+        }
+    }
     private val timeout = Runnable {
         controlState.pendingCommandId?.let { commandId ->
             controlState = WearControlReducer.commandUnconfirmed(
@@ -94,10 +100,13 @@ class WearMainActivity : ComponentActivity(),
             handler.postDelayed(timeout, COMMAND_TIMEOUT_MS)
         }
         refreshConnection()
+        handler.removeCallbacks(connectionWatcher)
+        handler.postDelayed(connectionWatcher, CONNECTION_POLL_INTERVAL_MS)
     }
 
     override fun onStop() {
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(connectionWatcher)
         Wearable.getDataClient(this).removeListener(this)
         Wearable.getMessageClient(this).removeListener(this)
         super.onStop()
@@ -125,16 +134,19 @@ class WearMainActivity : ComponentActivity(),
         }
     }
 
-    private fun refreshConnection() {
+    private fun refreshConnection() = refreshConnection(forceSnapshot = true)
+
+    private fun refreshConnection(forceSnapshot: Boolean) {
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
+                val previousNodeId = phoneNodeId
                 phoneNodeId = nodes.firstOrNull()?.id
                 controlState = WearControlReducer.connection(controlState, phoneNodeId != null)
                 if (phoneNodeId == null) {
                     controlState = controlState.copy(
                         error = "Phone not connected. Open the phone app and check Bluetooth.",
                     )
-                } else {
+                } else if (forceSnapshot || previousNodeId != phoneNodeId) {
                     loadExistingSnapshot()
                     requestSnapshot()
                 }
@@ -326,6 +338,7 @@ class WearMainActivity : ComponentActivity(),
         private const val PENDING_ID_KEY = "pending_command_id"
         private const val PENDING_ACTION_KEY = "pending_command_action"
         private const val COMMAND_TIMEOUT_MS = 10_000L
+        private const val CONNECTION_POLL_INTERVAL_MS = 5_000L
         private val VALID_STATUSES = RecordingStatus.entries.map { it.name }.toSet()
         private val VALID_PROBLEMS = CaptureProblem.entries.map { it.name }.toSet()
     }
@@ -368,12 +381,20 @@ private fun WearHome(
             }
         }
         if (state.pendingCommandId != null && state.error == null) {
-            Text(stringResource(R.string.command_waiting))
+            Text(
+                stringResource(R.string.command_waiting),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
         state.lastAcknowledgement?.let { ack ->
-            Text(stringResource(WearStrings.acknowledgement(ack.outcome)))
+            Text(
+                stringResource(WearStrings.acknowledgement(ack.outcome)),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
-        state.error?.let { Text(it) }
+        state.error?.let {
+            Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
         if (state.pendingCommandId != null && state.error != null) {
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.action_retry))

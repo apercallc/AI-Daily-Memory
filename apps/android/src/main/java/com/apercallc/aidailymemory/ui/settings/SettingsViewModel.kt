@@ -136,15 +136,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val sync: StateFlow<SyncUi> = combine(
         pSettings.syncEnabled,
         pSettings.syncIncludeTranscripts,
+        pSettings.lastSyncFailed,
         pSettings.configRevision,
-    ) { enabled, includeTranscripts, _ ->
+    ) { enabled, includeTranscripts, lastSyncFailed, _ ->
         SyncUi(
             enabled = enabled,
             url = pSettings.syncUrl ?: "",
             token = pSettings.syncToken ?: "",
             includeTranscripts = includeTranscripts,
             lastSyncEpochMs = pSettings.lastSyncEpochMs,
-            lastSyncFailed = false,
+            lastSyncFailed = lastSyncFailed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncUi())
 

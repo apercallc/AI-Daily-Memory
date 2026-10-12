@@ -104,7 +104,9 @@ class LoggedIn:
 
 async def log_in(session: AsyncSession, *, email: str, password: str, device_name: str) -> LoggedIn:
     normalized = normalize_email(email)
-    credential = await session.scalar(select(Credential).where(Credential.email == normalized))
+    credential = await session.scalar(
+        select(Credential).where(Credential.email == normalized).with_for_update()
+    )
     now = datetime.now(UTC)
     if credential is None:
         # Pay the same hashing cost as a real check so response timing doesn't reveal whether

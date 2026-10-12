@@ -12,11 +12,16 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "staging", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # Railway public HTTP ingress overwrites X-Real-IP with the connected client address.
+    trust_railway_x_real_ip: bool = False
     # JSON API bodies only. Audio goes directly to object storage via signed URLs, so a large
     # body here is a bug or abuse, not a use case.
     max_request_body_bytes: int = Field(default=1_048_576, gt=0, le=16_777_216)
     # Whole-request budget; a slow database or store must not pin workers indefinitely.
     request_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+
+    # Optional error reporting. Event payloads are scrubbed before leaving this process.
+    sentry_dsn: SecretStr | None = None
 
     # postgresql+psycopg://user:password@host:5432/db. Unset means no database (health only).
     database_url: SecretStr | None = None

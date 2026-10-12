@@ -24,12 +24,13 @@ android {
         applicationId = "com.apercallc.aidailymemory"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1
+        versionCode = 1_000_000 // Wear range starts at 1_000_000; keep distinct from phone (ADR-0008).
         versionName = "0.1.0"
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     buildTypes {
@@ -65,10 +66,23 @@ android {
     }
 }
 
+// Fail closed instead of producing an APK that looks releasable but cannot update an install.
+val verifyReleaseSigning by tasks.registering {
+    doLast {
+        check(releaseKeystoreProperties != null) {
+            "Release signing properties are missing; configure the protected keystore before building release artifacts."
+        }
+    }
+}
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn(verifyReleaseSigning)
+}
+
 dependencies {
     implementation(project(":core:recording"))
     implementation(libs.play.services.wearable)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.sentry.android)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.wear.compose.material3)

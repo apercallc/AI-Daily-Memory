@@ -35,6 +35,19 @@ expires or fails — no silent loss.
 extracted items carry confidence and cite evidence; dismissals exist, edits/supersession
 are in progress.
 
+**Error diagnostics are limited.** The backend, Android/Wear apps, and website report
+exception types, stack locations, release, and environment to separate Sentry projects in
+Sentry's US region. Before sending, SDK hooks remove error messages, request URLs and
+bodies, account identifiers, user/device contexts, breadcrumbs, local variables, and
+source-code context. The mobile apps also disable screenshots, view hierarchies, tracing,
+profiling, replay, and automatic session tracking. The website fetches its error-only SDK
+from Sentry's CDN; the SDK request exposes the visitor's network address to that CDN, while
+an error event is sent only when a JavaScript error occurs. The authentication throttle keeps
+request client addresses in bounded process memory only; it does not log them or store them
+in the database. In production, it uses Railway's edge-overwritten `X-Real-IP` only when
+explicitly enabled. Private-network requests are not covered by that trust rule. These
+reports do not include audio, transcripts, or memory content.
+
 ## What we must NOT claim
 
 - **End-to-end encryption.** Any cloud transcription mode requires a provider to process

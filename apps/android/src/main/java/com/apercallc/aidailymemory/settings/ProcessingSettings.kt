@@ -78,6 +78,7 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
     fun setExtractionProvider(provider: String) {
         prefs.edit { putString(KEY_EXTRACTION_PROVIDER, provider) }
         _extractionProvider.value = provider
+        configChanged()
     }
 
     var extractionApiKey: String?
@@ -127,6 +128,14 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
     fun setSyncEnabled(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_SYNC_ENABLED, enabled) }
         _syncEnabled.value = enabled
+    }
+
+    private val _lastSyncFailed = MutableStateFlow(prefs.getBoolean(KEY_LAST_SYNC_FAILED, false))
+    val lastSyncFailed: StateFlow<Boolean> = _lastSyncFailed.asStateFlow()
+
+    fun setLastSyncFailed(failed: Boolean) {
+        prefs.edit { putBoolean(KEY_LAST_SYNC_FAILED, failed) }
+        _lastSyncFailed.value = failed
     }
 
     var syncUrl: String?
@@ -186,6 +195,7 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
         private const val KEY_SYNC_URL = "sync_url"
         private const val KEY_SYNC_TOKEN = "sync_token"
         private const val KEY_SYNC_INCLUDE_TRANSCRIPTS = "sync_include_transcripts"
+        private const val KEY_LAST_SYNC_FAILED = "last_sync_failed"
         private const val KEY_LAST_SYNC = "last_sync_epoch_ms"
         private const val NONE = Long.MIN_VALUE
     }

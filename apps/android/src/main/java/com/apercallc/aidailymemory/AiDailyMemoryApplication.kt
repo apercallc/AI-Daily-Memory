@@ -8,6 +8,7 @@ class AiDailyMemoryApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        SentryConfiguration.initialize(this)
         container = AppContainer(this)
         container.notifications.createChannels()
         // Every process start (launcher, notification action, boot, update) restores the

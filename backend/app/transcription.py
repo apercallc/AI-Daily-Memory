@@ -4,6 +4,7 @@ review); until then `transcription_provider=disabled` and transcribe jobs wait i
 """
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -112,6 +113,7 @@ class TranscribeHandler:
                 raise JobError("upload_missing", retryable=False)
             key, state = upload.object_key, upload.state
             codec, rate, duration = upload.codec, upload.sample_rate_hz, upload.duration_ms
+            expected_size, expected_sha256 = upload.byte_size, upload.sha256
             clip = (upload.segment_id, upload.offset_ms, upload.captured_at)
             mode = await session.scalar(select(User.storage_mode).where(User.id == job.user_id))
             # Phone modes (ADR-0014): the transcript is sealed to the key of the device that
@@ -141,6 +143,8 @@ class TranscribeHandler:
                 raise JobError("audio_missing", retryable=False) from e
             except TimeoutError as e:
                 raise JobError("store_timeout", retryable=True) from e
+            if len(audio) != expected_size or hashlib.sha256(audio).hexdigest() != expected_sha256:
+                raise JobError("audio_integrity_failed", retryable=False)
             try:
                 async with asyncio.timeout(self.timeout_seconds):
                     result = await self.provider.transcribe(audio, codec=codec, sample_rate_hz=rate)

@@ -44,6 +44,26 @@ class ProcessingSettingsTest {
     }
 
     @Test
+    fun `sync failure state is observable and persisted`() {
+        val settings = ProcessingSettings(preferences)
+
+        settings.setLastSyncFailed(true)
+        assertEquals(true, settings.lastSyncFailed.value)
+
+        assertEquals(true, ProcessingSettings(preferences).lastSyncFailed.value)
+    }
+
+    @Test
+    fun `changing extraction provider emits a configuration revision`() {
+        val settings = ProcessingSettings(preferences)
+
+        settings.setExtractionProvider(ProcessingSettings.PROVIDER_USER_API)
+
+        assertEquals(1L, settings.configRevision.value)
+        assertEquals(ProcessingSettings.PROVIDER_USER_API, settings.extractionProvider.value)
+    }
+
+    @Test
     fun `text configuration edits emit revisions and persist`() = runTest {
         val settings = ProcessingSettings(preferences)
         val revisions = mutableListOf<Long>()

@@ -18,6 +18,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.errors import error_response
 from app.observability import request_id_var
+from app.sentry import capture_unhandled_error
 
 logger = logging.getLogger("app.request")
 
@@ -102,10 +103,11 @@ class RequestContextMiddleware:
             if response_started:
                 raise
             await _send_error(scope, send_with_request_id, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-        except Exception:
+        except Exception as exc:
             # Last resort: log type and stack (no message, no body), return the standard
             # envelope. If the response already started, the client sees a broken stream.
             logger.exception("unhandled_error", extra={"path": scope["path"]})
+            capture_unhandled_error(exc)
             if response_started:
                 raise
             await _send_error(scope, send_with_request_id, HTTPStatus.INTERNAL_SERVER_ERROR)

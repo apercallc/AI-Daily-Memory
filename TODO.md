@@ -270,7 +270,9 @@ Goal: prove reliable Android capture before building AI infrastructure.
   argon2 credentials with lockout; the Android app still expects a pasted token — no
   in-app signup form yet)
 - [x] Add per-user authorization checks
-- [ ] Add rate limiting before public exposure
+- [x] Baseline in-process signup/login throttles (five attempts/hour for signup; ten/minute
+  for login per peer)
+- [ ] Shared edge throttling before horizontal scaling or broader public exposure
 - [x] Add payload/body size limits (declared and streamed; 413)
 - [x] Add request timeouts
 
@@ -591,7 +593,7 @@ Goal: prove reliable Android capture before building AI infrastructure.
   - [ ] Export delivered via scoped, short-TTL signed URL, never inline in the API response
   - [ ] Export requests rate-limited and idempotent; re-request within TTL does not regenerate
   - [ ] Export is excluded from third-party/API-key scopes by default (self-service only)
-- [ ] Account deletion
+- [ ] Account deletion, including cleanup after already-issued signed PUT URLs expire
 - [ ] Child/minor policy before broad release
 - [ ] Abuse review for covert recording scenarios
 

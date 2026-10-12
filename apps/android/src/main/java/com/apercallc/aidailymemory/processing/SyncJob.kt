@@ -77,6 +77,7 @@ class SyncJobService : JobService() {
                 throw e
             } catch (e: Exception) {
                 needsReschedule = true
+                container.processingSettings.setLastSyncFailed(true)
                 logFailure(TAG, "sync_failed", e)
             } finally {
                 if (currentCoroutineContext().isActive) {
@@ -133,12 +134,14 @@ class SyncManager(
         return try {
             post(url, token, json.encodeToString(SyncPayload.serializer(), payload))
             settings.lastSyncEpochMs = System.currentTimeMillis()
+            settings.setLastSyncFailed(false)
             Log.i(TAG, "sync_succeeded reports=${reports.size}")
             true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logFailure(TAG, "sync_post_failed", e)
+            settings.setLastSyncFailed(true)
             false
         }
     }

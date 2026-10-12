@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -246,6 +248,15 @@ fun SyncSettingsSection(
         if (sync.enabled) {
             SettingsCard {
                 Column(modifier = Modifier.padding(spacing.md)) {
+                    if (sync.lastSyncFailed) {
+                        Text(
+                            text = stringResource(R.string.sync_failed),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                        Spacer()
+                    }
                     OutlinedTextField(
                         value = sync.url,
                         onValueChange = actions.onUrlChange,

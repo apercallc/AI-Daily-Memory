@@ -168,6 +168,18 @@ async def _create(
     settings: Settings,
     response: Response,
 ) -> UploadStatus | Response:
+    # Match DELETE /v1/me so a deletion cannot sweep the prefix while this request reserves a
+    # new object key or returns a fresh presigned PUT URL.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:user))"),
+        {"user": str(principal.user_id)},
+    )
+    if await session.scalar(select(User.id).where(User.id == principal.user_id)) is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     existing = await session.get(AudioUpload, body.upload_id)
     if existing is not None:
         # Another user's id and a changed payload look the same from outside.
@@ -208,11 +220,6 @@ async def _create(
                 code="device_key_required",
             )
 
-    # Serialize this user's creates so concurrent requests can't all pass the quota check.
-    await session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:user))"),
-        {"user": str(principal.user_id)},
-    )
     since = datetime.now(UTC) - timedelta(days=1)
     used = await session.scalar(
         select(func.coalesce(func.sum(AudioUpload.byte_size), 0)).where(

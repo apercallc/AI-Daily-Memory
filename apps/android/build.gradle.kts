@@ -9,8 +9,8 @@ plugins {
     alias(libs.plugins.room)
 }
 
-// Release signing lives outside the repository (no secrets in git). When the properties
-// file is absent — CI, a fresh clone — the release build is simply unsigned.
+// Release signing lives outside the repository (no secrets in git). A release artifact cannot
+// be assembled from a fresh clone unless the production signing properties are configured.
 // The SAME key signs the Wear app (ADR-0008): the Wear Data Layer requires matching
 // applicationId + signature.
 val releaseKeystoreProperties: Properties? by lazy {
@@ -32,7 +32,7 @@ android {
         applicationId = "com.apercallc.aidailymemory"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1
+        versionCode = 1 // Phone range: 1..999_999; Wear starts at 1_000_000 (ADR-0008).
         versionName = "0.1.0"
     }
 
@@ -43,7 +43,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        buildConfig = true
     }
 
     buildTypes {
@@ -95,6 +95,18 @@ android {
     }
 }
 
+// Fail closed instead of producing an APK that looks releasable but cannot update an install.
+val verifyReleaseSigning by tasks.registering {
+    doLast {
+        check(releaseKeystoreProperties != null) {
+            "Release signing properties are missing; configure the protected keystore before building release artifacts."
+        }
+    }
+}
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn(verifyReleaseSigning)
+}
+
 dependencies {
     implementation(project(":core:recording"))
 
@@ -110,6 +122,7 @@ dependencies {
     implementation(libs.tink.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.wearable)
+    implementation(libs.sentry.android)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

@@ -10,11 +10,13 @@ from app.api.reports import router as reports_router
 from app.api.signup import router as signup_router
 from app.api.sync import router as sync_router
 from app.api.uploads import router as uploads_router
+from app.auth_rate_limit import AuthRateLimiter
 from app.config import Settings, get_settings
 from app.db import Database
 from app.errors import ErrorResponse, install_error_handlers
 from app.middleware import RequestContextMiddleware
 from app.observability import configure_logging
+from app.sentry import initialize_sentry
 from app.storage import ObjectStore, object_store_from
 
 
@@ -30,6 +32,7 @@ def create_app(
     if processing_enabled is None:
         processing_enabled = settings.transcription_provider != "disabled"
     configure_logging(settings.log_level)
+    initialize_sentry(settings)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -59,6 +62,7 @@ def create_app(
         },
     )
     application.state.settings = settings
+    application.state.auth_rate_limiter = AuthRateLimiter()
     application.state.processing_enabled = processing_enabled
     install_error_handlers(application)
     application.add_middleware(

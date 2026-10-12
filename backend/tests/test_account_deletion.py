@@ -1,13 +1,17 @@
+import asyncio
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from threading import Event
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from app.main import create_app
-from app.storage import DeleteIncompleteError
+from app.storage import DeleteIncompleteError, PresignedPut
 from tests.conftest import FakeObjectStore, make_account, settings_for
 
 pytestmark = pytest.mark.anyio
@@ -169,3 +173,76 @@ def test_account_deletion_does_not_accept_untrusted_user_id(
     response = client.delete(f"/v1/users/{uuid.uuid4()}", headers=account.headers)
 
     assert response.status_code == 404
+
+
+class BlockingDeleteObjectStore(FakeObjectStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.delete_started = Event()
+        self.allow_delete = Event()
+        self.presign_started = Event()
+
+    async def delete_prefix(self, prefix: str) -> int:
+        self.delete_started.set()
+        if not await asyncio.to_thread(self.allow_delete.wait, 5):
+            raise TimeoutError("test did not release account deletion")
+        return await super().delete_prefix(prefix)
+
+    def presign_put(
+        self,
+        key: str,
+        *,
+        byte_size: int,
+        sha256: str,
+        expires_in: int,
+    ) -> PresignedPut:
+        self.presign_started.set()
+        return super().presign_put(
+            key,
+            byte_size=byte_size,
+            sha256=sha256,
+            expires_in=expires_in,
+        )
+
+
+def test_upload_reservation_waits_for_account_deletion(
+    db: Engine,
+    database_url: str,
+) -> None:
+    account = make_account(db, storage_mode="full_cloud")
+    store = BlockingDeleteObjectStore()
+    store.put(f"users/{account.user_id}/audio/old.aac", b"old")
+    with TestClient(
+        create_app(settings_for(database_url), object_store=store, processing_enabled=True),
+    ) as client:
+        upload_started = Event()
+        body = {
+            "upload_id": str(uuid.uuid4()),
+            "session_id": str(uuid.uuid4()),
+            "segment_id": str(uuid.uuid4()),
+            "offset_ms": 0,
+            "duration_ms": 1_000,
+            "byte_size": 3,
+            "sha256": "0" * 64,
+            "codec": "aac-lc-adts",
+            "sample_rate_hz": 16_000,
+            "channel_count": 1,
+            "captured_at": "2026-09-25T14:03:00+02:00",
+        }
+
+        def create_upload() -> Any:
+            upload_started.set()
+            return client.post("/v1/uploads", json=body, headers=account.headers)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            deletion = executor.submit(client.delete, "/v1/me", headers=account.headers)
+            assert store.delete_started.wait(timeout=5)
+            upload = executor.submit(create_upload)
+            assert upload_started.wait(timeout=5)
+            assert not store.presign_started.wait(timeout=0.25)
+            store.allow_delete.set()
+            assert deletion.result(timeout=10).status_code == 204
+            assert upload.result(timeout=10).status_code == 401
+
+    assert not store.presign_started.is_set()
+    assert not store.objects

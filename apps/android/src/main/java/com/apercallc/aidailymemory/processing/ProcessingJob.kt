@@ -55,6 +55,11 @@ class ProcessingJobService : JobService() {
         running = container.appScope.launch(Dispatchers.IO) {
             try {
                 needsReschedule = container.processingPipeline.processPending().remaining > 0
+                if (container.processingSettings.syncEnabled.value) {
+                    // A sync job can run before processing creates today's report and return
+                    // successfully with nothing to send. Schedule again after processing completes.
+                    container.syncScheduler.schedule()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

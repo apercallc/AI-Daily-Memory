@@ -408,6 +408,25 @@ class AppContainer(context: Context) {
                 extractionProvider = ep,
                 settings = processingSettings,
                 ids = ids,
+                shouldKeepAudioForUpload = { segment ->
+                    links.ensureLoaded()
+                    val uploadEligible =
+                        links.isLinked && segment.start.occurredAtEpochMs >= links.uploadSinceEpochMs
+                    if (!uploadEligible) {
+                        false
+                    } else {
+                        val clips = database.clips()
+                        val plan = clips.planFor(segment.segmentId)
+                        when (plan?.outcome) {
+                            null, "UNREADABLE" -> true
+                            "PLANNED" -> clips.forSegment(segment.segmentId).let { rows ->
+                                rows.isEmpty() || rows.any { it.state != "RECEIVED" }
+                            }
+                            "NO_SPEECH", "EMPTY" -> false
+                            else -> true
+                        }
+                    }
+                },
             )
         }
 

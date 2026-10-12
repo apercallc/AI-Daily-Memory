@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AI Daily Memory</string>
+    <string name="sentry_dsn">https://559258c22138d64370262bdc425ba58d@o4508955926396928.ingest.us.sentry.io/4512245212315648</string>
     <string name="tagline">Capture what matters. Keep the evidence. Recall it later.</string>
 
     <string name="status_ready">Ready</string>
@@ -272,6 +273,7 @@
     <string name="sync_section">Sync to API endpoint</string>
     <string name="sync_explainer">Push daily summaries and memory items to your own server for cross-device querying. Never sends audio.</string>
     <string name="sync_enabled">Enable sync</string>
+    <string name="sync_failed">Sync failed. New reports are waiting to upload; check the endpoint and try again.</string>
     <string name="sync_url">Sync endpoint URL</string>
     <string name="sync_token">Auth token</string>
     <string name="sync_include_transcripts">Also sync full transcripts</string>

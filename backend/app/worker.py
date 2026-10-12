@@ -26,6 +26,7 @@ from app.jobs import ClaimedJob, claim, complete, fail
 from app.observability import configure_logging
 from app.providers import ClaudeExtractionProvider, DeepgramProvider
 from app.retention import sweep
+from app.sentry import capture_unhandled_error, initialize_sentry
 from app.storage import ObjectStore, object_store_from
 from app.transcription import JobError, TranscribeHandler, TranscriptionProvider
 
@@ -77,9 +78,10 @@ class Worker:
             await handler(job)
         except JobError as e:
             await self._fail(handler, job, e.code, retryable=e.retryable)
-        except Exception:
+        except Exception as exc:
             # Unknown failures retry (bounded) and are logged by type and location only.
             logger.exception("job_handler_crashed", extra={"job_id": str(job.id)})
+            capture_unhandled_error(exc)
             await self._fail(handler, job, "unexpected_error", retryable=True)
         else:
             async with self.database.sessions() as session:
@@ -98,9 +100,10 @@ class Worker:
         if state == "dead" and on_dead is not None:
             try:
                 await on_dead(job, code)
-            except Exception:
+            except Exception as exc:
                 # The retention sweep finishes the cleanup; never lose the failure itself.
                 logger.exception("job_dead_hook_failed", extra={"job_id": str(job.id)})
+                capture_unhandled_error(exc)
 
     async def _maybe_sweep(self) -> None:
         if self.sweeper is None:
@@ -116,9 +119,10 @@ class Worker:
             try:
                 await self._maybe_sweep()
                 worked = await self.run_once()
-            except Exception:
+            except Exception as exc:
                 # A database blip must not kill the process; back off and try again.
                 logger.exception("worker_iteration_failed")
+                capture_unhandled_error(exc)
                 worked = False
             if not worked:
                 try:
@@ -199,5 +203,7 @@ async def _main(settings: Settings) -> None:  # pragma: no cover - process entry
 
 
 if __name__ == "__main__":  # pragma: no cover
-    configure_logging(get_settings().log_level)
-    asyncio.run(_main(get_settings()))
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    initialize_sentry(settings)
+    asyncio.run(_main(settings))

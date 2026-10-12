@@ -16,6 +16,7 @@ dependencies = [
   "httpx>=0.28,<1.0",  # Deepgram provider (app/providers.py)
   "psycopg[binary]>=3.2,<4.0",
   "pydantic-settings>=2.10,<3.0",
+  "sentry-sdk>=2.40,<3.0",
   "sqlalchemy[asyncio]>=2.0.40,<3.0",
   "uvicorn[standard]>=0.35,<1.0",
 ]

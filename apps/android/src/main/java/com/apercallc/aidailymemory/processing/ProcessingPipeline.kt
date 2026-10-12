@@ -58,6 +58,7 @@ class ProcessingPipeline(
     private val settings: ProcessingSettings,
     private val ids: UuidV7Generator,
     private val now: () -> Long = System::currentTimeMillis,
+    private val shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
 ) {
     /**
      * Processes up to [limit] sessions, oldest first. Cancellation stops between sessions.
@@ -158,12 +159,21 @@ class ProcessingPipeline(
         }
 
         updateState(sessionId, "TRANSCRIBED", null)
+        var audioDeleted = false
         if (settings.deleteAudioAfterTranscription.value) {
+            var audioRetainedForUpload = false
             for (segmentId in segmentIds) {
                 val segment = segmentDao.get(segmentId) ?: continue
+                if (shouldKeepAudioForUpload(segment)) {
+                    audioRetainedForUpload = true
+                    continue
+                }
                 segments.deleteSegmentAudio(segment)
             }
-            updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
+            audioDeleted = !audioRetainedForUpload
+            if (audioDeleted) {
+                updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
+            }
         }
 
         // Build numbered lines for extraction
@@ -222,7 +232,7 @@ class ProcessingPipeline(
             ),
         )
 
-        updateState(sessionId, "COMPLETED", null, audioDeleted = settings.deleteAudioAfterTranscription.value)
+        updateState(sessionId, "COMPLETED", null, audioDeleted = audioDeleted)
     }
 
     private fun computeMemoryDay(startEpochMs: Long): String {

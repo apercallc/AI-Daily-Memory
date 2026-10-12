@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require, revoke_token
@@ -67,11 +67,16 @@ async def delete_me(request: Request, session: Session, device: Device) -> Respo
     account remains intact so the operation can be retried. The device token is the proof of
     possession and is revoked by the same cascading delete.
     """
+    # Serialize account deletion with new upload reservations for this user. The upload route
+    # takes the same transaction-scoped lock before it touches storage or issues a PUT URL.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:user))"),
+        {"user": str(device.user_id)},
+    )
     store: ObjectStore | None = request.app.state.object_store
     uploads = await session.scalar(
         select(func.count()).select_from(AudioUpload).where(AudioUpload.user_id == device.user_id),
     )
-    await session.rollback()
     if store is None:
         if uploads:
             raise HTTPException(

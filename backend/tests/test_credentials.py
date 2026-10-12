@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
@@ -127,6 +128,34 @@ async def test_repeated_wrong_passwords_lock_the_account(database: Database) -> 
 
     with pytest.raises(LoginError) as locked:
         await _log_in(database, email="erin@example.com", password="x" * 12, device_name="b")
+    assert locked.value.code == "account_locked"
+
+
+async def test_concurrent_wrong_passwords_cannot_bypass_lockout(database: Database) -> None:
+    await _sign_up(database, email="concurrent@example.com", password="x" * 12, device_name="a")
+
+    async def wrong_attempt() -> str:
+        try:
+            await _log_in(
+                database,
+                email="concurrent@example.com",
+                password="wrong-pw12",  # noqa: S106 - fake credential for the test
+                device_name="b",
+            )
+        except LoginError as error:
+            return error.code
+        return "unexpected_success"
+
+    results = await asyncio.gather(*(wrong_attempt() for _ in range(MAX_FAILED_ATTEMPTS)))
+    assert results == ["invalid_credentials"] * MAX_FAILED_ATTEMPTS
+
+    with pytest.raises(LoginError) as locked:
+        await _log_in(
+            database,
+            email="concurrent@example.com",
+            password="x" * 12,
+            device_name="b",
+        )
     assert locked.value.code == "account_locked"
 
 

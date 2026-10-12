@@ -169,6 +169,20 @@ def test_unhandled_error_returns_envelope_and_logs_without_message(
     assert access.__dict__["status"] == 500
 
 
+def test_unhandled_error_is_sent_to_sentry_without_changing_the_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[BaseException] = []
+    monkeypatch.setattr("sentry_sdk.capture_exception", captured.append)
+
+    response = client.get("/boom")
+
+    assert response.status_code == 500
+    assert len(captured) == 1
+    assert isinstance(captured[0], RuntimeError)
+    assert str(captured[0]) == "secret transcript text"
+
+
 def test_error_after_response_started_is_reraised(app: FastAPI) -> None:
     with TestClient(app) as strict, pytest.raises(RuntimeError, match="mid-stream"):
         strict.get("/broken-stream")

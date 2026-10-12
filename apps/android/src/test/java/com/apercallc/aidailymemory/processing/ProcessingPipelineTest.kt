@@ -71,6 +71,24 @@ class ProcessingPipelineTest {
     }
 
     @Test
+    fun `saved transcript extraction keeps audio while an upload is still eligible`() = runTest {
+        addTranscribedSession(segmentState = "SEALED")
+
+        val run = pipeline(
+            extractionProvider = object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(emptyList())
+            },
+            shouldKeepAudioForUpload = { true },
+        ).processPending()
+
+        assertEquals(1, run.processed)
+        assertEquals("SEALED", database.segments().get(SEGMENT_ID)?.state)
+        assertFalse(database.processingState().forSession(SESSION_ID)?.audioDeleted == true)
+    }
+
+    @Test
     fun `retryable provider failure returns processing state to pending`() = runTest {
         addTranscribedSession()
 
@@ -87,13 +105,13 @@ class ProcessingPipelineTest {
         assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
     }
 
-    private suspend fun addTranscribedSession() {
+    private suspend fun addTranscribedSession(segmentState: String = "DELETED") {
         database.segments().insert(
             SegmentEntity(
                 segmentId = SEGMENT_ID,
                 sessionId = SESSION_ID,
                 sequence = 0,
-                state = "DELETED",
+                state = segmentState,
                 byteSize = 0,
                 durationMs = 1_000,
                 sha256 = null,
@@ -124,11 +142,20 @@ class ProcessingPipelineTest {
             ),
         )
         database.processingState().upsert(
-            ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L),
+            ProcessingStateEntity(
+                SESSION_ID,
+                "PENDING",
+                segmentState == "DELETED",
+                null,
+                0L,
+            ),
         )
     }
 
-    private fun pipeline(extractionProvider: ExtractionProvider) = ProcessingPipeline(
+    private fun pipeline(
+        extractionProvider: ExtractionProvider,
+        shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
+    ) = ProcessingPipeline(
         segments = SegmentStore(
             directory = ApplicationProvider.getApplicationContext<Context>().cacheDir,
             dao = database.segments(),
@@ -159,6 +186,7 @@ class ProcessingPipelineTest {
         settings = settings,
         ids = UuidV7Generator(),
         now = { 42L },
+        shouldKeepAudioForUpload = shouldKeepAudioForUpload,
     )
 
     private companion object {

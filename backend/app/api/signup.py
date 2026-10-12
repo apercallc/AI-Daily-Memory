@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth_rate_limit import auth_rate_limit
 from app.credentials import LoginError, SignupError, log_in, sign_up
 from app.db import get_session
 from app.errors import ErrorResponse, error_response
@@ -26,12 +27,12 @@ router = APIRouter(tags=["signup"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 _ERRORS: dict[int | str, dict[str, object]] = {
-    status: {"model": ErrorResponse} for status in (400, 401, 409, 423)
+    status: {"model": ErrorResponse} for status in (400, 401, 409, 429)
 }
 
 # Codes from app.credentials mapped to HTTP status; anything else is a bug, not a client error.
 _SIGNUP_STATUS = {"invalid_email": 400, "weak_password": 400, "email_taken": 409}
-_LOGIN_STATUS = {"invalid_credentials": 401, "account_locked": 423}
+_LOGIN_STATUS = {"invalid_credentials": 401}
 
 
 class SignUpRequest(BaseModel):
@@ -56,7 +57,13 @@ class IssuedDeviceToken(BaseModel):
     token: str
 
 
-@router.post("/signup", response_model=IssuedDeviceToken, status_code=201, responses=_ERRORS)
+@router.post(
+    "/signup",
+    response_model=IssuedDeviceToken,
+    status_code=201,
+    responses=_ERRORS,
+    dependencies=[Depends(auth_rate_limit("signup", limit=5, window_seconds=3_600))],
+)
 async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken:
     try:
         signed_up = await sign_up(
@@ -70,7 +77,12 @@ async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken:
     return IssuedDeviceToken(token=signed_up.token.token)
 
 
-@router.post("/login", response_model=IssuedDeviceToken, responses=_ERRORS)
+@router.post(
+    "/login",
+    response_model=IssuedDeviceToken,
+    responses=_ERRORS,
+    dependencies=[Depends(auth_rate_limit("login", limit=10, window_seconds=60))],
+)
 async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken:
     try:
         logged_in = await log_in(
@@ -80,7 +92,8 @@ async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken:
         # Commit even on failure: a wrong-password attempt still bumps failed_attempts (and
         # may set locked_until), and that must survive past this request to matter.
         await session.commit()
-        status = _LOGIN_STATUS.get(e.code, 401)
-        return error_response(status, code=e.code)  # type: ignore[return-value]
+        error_code = "invalid_credentials" if e.code == "account_locked" else e.code
+        status = _LOGIN_STATUS.get(error_code, 401)
+        return error_response(status, code=error_code)  # type: ignore[return-value]
     await session.commit()
     return IssuedDeviceToken(token=logged_in.token.token)

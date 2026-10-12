@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -94,7 +95,7 @@ async def received_upload(
                 "user": user,
                 "s": uuid.uuid4(),
                 "seg": uuid.uuid4(),
-                "sha": "0" * 64,
+                "sha": hashlib.sha256(AUDIO).hexdigest(),
                 "at": NOW,
                 "key": key,
             },
@@ -188,6 +189,25 @@ async def test_a_provider_timeout_is_retried_then_dead_lettered(
     assert tuple(job) == ("queued", "provider_timeout")
     assert state(db)[0] == "received"
     assert store.objects  # audio kept for the retry
+
+
+async def test_audio_changed_after_upload_verification_never_reaches_provider(
+    database: Database,
+    db: Engine,
+    store: FakeObjectStore,
+) -> None:
+    upload_id = await received_upload(database, db, store)
+    store.put(audio_key_of(db, upload_id), b"different bytes")
+    provider = FakeProvider()
+
+    await worker(database, store, provider).run_once()
+
+    assert provider.calls == 0
+    assert state(db) == ("failed", "dead")
+    with db.connect() as connection:
+        code: str = connection.execute(text("SELECT failure_code FROM audio_uploads")).scalar_one()
+    assert code == "audio_integrity_failed"
+    assert store.objects == {}
 
 
 async def test_invalid_provider_output_is_never_stored(

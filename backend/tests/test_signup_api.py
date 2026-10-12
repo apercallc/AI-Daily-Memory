@@ -1,6 +1,8 @@
 from collections.abc import Iterator
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
@@ -83,6 +85,23 @@ def test_wrong_password_and_unknown_email_both_return_401_without_a_hint(
     assert wrong.json()["error"]["code"] == unknown.json()["error"]["code"] == "invalid_credentials"
 
 
+def test_locked_account_and_unknown_email_have_the_same_public_error(client: TestClient) -> None:
+    body = {"email": "locked@example.com", "password": "x" * 12, "device_name": "P"}
+    assert client.post("/v1/signup", json=body).status_code == 201
+
+    for _ in range(5):
+        client.post("/v1/login", json={**body, "password": "wrong-password"})
+
+    locked = client.post("/v1/login", json=body)
+    unknown = client.post("/v1/login", json={**body, "email": "nobody@example.com"})
+
+    locked_error = locked.json()["error"]
+    unknown_error = unknown.json()["error"]
+    assert locked.status_code == unknown.status_code == 401
+    assert locked_error["code"] == unknown_error["code"] == "invalid_credentials"
+    assert locked_error["message"] == unknown_error["message"]
+
+
 def test_storage_mode_can_be_switched_and_takes_effect_immediately(
     client: TestClient, db: Engine
 ) -> None:
@@ -114,6 +133,36 @@ def test_an_invalid_storage_mode_is_rejected(client: TestClient, db: Engine) -> 
 def test_storage_mode_update_requires_authentication(client: TestClient) -> None:
     response = client.put("/v1/me", json={"storage_mode": "full_cloud"})
     assert response.status_code == 401
+
+
+async def test_signup_rate_limit_returns_retry_after(client: TestClient) -> None:
+    limiter = cast(FastAPI, client.app).state.auth_rate_limiter
+    for _ in range(5):
+        assert await limiter.retry_after("signup:testclient", limit=5, window_seconds=3_600) is None
+
+    response = client.post(
+        "/v1/signup",
+        json={"email": "limited@example.com", "password": "x" * 12, "device_name": "P"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "3600"
+    assert response.json()["error"]["code"] == "too_many_requests"
+
+
+async def test_login_rate_limit_returns_retry_after(client: TestClient) -> None:
+    limiter = cast(FastAPI, client.app).state.auth_rate_limiter
+    for _ in range(10):
+        assert await limiter.retry_after("login:testclient", limit=10, window_seconds=60) is None
+
+    response = client.post(
+        "/v1/login",
+        json={"email": "limited@example.com", "password": "x" * 12, "device_name": "P"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "60"
+    assert response.json()["error"]["code"] == "too_many_requests"
 
 
 def test_an_extra_field_is_rejected(client: TestClient) -> None:
