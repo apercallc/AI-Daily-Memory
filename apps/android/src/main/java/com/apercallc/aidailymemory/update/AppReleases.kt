@@ -5,7 +5,15 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /** A published app release; [versionName] is the tag without its "v" prefix, e.g. "0.1.1". */
-data class AppRelease(val versionName: String, val apkUrl: String, val notes: String)
+data class AppRelease(
+    val versionName: String,
+    val apkUrl: String,
+    val notes: String,
+    /** Asset size from the release metadata; null when GitHub did not report it. */
+    val sizeBytes: Long? = null,
+    /** Lower-case hex SHA-256 from the asset `digest` ("sha256:..."); null when absent. */
+    val sha256: String? = null,
+)
 
 /**
  * Release-metadata parsing and version comparison. Pure — no Android or network types — so
@@ -35,11 +43,16 @@ object AppReleases {
                 versionName = tag.removePrefix("v"),
                 apkUrl = url,
                 notes = release.optString("body"),
+                sizeBytes = apk.optLong("size", -1L).takeIf { it > 0 },
+                sha256 = apk.optString("digest").lowercase().removePrefix("sha256:")
+                    .takeIf { it.length == SHA256_HEX_LENGTH && it.all { c -> c in '0'..'9' || c in 'a'..'f' } },
             )
         }
     } catch (_: JSONException) {
         null
     }
+
+    private const val SHA256_HEX_LENGTH = 64
 
     /**
      * True only when [latest] is strictly newer than [current] ("0.2.0" > "0.1.9"). Dotted

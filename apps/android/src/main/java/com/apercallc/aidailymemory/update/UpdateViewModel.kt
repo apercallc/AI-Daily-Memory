@@ -31,7 +31,10 @@ sealed interface UpdateState {
     data class Ready(val release: AppRelease) : UpdateState
 
     /** The check itself failed (offline, rate limit). Never silent: the card says so. */
-    data class CheckFailed(val versionName: String) : UpdateState
+    data object CheckFailed : UpdateState
+
+    /** The system installer could not be opened; the APK is still on disk, so it can retry. */
+    data class InstallFailed(val release: AppRelease) : UpdateState
 
     /** The download failed; the release is still available, so the button simply retries. */
     data class DownloadFailed(val release: AppRelease) : UpdateState
@@ -59,25 +62,21 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
             val installed = container.installedVersionName()
             // A failed check is distinct from "no update": the card says so instead of a
             // silent "you're up to date" that would hide a broken path (AGENTS.md).
-            val outcome = withContext(Dispatchers.IO) {
-                try {
-                    container.updates.check(installed)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logFailure(TAG, "update_check_failed", e)
-                    FAILED
+            val outcome = if (installed == null) {
+                UpdateCheck.Failed
+            } else {
+                withContext(Dispatchers.IO) {
+                    try {
+                        container.updates.check(installed)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logFailure(TAG, "update_check_failed", e)
+                        UpdateCheck.Failed
+                    }
                 }
             }
-            // A manual re-check that lands on nothing newer must not downgrade a downloaded
-            // APK back to "available" — the file is already on disk.
-            _state.value = when {
-                outcome is AppRelease -> UpdateState.Available(outcome)
-                outcome == FAILED && _state.value is UpdateState.Ready -> _state.value
-                outcome == FAILED -> UpdateState.CheckFailed(installed)
-                _state.value is UpdateState.Ready -> _state.value
-                else -> UpdateState.UpToDate(installed)
-            }
+            _state.value = reduceCheck(_state.value, outcome, installed)
         }
     }
 
@@ -106,14 +105,16 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Opens the system package installer; Android then asks for install-unknown-apps consent. */
     fun install() {
-        val release = (_state.value as? UpdateState.Ready)?.release ?: return
+        val release = (_state.value as? UpdateState.Ready)?.release
+            ?: (_state.value as? UpdateState.InstallFailed)?.release
+            ?: return
         val apk = downloaded ?: container.updateApkFile()
         if (!apk.isFile) {
             // The cache was cleared under us; back to the download button, not a dead install.
             _state.value = UpdateState.Available(release)
             return
         }
-        container.installApk(apk)
+        if (!container.installApk(apk)) _state.value = UpdateState.InstallFailed(release)
     }
 
     class Factory(private val container: AppContainer) : ViewModelProvider.Factory {
@@ -122,10 +123,19 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
             UpdateViewModel(container) as T
     }
 
-    private companion object {
-        const val TAG = "UpdateViewModel"
+    companion object {
+        private const val TAG = "UpdateViewModel"
 
-        /** Sentinel for a check that errored, distinct from null ("checked, nothing newer"). */
-        const val FAILED = "check-failed"
+        /**
+         * The state after a check finished while the card was in [current]. A downloaded APK
+         * (Ready) is never downgraded by a later check, whatever it found or failed to find.
+         */
+        internal fun reduceCheck(current: UpdateState, outcome: UpdateCheck, installed: String?): UpdateState =
+            when {
+                current is UpdateState.Ready -> current
+                outcome is UpdateCheck.Newer -> UpdateState.Available(outcome.release)
+                outcome == UpdateCheck.UpToDate && installed != null -> UpdateState.UpToDate(installed)
+                else -> UpdateState.CheckFailed
+            }
     }
 }

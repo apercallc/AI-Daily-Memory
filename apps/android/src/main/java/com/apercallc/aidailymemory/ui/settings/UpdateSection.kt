@@ -68,6 +68,11 @@ fun UpdateSection(
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 ) { Text(stringResource(R.string.update_install)) }
 
+                is UpdateState.InstallFailed -> Button(
+                    onClick = onInstall,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.update_install)) }
+
                 is UpdateState.DownloadFailed -> Button(
                     onClick = onDownload,
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
@@ -91,6 +96,7 @@ private fun statusText(state: UpdateState): String = when (state) {
     is UpdateState.Available -> stringResource(R.string.update_available, state.release.versionName)
     is UpdateState.Downloading -> stringResource(R.string.update_downloading_hint)
     is UpdateState.Ready -> stringResource(R.string.update_ready, state.release.versionName)
+    is UpdateState.InstallFailed -> stringResource(R.string.update_install_failed)
     is UpdateState.CheckFailed -> stringResource(R.string.update_check_failed)
     is UpdateState.DownloadFailed -> stringResource(R.string.update_download_failed)
 }

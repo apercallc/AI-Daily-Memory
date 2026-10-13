@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.ui
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
@@ -9,6 +10,8 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import com.apercallc.aidailymemory.platform.logFailure
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.SnackbarDuration
@@ -109,6 +113,21 @@ fun AiDailyMemoryApp(
     val snackbar = remember { SnackbarHostState() }
     var dialog by remember { mutableStateOf<StartDialog?>(null) }
     var batteryRestricted by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun notify(@StringRes message: Int) {
+        scope.launch { snackbar.showSnackbar(resources.getString(message)) }
+    }
+    fun open(intent: Intent) {
+        try {
+            context.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            logFailure("AiDailyMemoryApp", "settings_screen_unavailable", e)
+            notify(R.string.settings_screen_unavailable)
+        } catch (e: SecurityException) {
+            logFailure("AiDailyMemoryApp", "settings_screen_denied", e)
+            notify(R.string.settings_screen_unavailable)
+        }
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val power = context.getSystemService(PowerManager::class.java)
@@ -145,7 +164,7 @@ fun AiDailyMemoryApp(
     ) { granted ->
         // Continue to the next requirement (e.g. notifications after the microphone). A denial
         // stops here; the next Start tap explains again or points to Settings.
-        if (granted) tryStart()
+        if (granted) tryStart() else notify(R.string.permission_denied_feedback)
     }
 
     CaptureScreen(
@@ -165,7 +184,7 @@ fun AiDailyMemoryApp(
         onStop = { viewModel.send(RecordingService.ACTION_STOP) },
         onMark = viewModel::mark,
         onBatterySettings = {
-            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         },
         onOpenSessions = onOpenSessions,
         onOpenMemory = onOpenMemory,
@@ -201,7 +220,7 @@ fun AiDailyMemoryApp(
                         permissions.markRequested(current.permission)
                         requestPermission.launch(current.permission)
                     }
-                    StartDialog.OpenSettings -> context.startActivity(
+                    StartDialog.OpenSettings -> open(
                         Intent(
                             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                             Uri.fromParts("package", context.packageName, null),

@@ -1,7 +1,9 @@
 package com.apercallc.aidailymemory
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.provider.Settings
 import android.util.Log
@@ -453,18 +455,22 @@ class AppContainer(context: Context) {
     /** Self-update (GitHub Releases): checked once per app open, installed on user tap. */
     val updates: UpdateChecker by lazy { UpdateChecker(UpdateClient()) }
 
-    /** The version the updater compares against; "0" when the package manager won't say. */
-    fun installedVersionName(): String = try {
-        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0"
-    } catch (_: Exception) {
-        "0"
+    /** The version the updater compares against; null when the package manager won't say. */
+    fun installedVersionName(): String? = try {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName
+    } catch (e: PackageManager.NameNotFoundException) {
+        logFailure("AppContainer", "installed_version_unreadable", e)
+        null
     }
 
     /** Where a downloaded update APK lands (app-private cache; cleared with the app). */
     fun updateApkFile() = File(File(app.cacheDir, "updates"), UpdateChecker.ASSET_NAME)
 
-    /** Hands the downloaded APK to the system installer (user confirms the install). */
-    fun installApk(apk: File) {
+    /**
+     * Hands the downloaded APK to the system installer (user confirms the install). Returns
+     * false, never throws, when no installer can handle it or the file cannot be shared.
+     */
+    fun installApk(apk: File): Boolean = try {
         val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", apk)
         app.startActivity(
             Intent(Intent.ACTION_VIEW).apply {
@@ -473,6 +479,16 @@ class AppContainer(context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
+        true
+    } catch (e: ActivityNotFoundException) {
+        logFailure("AppContainer", "install_no_handler", e)
+        false
+    } catch (e: IllegalArgumentException) {
+        logFailure("AppContainer", "install_uri_failed", e)
+        false
+    } catch (e: SecurityException) {
+        logFailure("AppContainer", "install_denied", e)
+        false
     }
 
     /** Connect / disconnect (blocking: call on IO). */

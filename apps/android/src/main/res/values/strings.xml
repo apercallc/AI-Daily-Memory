@@ -236,6 +236,8 @@
     <string name="storage_mode_reports_cloud">Reports in the cloud — daily reports are stored on the server; transcripts stay on this phone</string>
     <string name="storage_mode_full_cloud">Full cloud — transcripts and reports are stored on the server</string>
 
+    <string name="settings_screen_unavailable">This device has no screen for that setting. Open it from system Settings instead.</string>
+    <string name="permission_denied_feedback">Permission denied. Recording needs it; tap Start to try again.</string>
     <string name="update_title">App update</string>
     <string name="update_check">Check for updates</string>
     <string name="update_checking">Checking for updates…</string>
@@ -250,6 +252,7 @@
     <string name="update_install">Install update</string>
     <string name="update_check_failed">Couldn\'t check for updates. Check your connection and try again.</string>
     <string name="update_download_failed">The download didn\'t finish. Your version keeps working; try again.</string>
+    <string name="update_install_failed">Couldn\'t open the installer. The update is downloaded; try again, or allow installs from this app in system settings.</string>
     <string name="update_snackbar">Update available: %1$s</string>
 
     <!-- On-device processing (ADR-0020) -->
