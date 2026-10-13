@@ -38,6 +38,9 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.recording.session.SessionTitle
+import com.apercallc.aidailymemory.ui.durationText
+import com.apercallc.aidailymemory.ui.sessions.sessionTitleText
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -61,9 +64,9 @@ data class MemoryDisplayItem(
 /** One session in the daily memory timeline, with its summary and items. */
 data class MemorySession(
     val sessionId: String,
-    val title: String,
+    val title: SessionTitle,
     val startTime: String,
-    val durationText: String,
+    val capturedMs: Long,
     val summary: String,
     val items: List<MemoryDisplayItem>,
     val transcriptLines: List<LocalTranscriptLineEntity>,
@@ -71,9 +74,18 @@ data class MemorySession(
     val freedBytes: Long,
 )
 
+/** How a day is named. Localized at render time, so the view model never holds UI strings. */
+sealed interface DayLabel {
+    data object Today : DayLabel
+    data object Yesterday : DayLabel
+
+    /** An already-formatted date (or the raw key when it could not be parsed). */
+    data class Date(val text: String) : DayLabel
+}
+
 /** A day in the memory timeline. */
 data class MemoryDay(
-    val dayLabel: String,
+    val dayLabel: DayLabel,
     val dateLabel: String,
     val sessions: List<MemorySession>,
 )
@@ -132,7 +144,11 @@ private fun MemoryDaySection(day: MemoryDay) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         Text(
-            text = day.dayLabel,
+            text = when (val label = day.dayLabel) {
+                DayLabel.Today -> stringResource(R.string.day_today)
+                DayLabel.Yesterday -> stringResource(R.string.day_yesterday)
+                is DayLabel.Date -> label.text
+            },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.semantics { heading() },
@@ -162,14 +178,14 @@ private fun MemorySessionCard(session: MemorySession) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = session.title,
+                        text = sessionTitleText(session.title),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${session.startTime} · ${session.durationText}",
+                        text = "${session.startTime} · ${durationText(session.capturedMs)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -280,6 +296,9 @@ private fun ExpandableTranscript(
     val spacing = AiDailyMemoryTheme.spacing
     var expanded by rememberSaveable { mutableStateOf(false) }
     val timeFormatter = remember { DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT) }
+    val transcriptToggleDescription = stringResource(
+        if (expanded) R.string.memory_hide_transcript else R.string.memory_view_transcript,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
         HorizontalDivider()
@@ -290,7 +309,9 @@ private fun ExpandableTranscript(
                 .heightIn(min = 48.dp)
                 .clickable(role = Role.Button) { expanded = !expanded }
                 .padding(vertical = spacing.xs)
-                .semantics { contentDescription = if (expanded) "Hide transcript" else "View transcript" },
+                .semantics {
+                    contentDescription = transcriptToggleDescription
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {

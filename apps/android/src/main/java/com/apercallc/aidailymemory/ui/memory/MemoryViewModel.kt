@@ -7,10 +7,14 @@ import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
 import com.apercallc.aidailymemory.recording.session.PartOfDay
+import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.session.SessionTitle
+import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.time.format.FormatStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -64,17 +68,17 @@ class MemoryViewModel(
                             val sessionLines = transcriptDao.forSession(row.sessionId)
                             val procState = processingDao.forSession(row.sessionId)
 
-                            val title = row.customTitle ?: run {
+                            val title = row.customTitle?.let { SessionTitle.Custom(it) } ?: run {
                                 val time = Instant.ofEpochMilli(row.startedAtEpochMs)
-                                    .atZone(ZoneId.of(row.zoneId)).toLocalTime()
-                                PartOfDay.of(time).name.lowercase().replaceFirstChar { it.uppercase() }
+                                    .atZone(zoneOf(row.zoneId)).toLocalTime()
+                                SessionTitle.Default(PartOfDay.of(time), null)
                             }
 
                             MemorySession(
                                 sessionId = row.sessionId,
                                 title = title,
                                 startTime = formatTime(row.startedAtEpochMs, row.zoneId),
-                                durationText = formatDuration(row.capturedMs),
+                                capturedMs = row.capturedMs,
                                 summary = buildSummary(sessionItems),
                                 items = sessionItems.map { it.toDisplayItem() },
                                 transcriptLines = sessionLines,
@@ -108,19 +112,15 @@ class MemoryViewModel(
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 
-    private fun formatTime(epochMs: Long, zoneId: String): String = try {
-        Instant.ofEpochMilli(epochMs).atZone(ZoneId.of(zoneId)).toLocalTime().format(timeFmt)
-    } catch (_: Exception) {
-        ""
-    }
+    private fun formatTime(epochMs: Long, zoneId: String): String =
+        Instant.ofEpochMilli(epochMs).atZone(zoneOf(zoneId)).toLocalTime().format(timeFmt)
 
-    private fun formatDuration(ms: Long): String {
-        val minutes = ms / 60_000
-        return when {
-            minutes < 1 -> "Under 1 min"
-            minutes < 60 -> "$minutes min"
-            else -> "${minutes / 60} h ${minutes % 60} min"
-        }
+    /** A zone id this device doesn't know (older tz database) is reported, then replaced. */
+    private fun zoneOf(zoneId: String): ZoneId = try {
+        ZoneId.of(zoneId)
+    } catch (e: DateTimeException) {
+        logFailure(TAG, "memory_zone_unknown", e, warning = true)
+        zone()
     }
 
     private fun buildSummary(items: List<MemoryItemEntity>): String {
@@ -128,19 +128,23 @@ class MemoryViewModel(
         return items.joinToString(". ") { it.text }
     }
 
-    private fun formatDayLabel(day: String): String = try {
-        val date = LocalDate.parse(day)
-        val today = memoryToday()
-        when (date) {
-            today -> "Today"
-            today.minusDays(1) -> "Yesterday"
-            else -> date.format(dateFmt)
+    private fun formatDayLabel(day: String): DayLabel {
+        val date = try {
+            LocalDate.parse(day)
+        } catch (e: DateTimeParseException) {
+            logFailure(TAG, "memory_day_unparseable", e, warning = true)
+            return DayLabel.Date(day)
         }
-    } catch (_: Exception) {
-        day
+        val today = memoryToday()
+        return when (date) {
+            today -> DayLabel.Today
+            today.minusDays(1) -> DayLabel.Yesterday
+            else -> DayLabel.Date(date.format(dateFmt))
+        }
     }
 
     companion object {
+        private const val TAG = "MemoryViewModel"
         private const val DAYS_SHOWN = 14L
         private const val STOP_TIMEOUT_MS = 5_000L
     }

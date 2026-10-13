@@ -16,6 +16,7 @@ from app.main import create_app
 from app.retention import PENDING_GRACE, sweep
 from app.storage import DeleteIncompleteError, PresignedPut
 from tests.conftest import FakeObjectStore, make_account, settings_for
+from tests.seed import USER_TABLES, row_counts, seed_user_data
 
 pytestmark = pytest.mark.anyio
 
@@ -54,10 +55,17 @@ def test_account_deletion_removes_storage_and_cascades_database_rows(
     other_key = f"users/{other.user_id}/audio/clip.aac"
     store.put(owned_key, b"audio")
     store.put(other_key, b"other audio")
+    seed_user_data(db, account.user_id)
+    seed_user_data(db, other.user_id)
+    before = row_counts(db, account.user_id)
+    assert all(before[table] > 0 for table in USER_TABLES)
 
     response = client.delete("/v1/me", headers=account.headers)
 
     assert response.status_code == 204
+    # Every user-derived table is empty for the deleted account; the other user is untouched.
+    assert row_counts(db, account.user_id) == dict.fromkeys(USER_TABLES, 0)
+    assert all(count > 0 for count in row_counts(db, other.user_id).values())
     assert owned_key not in store.objects
     assert store.objects[other_key][0] == b"other audio"
     with db.connect() as connection:

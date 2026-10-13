@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -346,6 +347,9 @@ fun CaptureScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                // The Scaffold's padding already covers the bars it knows about; consume it so
+                // safeDrawingPadding doesn't add the same insets a second time.
+                .consumeWindowInsets(padding)
                 .safeDrawingPadding()
                 // Scrolls instead of clipping at 200% font scale.
                 .verticalScroll(rememberScrollState())

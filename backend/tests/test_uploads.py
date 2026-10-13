@@ -560,3 +560,25 @@ def test_replaced_pending_clip_object_is_deleted_after_commit(
 
     assert response.status_code == 201
     assert old_key in store.deleted
+
+
+def test_a_create_that_keeps_losing_the_insert_race_is_a_409(
+    client: TestClient, account: Account, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    import app.api.uploads as uploads_module
+
+    attempts = 0
+
+    async def always_conflicts(*args: object, **kwargs: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        raise IntegrityError("insert", {}, Exception("duplicate"))
+
+    monkeypatch.setattr(uploads_module, "_create", always_conflicts)
+
+    response = client.post("/v1/uploads", json=clip(), headers=account.headers)
+
+    assert response.status_code == 409
+    assert attempts == 2  # one retry, then give up

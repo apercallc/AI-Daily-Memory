@@ -239,3 +239,23 @@ async def test_the_database_clock_is_used_when_no_time_is_given(
             text("SELECT run_after - now() FROM processing_jobs"),
         ).scalar_one()
     assert timedelta(seconds=25) < wait <= backoff(job.id, 1)
+
+
+async def test_run_after_delays_the_first_claim(database: Database, db: Engine) -> None:
+    user = make_account(db).user_id
+    async with database.sessions() as session:
+        await enqueue(
+            session,
+            user_id=user,
+            kind="extract",
+            subject_id=uuid.uuid4(),
+            idempotency_key="delayed",
+            run_after=NOW + timedelta(minutes=5),
+        )
+        await session.commit()
+
+        assert await claim(session, kinds=("extract",), worker="w", now=NOW) is None
+        later = await claim(session, kinds=("extract",), worker="w", now=NOW + timedelta(minutes=6))
+
+    assert later is not None
+    assert later.kind == "extract"
