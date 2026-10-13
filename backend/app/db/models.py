@@ -148,6 +148,9 @@ class AudioUpload(Base):
         # The retention sweep selects candidates by state and age (app/retention.py); without
         # this every pass was a full-table scan.
         Index("ix_audio_uploads_state_created_at", "state", "created_at"),
+        # Session deletion / per-session clip counts, and building a user's day report.
+        Index("ix_audio_uploads_user_id_session_id", "user_id", "session_id"),
+        Index("ix_audio_uploads_user_id_captured_at", "user_id", "captured_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -188,6 +191,8 @@ class ProcessingJob(Base):
     __table_args__ = (
         CheckConstraint(_in("state", JOB_STATES), name="state"),
         Index("ix_processing_jobs_claimable", "kind", "state", "run_after"),
+        # Dead-job lookups per upload (retention) and per-subject job cleanup.
+        Index("ix_processing_jobs_subject_id", "subject_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -270,7 +275,11 @@ class SealedDelivery(Base):
     Deleted on acknowledgement or after the 7-day hold (ADR-0014)."""
 
     __tablename__ = "sealed_deliveries"
-    __table_args__ = (UniqueConstraint("upload_id", "device_key_id"),)
+    __table_args__ = (
+        UniqueConstraint("upload_id", "device_key_id"),
+        # The retention sweep deletes expired deliveries by this column.
+        Index("ix_sealed_deliveries_expires_at", "expires_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = _user_fk()
@@ -299,6 +308,8 @@ class MemoryItem(Base):
             "kind != 'commitment' OR direction IS NOT NULL", name="commitment_has_direction"
         ),
         Index("ix_memory_items_user_id_memory_day", "user_id", "memory_day"),
+        # Session deletion and per-session item replacement (app/api/sync.py).
+        Index("ix_memory_items_user_id_session_id", "user_id", "session_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

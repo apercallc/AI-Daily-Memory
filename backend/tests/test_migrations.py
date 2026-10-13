@@ -66,3 +66,19 @@ def test_every_user_owned_table_cascades_from_users(migrated: Engine) -> None:
         ]
         assert user_fks, table.name
         assert all(fk["options"].get("ondelete") == "CASCADE" for fk in user_fks), table.name
+
+
+def test_query_path_indexes_exist(migrated: Engine) -> None:
+    inspector = inspect(migrated)
+    expected = {
+        "sealed_deliveries": ["expires_at"],
+        "processing_jobs": ["subject_id"],
+        "audio_uploads": ["user_id", "session_id"],
+        "memory_items": ["user_id", "session_id"],
+    }
+    for table, columns in expected.items():
+        indexed = [ix["column_names"] for ix in inspector.get_indexes(table)]
+        assert columns in indexed, (table, columns)
+    assert ["user_id", "captured_at"] in [
+        ix["column_names"] for ix in inspector.get_indexes("audio_uploads")
+    ]
