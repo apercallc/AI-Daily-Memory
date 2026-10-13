@@ -5,10 +5,12 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
+import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.recording.session.SessionTitle
@@ -75,7 +77,7 @@ class ScheduleScreensTest {
             }
         }
         compose.onNodeWithText("No memory yet").assertExists()
-        compose.onNodeWithText("Set up memory processing").performClick()
+        compose.onNodeWithText("Connect an account").performClick()
         assertEquals(1, opened)
     }
 
@@ -212,7 +214,7 @@ class ScheduleScreensTest {
     }
 
     @Test
-    fun `memory processing and own-server sync stay collapsed until opened`() {
+    fun `memory processing and daily reports stay collapsed until opened`() {
         compose.setContent {
             AiDailyMemoryTheme(dynamicColor = false) {
                 RhythmSettingsScreen(
@@ -232,7 +234,30 @@ class ScheduleScreensTest {
         compose.onNodeWithText("Memory processing").performClick()
         compose.onNodeWithText("Process my recordings").performScrollTo().assertExists()
 
-        compose.onNodeWithText("Send memory to your own server").performScrollTo().assertExists()
-        compose.onNodeWithText("Enable sync").assertDoesNotExist()
+        compose.onNodeWithText("Daily reports").performScrollTo().assertExists()
+        compose.onNodeWithText("Send daily reports to my account").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the theme can be picked, and following the phone is the default`() {
+        var picked: ThemeMode? = null
+        compose.setContent {
+            AiDailyMemoryTheme(dynamicColor = false) {
+                RhythmSettingsScreen(
+                    rhythm = DailyRhythm.None,
+                    retention = AudioRetention.TRANSCRIPT_ONLY,
+                    nextChange = null,
+                    bytesPerHour = 15L * 1024 * 1024,
+                    showUnreadableNotice = false,
+                    onRhythmChange = {},
+                    onRetentionChange = {},
+                    onThemeModeChange = { picked = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Match my phone (default)").performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Dark").performScrollTo().performClick()
+        assertEquals(ThemeMode.DARK, picked)
     }
 }

@@ -173,4 +173,63 @@ class WatchCommandBridgeTest {
         assertEquals(1, dispatches)
         assertEquals(acknowledgements[0], acknowledgements[1])
     }
+
+    @Test
+    fun `a watch start records its origin before the phone starts recording`() = runTest {
+        val order = mutableListOf<String>()
+        val bridge = WatchCommandBridge(
+            revision = { 1L },
+            dispatch = { command ->
+                order += "dispatch"
+                Transition.Applied(RecordingState.Initial, RecordingState.Initial.copy(revision = 1), command)
+            },
+            placeMarker = { MarkerDecision.NotCapturing },
+            newSessionId = { SessionId("from-watch") },
+            recordOrigin = { id, origin -> order += "origin:${id.value}:$origin" },
+        )
+
+        bridge.execute("start-1", WatchCommand.Start)
+
+        assertEquals(listOf("origin:from-watch:WATCH", "dispatch"), order)
+    }
+
+    @Test
+    fun `a refused watch start forgets its origin`() = runTest {
+        val forgotten = mutableListOf<String>()
+        val bridge = WatchCommandBridge(
+            revision = { 1L },
+            dispatch = { Transition.Rejected(RecordingState.Initial, it) },
+            placeMarker = { MarkerDecision.NotCapturing },
+            newSessionId = { SessionId("loser") },
+            forgetOrigin = { forgotten += it.value },
+        )
+
+        bridge.execute("start-2", WatchCommand.Start)
+
+        assertEquals(listOf("loser"), forgotten)
+    }
+
+    @Test
+    fun `the phone is told once about each command it acted on, never about repeats or refusals`() = runTest {
+        val told = mutableListOf<WatchCommand>()
+        var outcome: (RecordingCommand) -> Transition = {
+            Transition.Applied(RecordingState.Initial, RecordingState.Initial.copy(revision = 1), it)
+        }
+        val bridge = WatchCommandBridge(
+            revision = { 1L },
+            dispatch = { outcome(it) },
+            placeMarker = { MarkerDecision.NotCapturing },
+            newSessionId = { SessionId("s") },
+            onApplied = { told += it },
+        )
+
+        bridge.execute("pause-1", WatchCommand.Pause)
+        bridge.execute("pause-1", WatchCommand.Pause) // redelivered by the Data Layer
+        outcome = { Transition.Rejected(RecordingState.Initial, it) }
+        bridge.execute("stop-1", WatchCommand.Stop)
+        outcome = { Transition.Ignored(RecordingState.Initial, it) }
+        bridge.execute("resume-1", WatchCommand.Resume)
+
+        assertEquals(listOf(WatchCommand.Pause), told)
+    }
 }

@@ -70,7 +70,7 @@ self-service data export. Three more rules follow from that:
   append-safe encrypted segments, watch protocol + shared applicationId, backend as sole
   DB client, mic service lifecycle, markers, daily rhythm, audio retention, where memory
   lives, speech gating, owner voice, no speech retention, transcription provider, structured
-  extraction, on-device processing, REST-only integration — ADR-0001…0021) requires a new ADR first, not a
+  extraction, on-device processing, REST-only integration, offline-or-hosted server, own server optional — ADR-0001…0023) requires a new ADR first, not a
   silent change.
 
 ## Build and verify

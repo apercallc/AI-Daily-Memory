@@ -3,8 +3,14 @@ package com.apercallc.aidailymemory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import android.graphics.Color
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.DisposableEffect
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.apercallc.aidailymemory.service.RecordingService
@@ -48,7 +54,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            AiDailyMemoryTheme {
+            val themeMode by container.settings.themeMode.collectAsStateWithLifecycle()
+            val onboardingDone by container.settings.onboardingDone.collectAsStateWithLifecycle()
+            val dark = themeMode.isDark(isSystemInDarkTheme())
+            // The bar icons must contrast with the chosen theme, which may differ from the phone's.
+            DisposableEffect(dark) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                    navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                )
+                onDispose {}
+            }
+            AiDailyMemoryTheme(darkTheme = dark) {
                 AppRoot(
                     capture = viewModel,
                     sessions = { sessionsViewModel },
@@ -56,6 +73,8 @@ class MainActivity : ComponentActivity() {
                     settings = { settingsViewModel },
                     updates = { updateViewModel },
                     permissions = container.permissions,
+                    onboardingDone = onboardingDone,
+                    onOnboardingFinished = { container.settings.setOnboardingDone(true) },
                 )
             }
         }

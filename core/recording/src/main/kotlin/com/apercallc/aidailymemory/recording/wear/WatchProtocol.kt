@@ -47,6 +47,18 @@ data class CommandAcknowledgement(
     val revision: Long,
 )
 
+/** The device a session was started from. The microphone is always the phone's (ADR-0008). */
+enum class RecordingOrigin {
+    PHONE,
+    WATCH,
+    ;
+
+    companion object {
+        /** Unknown or missing names (an older phone or watch) read as "not known", never a guess. */
+        fun parse(name: String?): RecordingOrigin? = entries.firstOrNull { it.name == name }
+    }
+}
+
 data class PhoneRecordingSnapshot(
     val revision: Long,
     val status: String,
@@ -54,6 +66,8 @@ data class PhoneRecordingSnapshot(
     val problem: String?,
     val captureHealth: String,
     val reset: Boolean = false,
+    /** Where the open session was started; null when idle or from an older phone. */
+    val origin: String? = null,
 ) {
     init {
         require(revision >= 0)

@@ -2,6 +2,12 @@ package com.apercallc.aidailymemory.wear
 
 import androidx.annotation.StringRes
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
+import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
+import com.apercallc.aidailymemory.recording.wear.RejectionExplainer
+import com.apercallc.aidailymemory.recording.wear.RejectionReason
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
+import com.apercallc.aidailymemory.recording.wear.intent
 
 /** User-facing descriptions of phone-confirmed state, never raw protocol identifiers. */
 internal object WearStrings {
@@ -49,6 +55,34 @@ internal object WearStrings {
         CommandOutcome.Applied -> R.string.command_applied
         CommandOutcome.Ignored -> R.string.command_ignored
         CommandOutcome.Rejected -> R.string.command_rejected
+    }
+
+    /**
+     * Why the phone refused [command], from the snapshot that came with the answer. Starting
+     * on both devices at once is the common case, and it must not read as a fault.
+     */
+    @StringRes
+    fun rejection(command: WatchCommand?, snapshot: PhoneRecordingSnapshot?): Int {
+        if (command == null || snapshot == null) return R.string.command_rejected
+        return when (RejectionExplainer.explain(command.intent, snapshot.status)) {
+            RejectionReason.ALREADY_RECORDING -> when (RecordingOrigin.parse(snapshot.origin)) {
+                RecordingOrigin.WATCH -> R.string.rejected_already_from_watch
+                RecordingOrigin.PHONE -> R.string.rejected_already_on_phone
+                null -> R.string.rejected_already_recording
+            }
+            RejectionReason.NOT_RECORDING -> R.string.rejected_not_recording
+            RejectionReason.SESSION_STARTING -> R.string.rejected_starting
+            RejectionReason.SESSION_ENDING -> R.string.rejected_ending
+            RejectionReason.OTHER -> R.string.command_rejected
+        }
+    }
+
+    /** Which device started the open session, shown under the headline. */
+    @StringRes
+    fun origin(snapshot: PhoneRecordingSnapshot?): Int? = when (RecordingOrigin.parse(snapshot?.origin)) {
+        RecordingOrigin.WATCH -> R.string.origin_watch
+        RecordingOrigin.PHONE -> R.string.origin_phone
+        null -> null
     }
 
     @StringRes

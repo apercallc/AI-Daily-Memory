@@ -15,7 +15,7 @@ import com.apercallc.aidailymemory.recording.SessionId
 import com.apercallc.aidailymemory.recording.audio.AdtsScanner
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
-import com.apercallc.aidailymemory.recording.speech.EnergyVad
+import com.apercallc.aidailymemory.recording.speech.VoiceVad
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
@@ -24,8 +24,6 @@ import com.google.crypto.tink.streamingaead.StreamingAeadConfig
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
-import kotlin.math.PI
-import kotlin.math.sin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -45,7 +43,7 @@ class SpeechAnalyzerTest {
     private val format = SegmentFormat("aac-lc-adts", 16_000, 1)
     private var calls = 0
 
-    /** Stands in for MediaCodec: quiet for the first second, then a voice-level tone. */
+    /** Stands in for MediaCodec: quiet for the first second, then a voice. */
     private var decoder = PcmDecoder { adts, rate, _, sink ->
         val frames = AdtsScanner.scan(adts).completeFrames
         val samples = frames * 1024
@@ -53,7 +51,7 @@ class SpeechAnalyzerTest {
             if (i < rate) {
                 (if (i % 2 == 0) 30 else -30).toShort()
             } else {
-                (3_000 * sin(2 * PI * 220 * i / rate)).toInt().toShort()
+                SyntheticVoice.sample(i - rate, rate)
             }
         }
         // Delivered in decoder-sized chunks, as MediaCodec would.
@@ -111,9 +109,9 @@ class SpeechAnalyzerTest {
         assertEquals(AnalysisRun(analyzed = 1, failed = 0, remaining = 0), run)
         val analysis = db.speech().analysis(segment.segmentId)!!
         assertEquals(SpeechOutcome.OK.name, analysis.outcome)
-        assertEquals(EnergyVad.VERSION, analysis.analyzer)
+        assertEquals(VoiceVad.VERSION, analysis.analyzer)
         assertEquals(6_400, analysis.totalMs)
-        assertTrue(analysis.speechMs in 5_200..5_400, "speech ${analysis.speechMs}")
+        assertTrue(analysis.speechMs in 4_800..5_400, "speech ${analysis.speechMs}")
         val region = db.speech().regions(segment.segmentId).single()
         assertTrue(region.startMs in 0..100, "pre-roll reaches back into the quiet part")
         assertEquals(6_400, region.endMs)
@@ -228,7 +226,7 @@ class SpeechAnalyzerTest {
         )
 
         assertEquals(1, analyzer().analyzePending().analyzed)
-        assertEquals(EnergyVad.VERSION, db.speech().analysis(segment.segmentId)?.analyzer)
+        assertEquals(VoiceVad.VERSION, db.speech().analysis(segment.segmentId)?.analyzer)
         assertEquals(1, db.speech().regions(segment.segmentId).size)
     }
 
@@ -242,7 +240,7 @@ class SpeechAnalyzerTest {
         val row = db.sessions().observeSince("2026-09-01").first().single()
         assertEquals(12_800, row.capturedMs)
         assertEquals(12_800, row.analyzedMs)
-        assertTrue(row.speechMs > 10_000)
+        assertTrue(row.speechMs > 9_000)
         val totals = db.speech().totalsSince(0)
         assertEquals(12_800, totals.analyzedMs)
         assertEquals(row.speechMs, totals.speechMs)

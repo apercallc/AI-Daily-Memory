@@ -54,29 +54,24 @@ class ProcessingSettingsTest {
 
         settings.transcriptionApiKey = "tr-secret"
         settings.extractionApiKey = "ex-secret"
-        settings.syncToken = "sync-secret"
 
         val stored = preferences.all.values.filterIsInstance<String>()
         assertTrue(stored.none { it.contains("secret") })
         val reopened = ProcessingSettings(preferences) { aead }
         assertEquals("tr-secret", reopened.transcriptionApiKey)
         assertEquals("ex-secret", reopened.extractionApiKey)
-        assertEquals("sync-secret", reopened.syncToken)
     }
 
     @Test
     fun `plaintext values from older versions migrate on first read`() {
         preferences.edit()
             .putString("transcription_api_key", "old-key")
-            .putString("sync_token", "old-token")
             .commit()
         val settings = ProcessingSettings(preferences) { aead }
 
         assertEquals("old-key", settings.transcriptionApiKey)
-        assertEquals("old-token", settings.syncToken)
 
         assertFalse(preferences.contains("transcription_api_key"))
-        assertFalse(preferences.contains("sync_token"))
         assertEquals("old-key", ProcessingSettings(preferences) { aead }.transcriptionApiKey)
     }
 
@@ -92,15 +87,15 @@ class ProcessingSettingsTest {
 
     @Test
     fun `clearing a secret removes sealed and plaintext entries`() {
-        preferences.edit().putString("sync_token", "old").commit()
+        preferences.edit().putString("extraction_api_key", "old").commit()
         val settings = ProcessingSettings(preferences) { aead }
-        settings.syncToken = "new"
+        settings.extractionApiKey = "new"
 
-        settings.syncToken = null
+        settings.extractionApiKey = null
 
-        assertNull(ProcessingSettings(preferences) { aead }.syncToken)
-        assertFalse(preferences.contains("sync_token"))
-        assertFalse(preferences.contains("sync_token_sealed"))
+        assertNull(ProcessingSettings(preferences) { aead }.extractionApiKey)
+        assertFalse(preferences.contains("extraction_api_key"))
+        assertFalse(preferences.contains("extraction_api_key_sealed"))
     }
 
     @Test
@@ -132,11 +127,41 @@ class ProcessingSettingsTest {
         }
 
         settings.transcriptionApiUrl = "https://speech.example/v1"
-        settings.syncToken = "test"
+        settings.extractionModel = "test"
         advanceUntilIdle()
 
         assertEquals(listOf(0L, 1L, 2L), revisions)
         assertEquals("https://speech.example/v1", settings.transcriptionApiUrl)
-        assertEquals("test", settings.syncToken)
+        assertEquals("test", settings.extractionModel)
+    }
+
+    @Test
+    fun `processing and sync are on by default and can be turned off`() {
+        val settings = ProcessingSettings(preferences) { aead }
+
+        assertTrue(settings.processingEnabled.value)
+        assertTrue(settings.syncEnabled.value)
+        assertTrue(settings.deleteAudioAfterTranscription.value)
+
+        settings.setProcessingEnabled(false)
+        settings.setSyncEnabled(false)
+        val reopened = ProcessingSettings(preferences) { aead }
+        assertFalse(reopened.processingEnabled.value)
+        assertFalse(reopened.syncEnabled.value)
+    }
+
+    @Test
+    fun `an earlier install's own sync address and token are removed, not left behind`() {
+        preferences.edit()
+            .putString("sync_url", "https://sync.example/v1/sync")
+            .putString("sync_token", "old-token")
+            .putString("sync_token_sealed", "AAAA")
+            .commit()
+
+        ProcessingSettings(preferences) { aead }
+
+        assertFalse(preferences.contains("sync_url"))
+        assertFalse(preferences.contains("sync_token"))
+        assertFalse(preferences.contains("sync_token_sealed"))
     }
 }

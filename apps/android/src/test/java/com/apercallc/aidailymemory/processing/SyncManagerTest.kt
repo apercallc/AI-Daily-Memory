@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.SyncDeletionQueueEntity
+import com.apercallc.aidailymemory.net.ServerLink
+import com.apercallc.aidailymemory.recording.server.HostedServer
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -26,6 +28,9 @@ class SyncManagerTest {
     private lateinit var db: CaptureDatabase
     private lateinit var settings: ProcessingSettings
     private val bodies = mutableListOf<String>()
+    private val urls = mutableListOf<String>()
+    private var link: ServerLink? = ServerLink(HostedServer.BASE_URL, "adm_" + "T".repeat(43))
+    private var notBefore = 0L
 
     @Before
     fun setUp() {
@@ -37,7 +42,6 @@ class SyncManagerTest {
             context.getSharedPreferences("sync-manager-test", Context.MODE_PRIVATE),
         ) { com.apercallc.aidailymemory.settings.testAead() }.apply {
             setSyncEnabled(true)
-            syncUrl = "https://sync.example/v1/sync"
         }
     }
 
@@ -50,8 +54,11 @@ class SyncManagerTest {
         database = db,
         settings = settings,
         deviceId = "test-device",
-        poster = { _, _, body ->
+        link = { link },
+        notBeforeEpochMs = { notBefore },
+        poster = { url, _, body ->
             failWith?.invoke()
+            urls.add(url)
             bodies.add(body)
         },
     )
@@ -125,12 +132,57 @@ class SyncManagerTest {
     }
 
     @Test
-    fun `enabled sync without a url fails visibly`() = runTest {
-        settings.syncUrl = null
+    fun `reports go to the hosted server with the account token`() = runTest {
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+        var token: String? = null
+        val sent = SyncManager(
+            database = db,
+            settings = settings,
+            deviceId = "test-device",
+            link = { link },
+            poster = { url, bearer, _ ->
+                urls.add(url)
+                token = bearer
+            },
+        )
 
-        assertFalse(manager().syncPending())
+        assertTrue(sent.syncPending())
 
-        assertTrue(settings.lastSyncFailed.value)
+        assertEquals(listOf("https://aidailymem.apercallc.com/v1/sync"), urls)
+        assertEquals("adm_" + "T".repeat(43), token)
+    }
+
+    @Test
+    fun `offline there is nothing to send to and that is not a failure`() = runTest {
+        link = null
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+
+        assertTrue(manager().syncPending())
+
+        assertFalse(settings.lastSyncFailed.value)
+        assertEquals(emptyList<String>(), bodies)
+        assertEquals(null, settings.lastSyncEpochMs)
+    }
+
+    @Test
+    fun `reports written before the account was connected stay on the phone`() = runTest {
+        notBefore = 6_000
+        db.dailyReports().upsert(report("2026-10-11", generatedAt = 5_000))
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 9_000))
+
+        assertTrue(manager().syncPending())
+
+        val root = Json.parseToJsonElement(bodies.single()).jsonObject
+        assertEquals(1, root["reports"]!!.jsonArray.size)
+        assertEquals(9_000L, settings.lastSyncEpochMs)
+    }
+
+    @Test
+    fun `turning sync off sends nothing`() = runTest {
+        settings.setSyncEnabled(false)
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+
+        assertTrue(manager().syncPending())
         assertEquals(emptyList<String>(), bodies)
     }
 

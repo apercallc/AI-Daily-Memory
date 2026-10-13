@@ -131,6 +131,10 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Phone app data cleared (journal lost) | Revision-zero snapshot flagged `reset`, accepted unconditionally | `AppContainer`, `SnapshotRevisionPolicy` | ✅ (logic; device check pending) |
 | Watch Start blocked by Android foreground-service rules | Command runs detached; the phone-authored failure state/problem is returned and the microphone never opens without the foreground service | `RecordingService`, `WatchCommandBridge` | ✅ (unit tested; device check pending) |
 
+| Start pressed on the phone and the watch at once | One session wins in the state machine; the other device is told "Already recording" (not a generic failure) | `RecordingStateMachine`, `RejectionExplainer` | ✅ (unit tested; device check pending) |
+| Which device started the session | `RecordingOrigin` is recorded before the Start is dispatched, so the first snapshot carries it; a refused start does not overwrite the winner's | `SessionOrigins`, `WatchCommandBridge` | ✅ (unit tested) |
+| Watch pauses or stops the phone | The phone shows a one-line "from your watch" message once per applied command (not for redelivered or refused ones) | `WatchCommandBridge.onApplied`, `CaptureViewModel` | ✅ (unit tested) |
+
 ## 7. Daily rhythm and sessions (ADR-0012)
 
 | Edge case | Behavior | Where | Status |
@@ -243,6 +247,19 @@ data rights.
 | Watch command never confirmed | Watch offers Retry (same id) or Dismiss (forgotten, later commands get fresh ids) |
 | Update APK from a non-GitHub URL, wrong size, or wrong SHA-256 | Download refused or deleted; installer never sees it |
 | Update check fails (offline, rate limit, bad JSON) | Shown as "couldn't check", never as up to date |
+
+## 12. One server and voice-only analysis (ADR-0022)
+
+| Edge case | Behavior | Where | Status |
+| --- | --- | --- | --- |
+| Phone linked by an older version to a server the user typed | Link dropped on load, token never sent, notice shown | `LinkStore` | ✅ (unit tested) |
+| Sync on by default but never connected | Does nothing and is not an error | `SyncManager` | ✅ (unit tested) |
+| Connecting must not send what was written before | Reports older than the link time stay on the phone unless the backlog box was ticked | `SyncManager.notBeforeEpochMs` | ✅ (unit tested) |
+| Sign-up rate limited or email taken or weak password | Each has its own message next to the field | `AccountLinker`, `AccountSection` | ✅ (unit tested) |
+| Test connection with no network, a revoked token, or a server error | One toast per outcome; a refusal does not unlink | `AccountLinker.testConnection` | ✅ (unit tested) |
+| Music, held notes, rain, wind, rumble, silence | Not speech; never cut into clips | `VoiceVad` | ✅ (synthetic audio only; real recordings pending) |
+| Speech with no pauses, or with background noise | Kept (the pitch moves and the level rises and falls) | `VoiceVad` | ✅ (synthetic audio only) |
+| Microphone with a constant DC offset | Removed per frame before measuring loudness | `VoiceVad` | ✅ (unit tested) |
 
 ## Open
 

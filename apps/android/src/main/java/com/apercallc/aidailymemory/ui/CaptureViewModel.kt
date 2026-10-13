@@ -14,7 +14,14 @@ import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
+import com.apercallc.aidailymemory.recording.RecordingCommand
 import com.apercallc.aidailymemory.recording.RecordingStatus
+import com.apercallc.aidailymemory.recording.Transition
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
+import com.apercallc.aidailymemory.recording.wear.RejectionExplainer
+import com.apercallc.aidailymemory.recording.wear.RejectionReason
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
+import com.apercallc.aidailymemory.recording.wear.intentOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -32,6 +39,8 @@ data class CaptureUiState(
     val model: CaptureStatusModel,
     val overview: CaptureOverview?,
     val stopDecisionSessionId: String?,
+    /** Which device started the open session; null when idle or not known. */
+    val origin: RecordingOrigin? = null,
 )
 
 /**
@@ -57,8 +66,14 @@ class CaptureViewModel(
         container.statusModels,
         container.overview,
         stopDecisionSessionId,
-    ) { model, overview, pendingStopDecision ->
-        CaptureUiState(model ?: initialModel(), overview, pendingStopDecision)
+        container.controller.state,
+    ) { model, overview, pendingStopDecision, recording ->
+        CaptureUiState(
+            model = model ?: initialModel(),
+            overview = overview,
+            stopDecisionSessionId = pendingStopDecision,
+            origin = container.sessionOrigins.originOf(recording.sessionId),
+        )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -72,7 +87,12 @@ class CaptureViewModel(
 
     init {
         viewModelScope.launch {
-            container.controller.rejections.collect { _messages.send(R.string.command_rejected) }
+            container.controller.rejections.collect { _messages.send(rejectionMessage(it)) }
+        }
+        // The watch is a remote for this phone: say so when it just did something, so a pause
+        // or stop that nobody pressed here is never a mystery.
+        viewModelScope.launch {
+            container.watchActivity.collect { command -> watchMessage(command)?.let { _messages.send(it) } }
         }
     }
 
@@ -112,6 +132,28 @@ class CaptureViewModel(
     }
 
     val storageSnapshot get() = uiState.value.overview?.storage
+
+    @StringRes
+    private fun rejectionMessage(rejected: Transition.Rejected): Int {
+        val intent = (rejected.event as? RecordingCommand)?.intentOrNull() ?: return R.string.command_rejected
+        return when (RejectionExplainer.explain(intent, rejected.state.status)) {
+            RejectionReason.ALREADY_RECORDING -> R.string.command_rejected_already_recording
+            RejectionReason.NOT_RECORDING -> R.string.command_rejected_not_recording
+            RejectionReason.SESSION_STARTING -> R.string.command_rejected_starting
+            RejectionReason.SESSION_ENDING -> R.string.command_rejected_ending
+            RejectionReason.OTHER -> R.string.command_rejected
+        }
+    }
+
+    @StringRes
+    private fun watchMessage(command: WatchCommand): Int? = when (command) {
+        WatchCommand.Start -> R.string.watch_started
+        WatchCommand.Pause -> R.string.watch_paused
+        WatchCommand.Resume -> R.string.watch_resumed
+        WatchCommand.Stop -> R.string.watch_stopped
+        // Markers already confirm themselves on both screens.
+        WatchCommand.Highlight, WatchCommand.QuickNote -> null
+    }
 
     @StringRes
     private fun messageFor(decision: MarkerDecision): Int = when (decision) {

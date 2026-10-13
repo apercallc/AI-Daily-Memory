@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.util.Base64
 import androidx.core.content.edit
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.server.HostedServer
+import com.apercallc.aidailymemory.recording.server.ServerAddress
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.RegistryConfiguration
@@ -31,6 +33,12 @@ enum class LinkProblem {
 
     /** The token can't be decrypted any more (Keystore reset): reconnect. */
     UNREADABLE,
+
+    /**
+     * The stored server address is not a plain https origin, so the link was dropped and its
+     * token is never sent anywhere.
+     */
+    OTHER_SERVER,
 }
 
 /**
@@ -46,6 +54,24 @@ enum class LinkProblem {
 class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Aead) {
     private val _link = MutableStateFlow<ServerLink?>(null)
     val link: StateFlow<ServerLink?> = _link.asStateFlow()
+
+    private val _serverUrl = MutableStateFlow(
+        (ServerAddress.parse(prefs.getString(KEY_SERVER, null).orEmpty()) as? ServerAddress.Valid)?.origin
+            ?: HostedServer.BASE_URL,
+    )
+
+    /**
+     * The server the next sign-in goes to. Starts as the hosted server; Advanced lets a person
+     * point it at their own copy of the backend. While a link exists the link's own address wins.
+     */
+    val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
+
+    /** [origin] must come from [ServerAddress.parse]; a null resets to the hosted server. */
+    fun setServerUrl(origin: String?) {
+        val value = origin ?: HostedServer.BASE_URL
+        prefs.edit { if (origin == null) remove(KEY_SERVER) else putString(KEY_SERVER, value) }
+        _serverUrl.value = value
+    }
 
     private val _problem = MutableStateFlow(LinkProblem.NONE)
     val problem: StateFlow<LinkProblem> = _problem.asStateFlow()
@@ -74,9 +100,18 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         if (loaded) return
         loaded = true
         if (prefs.getBoolean(KEY_REJECTED, false)) _problem.value = LinkProblem.REJECTED
+        if (prefs.getBoolean(KEY_OTHER_SERVER, false)) _problem.value = LinkProblem.OTHER_SERVER
         _revokePending.value = readRevokes().length() > 0
         _revokeManual.value = prefs.getBoolean(KEY_REVOKE_MANUAL, false)
-        val url = prefs.getString(KEY_URL, null) ?: return
+        val stored = prefs.getString(KEY_URL, null) ?: return
+        // The server may be the hosted one or the person's own, but never an address that is not
+        // a plain https origin: a token is not sent to anything else.
+        val url = (ServerAddress.parse(stored) as? ServerAddress.Valid)?.origin
+        if (url == null) {
+            logFailure(TAG, "link_invalid_server", IllegalStateException("not_https_origin"), warning = true)
+            forget(LinkProblem.OTHER_SERVER)
+            return
+        }
         val sealed = prefs.getString(KEY_TOKEN, null) ?: return
         try {
             val token = aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), AD).toString(Charsets.UTF_8)
@@ -102,6 +137,7 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
             putString(KEY_TOKEN, Base64.encodeToString(sealed, Base64.NO_WRAP))
             putLong(KEY_SINCE, if (includeBacklog) 0 else linkedAtEpochMs)
             putBoolean(KEY_REJECTED, false)
+            remove(KEY_OTHER_SERVER)
         }
         loaded = true
         _link.value = link
@@ -207,6 +243,7 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
             remove(KEY_TOKEN)
             remove(KEY_SINCE)
             putBoolean(KEY_REJECTED, problem == LinkProblem.REJECTED)
+            if (problem == LinkProblem.OTHER_SERVER) putBoolean(KEY_OTHER_SERVER, true) else remove(KEY_OTHER_SERVER)
         }
         loaded = true
         _link.value = null
@@ -219,7 +256,9 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         private const val KEY_URL = "base_url"
         private const val KEY_TOKEN = "token_sealed"
         private const val KEY_SINCE = "upload_since_epoch_ms"
+        private const val KEY_SERVER = "preferred_server"
         private const val KEY_REJECTED = "rejected"
+        private const val KEY_OTHER_SERVER = "other_server"
         private const val KEY_REVOKES = "pending_revokes"
         private const val KEY_REVOKE_MANUAL = "revoke_manual"
         private val REVOKE_AD = "aidm:server-token:revoke:v1".toByteArray(Charsets.UTF_8)

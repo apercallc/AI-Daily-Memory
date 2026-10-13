@@ -49,10 +49,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.schedule.QuietWindow
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
+import com.apercallc.aidailymemory.recording.server.ServerMode
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.ui.TimeText
@@ -61,16 +63,6 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import java.time.format.TextStyle
 import java.util.UUID
-
-/** Events from the account section, grouped so the screen signature stays readable. */
-data class AccountActions(
-    val connect: (url: String, token: String, includeBacklog: Boolean) -> Unit = { _, _, _ -> },
-    val edit: () -> Unit = {},
-    val disconnect: () -> Unit = {},
-    val retryUploads: () -> Unit = {},
-    val changeStorageMode: (String) -> Unit = {},
-    val retryStorageMode: () -> Unit = {},
-)
 
 /** Stateless: renders the rhythm and retention, reports edits as whole new values. */
 @Composable
@@ -84,7 +76,9 @@ fun RhythmSettingsScreen(
     onRetentionChange: (AudioRetention) -> Unit,
     modifier: Modifier = Modifier,
     account: AccountUi? = null,
-    accountActions: AccountActions = AccountActions(),
+    accountCallbacks: AccountCallbacks = AccountCallbacks(),
+    themeMode: ThemeMode = ThemeMode.Default,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
     update: UpdateState = UpdateState.Idle,
     onUpdateCheck: () -> Unit = {},
     onUpdateDownload: () -> Unit = {},
@@ -108,14 +102,24 @@ fun RhythmSettingsScreen(
 
         GroupLabel(R.string.settings_group_audio)
         GroupCard { AudioSection(retention, bytesPerHour, onRetentionChange) }
+
+        GroupLabel(R.string.settings_group_appearance)
+        GroupCard { AppearanceSection(themeMode, onThemeModeChange) }
+
+        // One server, and only one: the account first, then what it does for the phone.
+        GroupLabel(R.string.settings_group_account)
+        account?.let {
+            GroupCard { AccountSection(account = it, callbacks = accountCallbacks) }
+        }
         ExpandableCard(
             title = R.string.processing_section,
             summary = when {
                 !processing.enabled -> R.string.processing_status_off
-                processing.configGaps.isNotEmpty() -> R.string.processing_status_incomplete
-                else -> R.string.processing_status_on
+                processing.ownProvider && processing.configGaps.isNotEmpty() -> R.string.processing_status_incomplete
+                processing.mode == ServerMode.CONNECTED -> R.string.processing_status_connected
+                else -> R.string.processing_status_offline
             },
-            initiallyExpanded = processing.enabled && processing.configGaps.isNotEmpty(),
+            initiallyExpanded = processing.enabled && processing.ownProvider && processing.configGaps.isNotEmpty(),
         ) {
             ProcessingSettingsSection(
                 processing = processing,
@@ -123,27 +127,15 @@ fun RhythmSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-
-        // One place for everything that talks to a server: the account first, then the
-        // optional "your own server" push, so the two no longer look like duplicates.
-        account?.let {
-            GroupCard {
-                AccountSection(
-                    account = it,
-                    onConnect = accountActions.connect,
-                    onEdit = accountActions.edit,
-                    onDisconnect = accountActions.disconnect,
-                    onRetryUploads = accountActions.retryUploads,
-                    onStorageModeChange = accountActions.changeStorageMode,
-                    onStorageModeRetry = accountActions.retryStorageMode,
-                )
-            }
-        }
         ExpandableCard(
             title = R.string.sync_section,
-            summary = if (sync.enabled) R.string.sync_status_on else R.string.sync_status_off,
+            summary = when {
+                !sync.enabled -> R.string.sync_status_off
+                sync.connected -> R.string.sync_status_on
+                else -> R.string.sync_status_waiting
+            },
             label = R.string.advanced_label,
-            initiallyExpanded = sync.enabled && (sync.url.isEmpty() || sync.lastSyncFailed),
+            initiallyExpanded = sync.enabled && sync.lastSyncFailed,
         ) {
             SyncSettingsSection(
                 sync = sync,
@@ -160,6 +152,40 @@ fun RhythmSettingsScreen(
                 onDownload = onUpdateDownload,
                 onInstall = onUpdateInstall,
             )
+        }
+    }
+}
+
+/** Light, dark, or follow the phone (the default). */
+@Composable
+private fun AppearanceSection(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Text(
+        text = stringResource(R.string.theme_title),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.semantics { heading() },
+    )
+    Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        listOf(
+            ThemeMode.SYSTEM to R.string.theme_system,
+            ThemeMode.LIGHT to R.string.theme_light,
+            ThemeMode.DARK to R.string.theme_dark,
+        ).forEach { (value, label) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = spacing.minTouchTarget)
+                    .selectable(
+                        selected = mode == value,
+                        role = Role.RadioButton,
+                        onClick = { if (mode != value) onChange(value) },
+                    ),
+            ) {
+                RadioButton(selected = mode == value, onClick = null)
+                Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
 }

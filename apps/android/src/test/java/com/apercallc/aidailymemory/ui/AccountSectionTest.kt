@@ -1,17 +1,21 @@
 package com.apercallc.aidailymemory.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.apercallc.aidailymemory.net.ConnectError
 import com.apercallc.aidailymemory.net.LinkProblem
+import com.apercallc.aidailymemory.ui.settings.AccountCallbacks
 import com.apercallc.aidailymemory.ui.settings.AccountSection
 import com.apercallc.aidailymemory.ui.settings.AccountUi
 import com.apercallc.aidailymemory.ui.settings.StorageModeError
@@ -31,90 +35,157 @@ class AccountSectionTest {
 
     private val token = "adm_" + "Q".repeat(43)
 
-    private fun show(
-        account: AccountUi,
-        onConnect: (String, String, Boolean) -> Unit = { _, _, _ -> },
-        onEdit: () -> Unit = {},
-        onDisconnect: () -> Unit = {},
-        onRetry: () -> Unit = {},
-        onStorageModeChange: (String) -> Unit = {},
-    ) = compose.setContent {
-        AiDailyMemoryTheme {
-            AccountSection(account, onConnect, onEdit, onDisconnect, onRetry, onStorageModeChange)
+    private fun show(account: AccountUi, callbacks: AccountCallbacks = AccountCallbacks()) =
+        compose.setContent {
+            // Scrollable like the real settings screen, so lower controls can be reached.
+            AiDailyMemoryTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) { AccountSection(account, callbacks) }
+            }
         }
+
+    @Test
+    fun `offline says so, explains the steps, and offers no server address field`() {
+        show(AccountUi())
+
+        compose.onNodeWithText("Offline. Nothing leaves this phone.").assertExists()
+        compose.onNodeWithText("To connect:", substring = true).assertExists()
+        compose.onAllNodesWithText("Server address").assertCountEquals(0)
+        compose.onAllNodesWithText("Sync endpoint URL").assertCountEquals(0)
     }
 
     @Test
-    fun `connect sends the typed values and the backlog choice, off by default`() {
+    fun `creating an account sends the typed email and password and the backlog choice, off by default`() {
         val sent = mutableListOf<Triple<String, String, Boolean>>()
-        show(AccountUi(), onConnect = { u, t, b -> sent += Triple(u, t, b) })
+        show(AccountUi(), AccountCallbacks(onSignUp = { e, p, b -> sent += Triple(e, p, b) }))
 
-        compose.onNodeWithText("Server address").performTextClearance()
-        compose.onNodeWithText("Server address").performTextInput("https://api.example")
-        compose.onNodeWithText("Device token").performTextInput(token)
-        compose.onNodeWithText("Connect").performClick()
-        compose.onNodeWithText("Also transcribe speech already recorded on this phone").performClick()
-        compose.onNodeWithText("Connect").performClick()
+        compose.onNodeWithText("Email").performScrollTo().performTextInput("me@example.com")
+        compose.onNodeWithText("Password").performScrollTo().performTextInput("a-long-enough-password")
+        compose.onNodeWithText("Create account and connect").performScrollTo().performClick()
+        compose.onNodeWithText("Also process speech already recorded on this phone").performScrollTo().performClick()
+        compose.onNodeWithText("Create account and connect").performScrollTo().performClick()
 
         assertEquals(
             listOf(
-                Triple("https://api.example", token, false),
-                Triple("https://api.example", token, true),
+                Triple("me@example.com", "a-long-enough-password", false),
+                Triple("me@example.com", "a-long-enough-password", true),
             ),
             sent,
         )
     }
 
     @Test
+    fun `signing in sends to the sign-in callback instead`() {
+        val signedIn = mutableListOf<Pair<String, String>>()
+        show(AccountUi(), AccountCallbacks(onLogIn = { e, p, _ -> signedIn += e to p }))
+
+        compose.onNodeWithText("Sign in").performScrollTo().performClick()
+        compose.onNodeWithText("Email").performScrollTo().performTextInput("me@example.com")
+        compose.onNodeWithText("Password").performScrollTo().performTextInput("a-long-enough-password")
+        compose.onNodeWithText("Sign in and connect").performScrollTo().performClick()
+
+        assertEquals(listOf("me@example.com" to "a-long-enough-password"), signedIn)
+    }
+
+    @Test
+    fun `a pasted token connects with the token callback`() {
+        val sent = mutableListOf<Pair<String, Boolean>>()
+        show(
+            AccountUi(),
+            AccountCallbacks(onConnectToken = { t, b -> sent += t to b }, clipboardText = { token }),
+        )
+
+        compose.onNodeWithText("I have a connect token instead").performScrollTo().performClick()
+        compose.onNodeWithText("Paste from clipboard").performScrollTo().performClick()
+        compose.onNodeWithText("Connect").performScrollTo().performClick()
+
+        assertEquals(listOf(token to false), sent)
+    }
+
+    @Test
+    fun `tapping the website link asks to open the hosted site`() {
+        var opened = 0
+        show(AccountUi(), AccountCallbacks(onOpenWebsite = { opened++ }))
+
+        compose.onNodeWithText("Open aidailymem.apercallc.com").performScrollTo().performClick()
+
+        assertEquals(1, opened)
+    }
+
+    @Test
     fun `editing clears a shown error`() {
         var edits = 0
-        show(AccountUi(error = ConnectError.INVALID_URL), onEdit = { edits++ })
+        show(AccountUi(error = ConnectError.INVALID_EMAIL), AccountCallbacks(onEdit = { edits++ }))
 
-        compose.onNodeWithText("Enter an https:// address.").assertExists()
-        compose.onNodeWithText("Device token").performTextInput("a")
+        compose.onNodeWithText("Enter a valid email address.").assertExists()
+        compose.onNodeWithText("Email").performScrollTo().performTextInput("a")
 
         assertEquals(1, edits)
     }
 
-    @Test
-    fun `each connect problem is explained`() {
-        show(AccountUi(error = ConnectError.REJECTED))
-        compose.onNodeWithText("The server didn't accept this token. Check it or ask for a new one.")
-            .assertExists()
+    private fun assertExplained(error: ConnectError, text: String) {
+        show(AccountUi(error = error))
+        compose.onNodeWithText(text).assertExists()
     }
 
     @Test
-    fun `unreachable and save failures are explained`() {
-        show(AccountUi(error = ConnectError.UNREACHABLE))
-        compose.onNodeWithText("Couldn't reach the server. Check the address and your connection.")
+    fun `an email that is already taken points to sign in`() =
+        assertExplained(ConnectError.EMAIL_TAKEN, "That email already has an account. Choose Sign in instead.")
+
+    @Test
+    fun `a weak password says how long it must be`() =
+        assertExplained(ConnectError.WEAK_PASSWORD, "Use at least 12 characters.")
+
+    @Test
+    fun `wrong credentials are named without saying which half was wrong`() =
+        assertExplained(ConnectError.WRONG_CREDENTIALS, "That email and password don't match.")
+
+    @Test
+    fun `too many attempts says to wait`() =
+        assertExplained(ConnectError.TOO_MANY_ATTEMPTS, "Too many attempts. Wait a few minutes and try again.")
+
+    @Test
+    fun `an unreachable server names the host`() = assertExplained(
+        ConnectError.UNREACHABLE,
+        "Couldn't reach aidailymem.apercallc.com. Check your internet connection and try again.",
+    )
+
+    @Test
+    fun `a keystore failure says nothing was saved`() = assertExplained(
+        ConnectError.SAVE_FAILED,
+        "Couldn't store the token securely on this phone. Nothing was saved.",
+    )
+
+    @Test
+    fun `a rejected token is explained`() {
+        show(AccountUi(error = ConnectError.REJECTED))
+        compose.onNodeWithText("I have a connect token instead").performScrollTo().performClick()
+        compose.onNodeWithText("The server didn't accept this token. Check it or get a new one from the website.")
             .assertExists()
     }
 
     @Test
     fun `a failed storage mode fetch is shown with a retry, not as endless loading`() {
         var retries = 0
-        compose.setContent {
-            AiDailyMemoryTheme {
-                AccountSection(
-                    AccountUi(host = "api.example", storageModeError = StorageModeError.LOAD_FAILED),
-                    onConnect = { _, _, _ -> },
-                    onEdit = {},
-                    onDisconnect = {},
-                    onRetryUploads = {},
-                    onStorageModeRetry = { retries++ },
-                )
-            }
-        }
+        show(
+            AccountUi(host = "aidailymem.apercallc.com", storageModeError = StorageModeError.LOAD_FAILED),
+            AccountCallbacks(onStorageModeRetry = { retries++ }),
+        )
 
         compose.onNodeWithText("Couldn't load your storage setting. Check your connection and try again.")
             .assertExists()
-        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Try again").performScrollTo().performClick()
         assertEquals(1, retries)
     }
 
     @Test
     fun `a failed storage mode change is explained and keeps the current mode`() {
-        show(AccountUi(host = "api.example", storageMode = "phone_only", storageModeError = StorageModeError.CHANGE_FAILED))
+        show(
+            AccountUi(
+                host = "aidailymem.apercallc.com",
+                storageMode = "phone_only",
+                storageModeError = StorageModeError.CHANGE_FAILED,
+            ),
+        )
 
         compose.onNodeWithText("Couldn't change the storage setting. Nothing was changed; try again.").assertExists()
     }
@@ -127,29 +198,79 @@ class AccountSectionTest {
     }
 
     @Test
-    fun `a signed-out or unreadable link asks the user to reconnect`() {
+    fun `a signed-out, unreadable or removed link asks the user to reconnect`() {
         show(AccountUi(problem = LinkProblem.UNREADABLE))
-
-        compose.onNodeWithText("This phone can no longer read its saved connection. Connect again.")
-            .assertExists()
+        compose.onNodeWithText("This phone can no longer read its saved connection. Connect again.").assertExists()
     }
 
     @Test
-    fun `a connected account shows the host, upload problems with retry, and disconnect`() {
+    fun `a saved server address that could not be used is explained`() {
+        show(AccountUi(problem = LinkProblem.OTHER_SERVER))
+
+        compose.onNodeWithText("saved server address could not be used", substring = true).assertExists()
+    }
+
+    @Test
+    fun `the hosted server is the default and a server field is one tap away`() {
+        val typed = mutableListOf<String>()
+        show(AccountUi(), AccountCallbacks(onServerChange = { typed += it }))
+
+        compose.onNodeWithText("Server: aidailymem.apercallc.com (default)").assertExists()
+        compose.onNodeWithText("Server address").assertDoesNotExist()
+        compose.onNodeWithText("Use my own server").performClick()
+        compose.onNodeWithText("Server address").performTextInput("https://memory.example")
+
+        assertEquals("https://memory.example", typed.last())
+    }
+
+    @Test
+    fun `an own server is named, hides the hosted website link and can go back to the default`() {
+        val typed = mutableListOf<String>()
+        show(AccountUi(serverUrl = "https://memory.example"), AccountCallbacks(onServerChange = { typed += it }))
+
+        compose.onNodeWithText("Server: memory.example (your own)").assertExists()
+        compose.onNodeWithText("Open aidailymem.apercallc.com").assertDoesNotExist()
+        compose.onNodeWithText("Use the default server").performClick()
+
+        assertEquals(listOf(""), typed)
+    }
+
+    @Test
+    fun `a server address that is not usable shows why`() {
+        show(AccountUi(serverDraft = "http://plain.example"))
+
+        compose.onNodeWithText("Use an https address", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a connected account shows the host, upload problems with retry, test and disconnect`() {
         var retried = false
         var disconnected = false
+        var tested = 0
         show(
-            AccountUi(host = hostOf("https://api.example/v1"), uploadProblems = 2),
-            onDisconnect = { disconnected = true },
-            onRetry = { retried = true },
+            AccountUi(host = hostOf("https://aidailymem.apercallc.com/v1"), uploadProblems = 2),
+            AccountCallbacks(
+                onDisconnect = { disconnected = true },
+                onRetryUploads = { retried = true },
+                onTest = { tested++ },
+            ),
         )
 
-        compose.onNodeWithText("Connected to api.example").assertExists()
+        compose.onNodeWithText("Connected to aidailymem.apercallc.com").assertExists()
         compose.onNodeWithText("2 clips couldn't upload. Their audio stays on this phone.").assertExists()
-        compose.onNodeWithText("Try again").performClick()
-        compose.onNodeWithText("Disconnect").performClick()
+        compose.onNodeWithText("Test connection").performScrollTo().performClick()
+        compose.onNodeWithText("Try again").performScrollTo().performClick()
+        compose.onNodeWithText("Disconnect").performScrollTo().performClick()
+        assertEquals(1, tested)
         assertTrue(retried)
         assertTrue(disconnected)
+    }
+
+    @Test
+    fun `the test button is disabled while a test is running`() {
+        show(AccountUi(host = "aidailymem.apercallc.com", testing = true))
+
+        compose.onNodeWithText("Testing…").assertIsNotEnabled()
     }
 
     @Test
@@ -172,7 +293,7 @@ class AccountSectionTest {
 
     @Test
     fun `the storage mode picker is hidden until the current mode is known`() {
-        show(AccountUi(host = "api.example", storageMode = null))
+        show(AccountUi(host = "aidailymem.apercallc.com", storageMode = null))
 
         compose.onAllNodesWithText("Where memory lives").assertCountEquals(0)
     }
@@ -181,8 +302,8 @@ class AccountSectionTest {
     fun `picking a different storage mode reports it`() {
         var changed: String? = null
         show(
-            AccountUi(host = "api.example", storageMode = "phone_only"),
-            onStorageModeChange = { changed = it },
+            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"),
+            AccountCallbacks(onStorageModeChange = { changed = it }),
         )
 
         compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
@@ -195,11 +316,11 @@ class AccountSectionTest {
     fun `picking the already-selected mode reports nothing`() {
         var changes = 0
         show(
-            AccountUi(host = "api.example", storageMode = "phone_only"),
-            onStorageModeChange = { changes++ },
+            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"),
+            AccountCallbacks(onStorageModeChange = { changes++ }),
         )
 
-        compose.onNodeWithText("Phone only — transcripts stay on this phone").performClick()
+        compose.onNodeWithText("Phone only — transcripts stay on this phone").performScrollTo().performClick()
 
         assertEquals(0, changes)
     }
@@ -208,8 +329,8 @@ class AccountSectionTest {
     fun `the picker is disabled while a change is in flight`() {
         var changes = 0
         show(
-            AccountUi(host = "api.example", storageMode = "phone_only", storageModeUpdating = true),
-            onStorageModeChange = { changes++ },
+            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only", storageModeUpdating = true),
+            AccountCallbacks(onStorageModeChange = { changes++ }),
         )
 
         compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
@@ -219,29 +340,23 @@ class AccountSectionTest {
     }
 
     @Test
-    fun `server address starts empty so pasted addresses do not inherit a scheme`() {
-        show(AccountUi())
-        compose.onNodeWithText("Server address").assertTextEquals("Server address", "")
-    }
-
-    @Test
     fun `connection inputs cannot change while their consent is being checked`() {
         show(AccountUi(connecting = true))
-        compose.onNodeWithText("Server address").assertIsNotEnabled()
-        compose.onNodeWithText("Device token").assertIsNotEnabled()
-        compose.onNodeWithText("Also transcribe speech already recorded on this phone").assertIsNotEnabled()
+        compose.onNodeWithText("Email").assertIsNotEnabled()
+        compose.onNodeWithText("Password").assertIsNotEnabled()
+        compose.onNodeWithText("Also process speech already recorded on this phone").assertIsNotEnabled()
     }
 
     @Test
     fun `storage modes expose single selection to accessibility services`() {
-        show(AccountUi(host = "api.example", storageMode = "phone_only"))
+        show(AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"))
         compose.onNodeWithText("Phone only — transcripts stay on this phone").assertIsSelected()
     }
 
     @Test
-    fun `connecting explains cloud processing even for phone only storage`() {
+    fun `connecting explains what leaves the phone`() {
         show(AccountUi())
-        compose.onNodeWithText("Speech is processed on your server even in Phone only mode. Recording works without an account.")
+        compose.onNodeWithText("Connecting sends only the parts of your day where someone is talking", substring = true)
             .assertExists()
     }
 

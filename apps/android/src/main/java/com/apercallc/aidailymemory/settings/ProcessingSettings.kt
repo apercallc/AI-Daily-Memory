@@ -19,9 +19,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * SharedPreferences, which are excluded from backup and device transfer like all app data
  * (data_extraction_rules.xml).
  *
- * Processing is disabled by default: the user must configure a user-supplied API provider
- * before any transcription or extraction runs (there is no on-device model in this build). Sync is also off by
- * default until the user enters an API endpoint and auth token.
+ * Processing and sync are on by default and do nothing until there is somewhere to do it: a
+ * connected account (the one hosted server) or, for processing, the optional own-provider keys
+ * below. Offline, nothing leaves the phone. Sync has no address or token of its own; it uses the
+ * connected account.
  *
  * Writes publish immediately; reads never throw. The transcription key, extraction key and
  * sync bearer token are sealed with a Keystore-backed AEAD (same scheme as the account token in
@@ -103,7 +104,18 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
 
     private val transcriptionKey = SealedSecret(KEY_TRANSCRIPTION_API_KEY, KEY_TRANSCRIPTION_API_KEY_SEALED, "transcription")
     private val extractionKey = SealedSecret(KEY_EXTRACTION_API_KEY, KEY_EXTRACTION_API_KEY_SEALED, "extraction")
-    private val syncSecret = SealedSecret(KEY_SYNC_TOKEN, KEY_SYNC_TOKEN_SEALED, "sync")
+
+    init {
+        // Sync once had its own address and token. It now uses the connected account, so the old
+        // values (including a sealed secret) are removed rather than left behind unused.
+        if (prefs.contains(KEY_SYNC_URL) || prefs.contains(KEY_SYNC_TOKEN) || prefs.contains(KEY_SYNC_TOKEN_SEALED)) {
+            prefs.edit {
+                remove(KEY_SYNC_URL)
+                remove(KEY_SYNC_TOKEN)
+                remove(KEY_SYNC_TOKEN_SEALED)
+            }
+        }
+    }
 
     private val _configRevision = MutableStateFlow(0L)
     /** Emits whenever a non-flow provider or sync setting changes. */
@@ -115,7 +127,7 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
 
     // --- Processing enable / disable -----------------------------------------------
 
-    private val _processingEnabled = MutableStateFlow(prefs.getBoolean(KEY_PROCESSING_ENABLED, false))
+    private val _processingEnabled = MutableStateFlow(prefs.getBoolean(KEY_PROCESSING_ENABLED, true))
     val processingEnabled: StateFlow<Boolean> = _processingEnabled.asStateFlow()
 
     fun setProcessingEnabled(enabled: Boolean) {
@@ -218,7 +230,7 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
 
     // --- Sync configuration --------------------------------------------------------
 
-    private val _syncEnabled = MutableStateFlow(prefs.getBoolean(KEY_SYNC_ENABLED, false))
+    private val _syncEnabled = MutableStateFlow(prefs.getBoolean(KEY_SYNC_ENABLED, true))
     val syncEnabled: StateFlow<Boolean> = _syncEnabled.asStateFlow()
 
     fun setSyncEnabled(enabled: Boolean) {
@@ -233,22 +245,6 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
         prefs.edit { putBoolean(KEY_LAST_SYNC_FAILED, failed) }
         _lastSyncFailed.value = failed
     }
-
-    var syncUrl: String?
-        get() = prefs.getString(KEY_SYNC_URL, null)
-        set(value) {
-            prefs.edit {
-                if (value == null) remove(KEY_SYNC_URL) else putString(KEY_SYNC_URL, value)
-            }
-            configChanged()
-        }
-
-    var syncToken: String?
-        get() = syncSecret.get()
-        set(value) {
-            syncSecret.set(value)
-            configChanged()
-        }
 
     private val _syncIncludeTranscripts = MutableStateFlow(prefs.getBoolean(KEY_SYNC_INCLUDE_TRANSCRIPTS, false))
     val syncIncludeTranscripts: StateFlow<Boolean> = _syncIncludeTranscripts.asStateFlow()

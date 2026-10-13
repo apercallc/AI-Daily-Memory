@@ -22,6 +22,8 @@ import com.apercallc.aidailymemory.recording.RecordingEvent
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.Transition
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import com.apercallc.aidailymemory.recording.effects.CaptureEffect
 import com.apercallc.aidailymemory.recording.effects.EngineReport
@@ -438,7 +440,9 @@ class RecordingService : Service(), EffectHandler {
                 return
             }
             val sessionId = SessionId(container.ids.next().toString())
-            container.controller.dispatch(RecordingCommand.Start(sessionId))
+            container.sessionOrigins.record(sessionId, RecordingOrigin.PHONE)
+            val transition = container.controller.dispatch(RecordingCommand.Start(sessionId))
+            if (transition !is Transition.Applied) container.sessionOrigins.forget(sessionId)
         }
 
         private fun mark(container: AppContainer, kind: MarkerKind): Job =

@@ -4,6 +4,7 @@ import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -58,4 +59,61 @@ class WearStringsTest {
             captureHealth = health,
         ),
     )
+    private fun snapshotOf(status: String, origin: String? = null) = PhoneRecordingSnapshot(
+        revision = 5,
+        status = status,
+        sessionStartedAt = null,
+        problem = null,
+        captureHealth = "OK",
+        origin = origin,
+    )
+
+    @Test
+    fun `starting while the phone already records says where it started`() {
+        assertEquals(
+            R.string.rejected_already_on_phone,
+            WearStrings.rejection(WatchCommand.Start, snapshotOf("RECORDING", origin = "PHONE")),
+        )
+        assertEquals(
+            R.string.rejected_already_on_phone,
+            WearStrings.rejection(WatchCommand.Start, snapshotOf("RECORDING", origin = "PHONE")),
+        )
+        // Origin unknown (schedule, older phone): say nothing about where it started.
+        assertEquals(
+            R.string.rejected_already_recording,
+            WearStrings.rejection(WatchCommand.Start, snapshotOf("STARTING")),
+        )
+        assertEquals(
+            R.string.rejected_already_from_watch,
+            WearStrings.rejection(WatchCommand.Start, snapshotOf("RECORDING", origin = "WATCH")),
+        )
+    }
+
+    @Test
+    fun `other refusals name their reason, and no context falls back to the general message`() {
+        assertEquals(
+            R.string.rejected_not_recording,
+            WearStrings.rejection(WatchCommand.Pause, snapshotOf("IDLE")),
+        )
+        assertEquals(
+            R.string.rejected_starting,
+            WearStrings.rejection(WatchCommand.Pause, snapshotOf("STARTING")),
+        )
+        assertEquals(
+            R.string.rejected_ending,
+            WearStrings.rejection(WatchCommand.Stop, snapshotOf("STOPPING")),
+        )
+        assertEquals(R.string.command_rejected, WearStrings.rejection(WatchCommand.Pause, snapshotOf("RECORDING")))
+        assertEquals(R.string.command_rejected, WearStrings.rejection(null, snapshotOf("RECORDING")))
+        assertEquals(R.string.command_rejected, WearStrings.rejection(WatchCommand.Pause, null))
+    }
+
+    @Test
+    fun `the watch says which device started the session, or nothing if unknown`() {
+        assertEquals(R.string.origin_watch, WearStrings.origin(snapshotOf("RECORDING", origin = "WATCH")))
+        assertEquals(R.string.origin_phone, WearStrings.origin(snapshotOf("RECORDING", origin = "PHONE")))
+        assertEquals(null, WearStrings.origin(snapshotOf("RECORDING", origin = "TABLET")))
+        assertEquals(null, WearStrings.origin(null))
+    }
+
 }

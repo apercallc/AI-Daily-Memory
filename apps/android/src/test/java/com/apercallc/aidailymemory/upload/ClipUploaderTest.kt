@@ -24,7 +24,7 @@ import com.apercallc.aidailymemory.recording.audio.AdtsHeaderWriter
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.segment.SegmentState
-import com.apercallc.aidailymemory.recording.speech.EnergyVad
+import com.apercallc.aidailymemory.recording.speech.VoiceVad
 import com.apercallc.aidailymemory.recording.upload.UploadStop
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
@@ -127,7 +127,7 @@ class ClipUploaderTest {
         repeat(100) { i -> open.writeFrame(ByteBuffer.wrap(ByteArray(40) { (it + i).toByte() }), 40) }
         val segment = store.seal(open)
         db.speech().save(
-            SegmentSpeechEntity(segment.segmentId, EnergyVad.VERSION, "OK", 6_400, 1_000, 2_000, regions.size, 0),
+            SegmentSpeechEntity(segment.segmentId, VoiceVad.VERSION, "OK", 6_400, 1_000, 2_000, regions.size, 0),
             regions.map { (start, end) -> SpeechRegionEntity(segment.segmentId, start, end, end - start, false) },
         )
         return segment

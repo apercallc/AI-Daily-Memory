@@ -46,6 +46,7 @@ object WatchWireCodec {
         .put(KEY_PROBLEM, snapshot.problem ?: JSONObject.NULL)
         .put(KEY_CAPTURE_HEALTH, snapshot.captureHealth)
         .put(KEY_RESET, snapshot.reset)
+        .put(KEY_ORIGIN, snapshot.origin ?: JSONObject.NULL)
         .toString()
         .encodeToByteArray()
 
@@ -56,6 +57,7 @@ object WatchWireCodec {
         .put(KEY_PROBLEM, snapshot.problem ?: JSONObject.NULL)
         .put(KEY_CAPTURE_HEALTH, snapshot.captureHealth)
         .put(KEY_RESET, snapshot.reset)
+        .put(KEY_ORIGIN, snapshot.origin ?: JSONObject.NULL)
         .toString()
         .encodeToByteArray()
 
@@ -69,4 +71,5 @@ object WatchWireCodec {
     private const val KEY_PROBLEM = "problem"
     private const val KEY_CAPTURE_HEALTH = "captureHealth"
     private const val KEY_RESET = "reset"
+    private const val KEY_ORIGIN = "origin"
 }

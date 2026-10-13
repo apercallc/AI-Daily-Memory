@@ -44,6 +44,7 @@ import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.apercallc.aidailymemory.recording.health.HealthLevel
+import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import com.apercallc.aidailymemory.recording.wear.WatchControls
 import java.text.DateFormat
@@ -139,6 +140,16 @@ private fun TransformingLazyColumnItemScope.StatusHeader(state: WearControlState
                     liveRegion = LiveRegionMode.Polite
                 },
         )
+        if (state.phoneConnected && WearPresentation.showsSessionStart(state, ignoreStartTime = true)) {
+            WearStrings.origin(state.snapshot)?.let {
+                Text(
+                    text = stringResource(it),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
         val startedAt = state.snapshot?.sessionStartedAt
         if (startedAt != null && WearPresentation.showsSessionStart(state)) {
             val since = remember(startedAt) {
@@ -212,7 +223,13 @@ private fun androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope.no
         item { Notice(R.string.command_waiting, NoticeTone.INFO, spec) }
     }
     state.lastAcknowledgement?.let { ack ->
-        item { Notice(WearStrings.acknowledgement(ack.outcome), NoticeTone.INFO, spec) }
+        if (ack.outcome == CommandOutcome.Rejected) {
+            item {
+                Notice(WearStrings.rejection(state.lastCommand, snapshot), NoticeTone.WARNING, spec)
+            }
+        } else {
+            item { Notice(WearStrings.acknowledgement(ack.outcome), NoticeTone.INFO, spec) }
+        }
     }
     state.error?.let { error ->
         item { Notice(WearStrings.error(error), NoticeTone.ERROR, spec) }

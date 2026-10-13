@@ -2,6 +2,7 @@ package com.apercallc.aidailymemory.net
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.apercallc.aidailymemory.recording.server.HostedServer
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
@@ -25,7 +26,7 @@ class LinkStoreTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val prefs = context.getSharedPreferences("link-test", Context.MODE_PRIVATE)
     private val token = "adm_" + "Z".repeat(43)
-    private val link = ServerLink("https://api.example", token)
+    private val link = ServerLink(HostedServer.BASE_URL, token)
 
     private fun newAead(): Aead {
         AeadConfig.register()
@@ -91,7 +92,7 @@ class LinkStoreTest {
         val aead = newAead()
         val store = LinkStore(prefs) { aead }
         store.save(link, 0, false)
-        val newer = ServerLink("https://api.example", "adm_" + "N".repeat(43))
+        val newer = ServerLink(HostedServer.BASE_URL, "adm_" + "N".repeat(43))
         store.save(newer, 0, false)
 
         assertFalse(store.clearIfCurrent(link)) // a run that started with the old token
@@ -166,14 +167,68 @@ class LinkStoreTest {
 
     @Test
     fun `input is validated before anything is stored`() {
-        val trimmed = LinkInput.parse(" https://api.example/ ", " $token ")
+        val trimmed = LinkInput.parse(" $token ")
         assertIs<LinkInput.Valid>(trimmed)
-        assertEquals("https://api.example", trimmed.link.baseUrl)
-        assertEquals(LinkInput.InvalidUrl, LinkInput.parse("http://api.example", token))
-        assertEquals(LinkInput.InvalidUrl, LinkInput.parse("https://", token))
-        assertEquals(LinkInput.InvalidUrl, LinkInput.parse("https://a b", token))
-        assertEquals(LinkInput.InvalidToken, LinkInput.parse("https://api.example", "password123"))
-        assertEquals(LinkInput.InvalidToken, LinkInput.parse("https://api.example", "adm_short"))
+        assertEquals(HostedServer.BASE_URL, trimmed.link.baseUrl)
+        assertEquals("https://api.example", (LinkInput.parse(token, "https://api.example") as LinkInput.Valid).link.baseUrl)
+        assertEquals(LinkInput.InvalidToken, LinkInput.parse("password123"))
+        assertEquals(LinkInput.InvalidToken, LinkInput.parse("adm_short"))
+    }
+
+    @Test
+    fun `a link to the person's own https server is kept`() {
+        val aead = newAead()
+        val own = ServerLink("https://api.example", token)
+        reopened(aead).save(own, 5, false)
+
+        assertEquals(own, reopened(aead).link.value)
+        assertEquals(LinkProblem.NONE, reopened(aead).problem.value)
+    }
+
+    @Test
+    fun `the server defaults to hosted, can be set, and resets`() {
+        val store = reopened(newAead())
+        assertEquals(HostedServer.BASE_URL, store.serverUrl.value)
+
+        store.setServerUrl("https://api.example")
+        assertEquals("https://api.example", store.serverUrl.value)
+        assertEquals("https://api.example", reopened(newAead()).serverUrl.value)
+
+        store.setServerUrl(null)
+        assertEquals(HostedServer.BASE_URL, store.serverUrl.value)
+        assertEquals(HostedServer.BASE_URL, reopened(newAead()).serverUrl.value)
+    }
+
+    @Test
+    fun `an unusable stored server falls back to hosted`() {
+        prefs.edit().putString("preferred_server", "http://plain.example").commit()
+        assertEquals(HostedServer.BASE_URL, reopened(newAead()).serverUrl.value)
+    }
+
+    @Test
+    fun `a stored link that is not an https origin is dropped and never used`() {
+        val aead = newAead()
+        // Written by an earlier version, which let people type a server address.
+        prefs.edit()
+            .putString("base_url", "http://api.example")
+            .putString("token_sealed", android.util.Base64.encodeToString(
+                aead.encrypt(token.toByteArray(), "aidm:server-token:v1".toByteArray()),
+                android.util.Base64.NO_WRAP,
+            ))
+            .commit()
+
+        val reopened = reopened(aead)
+
+        assertNull(reopened.link.value)
+        assertEquals(LinkProblem.OTHER_SERVER, reopened.problem.value)
+        // The notice survives a restart, and connecting properly clears it.
+        val again = reopened(aead)
+        assertEquals(LinkProblem.OTHER_SERVER, again.problem.value)
+        again.save(link, 6, false)
+        assertEquals(LinkProblem.NONE, again.problem.value)
+        val final = reopened(aead)
+        assertEquals(link, final.link.value)
+        assertEquals(LinkProblem.NONE, final.problem.value)
     }
 
     @Test
@@ -182,6 +237,6 @@ class LinkStoreTest {
         ServerLink("http://127.0.0.1:8080", token)
         ServerLink("http://localhost", token)
 
-        assertFalse(ServerLink("https://api.example", token).toString().contains(token))
+        assertFalse(ServerLink(HostedServer.BASE_URL, token).toString().contains(token))
     }
 }

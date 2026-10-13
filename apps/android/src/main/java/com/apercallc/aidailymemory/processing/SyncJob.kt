@@ -12,8 +12,8 @@ import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
+import com.apercallc.aidailymemory.net.ServerLink
 import com.apercallc.aidailymemory.platform.logFailure
-import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.recording.processing.SyncCoverage
 import com.apercallc.aidailymemory.recording.processing.SyncItem
 import com.apercallc.aidailymemory.recording.processing.SyncPayload
@@ -116,6 +116,13 @@ class SyncManager(
     private val database: CaptureDatabase,
     private val settings: ProcessingSettings,
     private val deviceId: String,
+    /** The linked hosted account, or null while offline. Sync has no address of its own. */
+    private val link: () -> ServerLink? = { null },
+    /**
+     * Reports generated before this time stay on the phone: connecting must not quietly send
+     * everything written before (the same promise as the audio backlog choice). 0 = everything.
+     */
+    private val notBeforeEpochMs: () -> Long = { 0L },
     private val json: Json = Json { encodeDefaults = false },
     /**
      * Transport seam for tests. Null in production, where [post] opens the real connection.
@@ -130,17 +137,14 @@ class SyncManager(
      */
     suspend fun syncPending(): Boolean {
         if (!settings.syncEnabled.value) return true
-        val url = (EndpointUrl.parse(settings.syncUrl.orEmpty()) as? EndpointUrl.Valid)?.value
-        if (url == null) {
-            // Enabled without an endpoint is a misconfiguration the user must see, not a success.
-            Log.w(TAG, "sync_url_missing")
-            settings.setLastSyncFailed(true)
-            return false
-        }
-        val token = settings.syncToken
+        // Offline: nothing leaves the phone, which is the point of offline. Not a failure either,
+        // or sync being on by default would show an error to everyone who never connected.
+        val account = link() ?: return true
+        val url = account.baseUrl.trimEnd('/') + SYNC_PATH
+        val token = account.token
         val includeTranscripts = settings.syncIncludeTranscripts.value
 
-        val since = settings.lastSyncEpochMs ?: 0L
+        val since = maxOf(settings.lastSyncEpochMs ?: 0L, notBeforeEpochMs())
         val reports = database.dailyReports().since(since)
         val deletions = database.syncDeletions().pendingSessionIds()
         if (reports.isEmpty() && deletions.isEmpty()) return true
@@ -227,6 +231,8 @@ class SyncManager(
             connection.requestMethod = "POST"
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
+            // A redirect must never carry the bearer token to another host.
+            connection.instanceFollowRedirects = false
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
@@ -245,6 +251,7 @@ class SyncManager(
 
     private companion object {
         const val TAG = "SyncManager"
+        const val SYNC_PATH = "/v1/sync"
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
     }

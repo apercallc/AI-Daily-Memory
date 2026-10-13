@@ -63,4 +63,19 @@ class WatchWireCodecTest {
         assertEquals("FOREGROUND_START_NOT_ALLOWED", json.getString("problem"))
         assertEquals("CRITICAL", json.getString("captureHealth"))
     }
+
+    @Test
+    fun `the snapshot and the acknowledgement both carry the origin of the session`() {
+        val snapshot = PhoneRecordingSnapshot(
+            revision = 4, status = "RECORDING", sessionStartedAt = null, problem = null,
+            captureHealth = "OK", origin = "WATCH",
+        )
+
+        assertEquals("WATCH", JSONObject(WatchWireCodec.encodeSnapshot(snapshot).decodeToString()).getString("origin"))
+        val ack = WatchWireCodec.encodeAcknowledgement(CommandAcknowledgement("c", CommandOutcome.Applied, 4), snapshot)
+        assertEquals("WATCH", JSONObject(ack.decodeToString()).getString("origin"))
+
+        val none = snapshot.copy(origin = null)
+        assertEquals(true, JSONObject(WatchWireCodec.encodeSnapshot(none).decodeToString()).isNull("origin"))
+    }
 }

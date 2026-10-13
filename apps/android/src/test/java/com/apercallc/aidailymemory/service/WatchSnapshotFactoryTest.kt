@@ -4,6 +4,7 @@ import com.apercallc.aidailymemory.recording.CaptureProblem
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.SessionId
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -48,5 +49,14 @@ class WatchSnapshotFactoryTest {
         // Deleting the newest session removed its journal rows: the restored revision is
         // below what a watch has already shown, so the snapshot must be accepted unconditionally.
         assertTrue(WatchSnapshotFactory.needsReset(30, lastPublishedRevision = 42))
+    }
+
+    @Test
+    fun `the snapshot says which device started the session`() {
+        val state = RecordingState(RecordingStatus.RECORDING, SessionId("s"), revision = 3, problem = null)
+
+        assertEquals("WATCH", WatchSnapshotFactory.from(state, "OK", origin = RecordingOrigin.WATCH).origin)
+        assertEquals("PHONE", WatchSnapshotFactory.from(state, "OK", origin = RecordingOrigin.PHONE).origin)
+        assertEquals(null, WatchSnapshotFactory.from(state, "OK").origin)
     }
 }

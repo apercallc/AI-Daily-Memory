@@ -8,11 +8,11 @@ import com.apercallc.aidailymemory.data.SegmentSpeechEntity
 import com.apercallc.aidailymemory.data.SpeechDao
 import com.apercallc.aidailymemory.data.SpeechRegionEntity
 import com.apercallc.aidailymemory.platform.logFailure
-import com.apercallc.aidailymemory.recording.speech.EnergyVad
 import com.apercallc.aidailymemory.recording.speech.FrameSink
 import com.apercallc.aidailymemory.recording.speech.SpeechConfig
 import com.apercallc.aidailymemory.recording.speech.SpeechRegions
 import com.apercallc.aidailymemory.recording.speech.SpeechSummary
+import com.apercallc.aidailymemory.recording.speech.VoiceVad
 import java.io.IOException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -31,7 +31,9 @@ enum class SpeechOutcome {
 data class AnalysisRun(val analyzed: Int, val failed: Int, val remaining: Int)
 
 /**
- * Finds sealed segments no one has analyzed yet and records where the speech is (ADR-0015).
+ * Finds sealed segments no one has analyzed yet and records where human voices are (ADR-0015).
+ * Silence, background noise, instruments and nature sounds are not speech and are left out, so
+ * only voices are ever cut into clips for transcription.
  *
  * Phase 0 runs this in shadow mode: nothing is uploaded; the totals feed the Gate B
  * per-user-day cost model. Phase 1 will cut upload clips from the same regions.
@@ -47,14 +49,14 @@ class SpeechAnalyzer(
     suspend fun analyzePending(limit: Int = BATCH): AnalysisRun {
         var analyzed = 0
         var failed = 0
-        for (segment in dao.pending(EnergyVad.VERSION, limit)) {
+        for (segment in dao.pending(VoiceVad.VERSION, limit)) {
             currentCoroutineContext().ensureActive()
             val result = analyze(segment) ?: break
             val (outcome, summary) = result
             save(segment, outcome, summary)
             if (outcome == SpeechOutcome.OK) analyzed++ else failed++
         }
-        val remaining = dao.pendingCount(EnergyVad.VERSION)
+        val remaining = dao.pendingCount(VoiceVad.VERSION)
         Log.i(TAG, "speech_analysis_batch analyzed=$analyzed failed=$failed remaining=$remaining")
         return AnalysisRun(analyzed, failed, remaining)
     }
@@ -67,12 +69,13 @@ class SpeechAnalyzer(
                 return SpeechOutcome.UNREADABLE to null
             SegmentAudioRead.Unavailable -> return null
         }
-        val vad = EnergyVad(segment.sampleRateHz)
+        val vad = VoiceVad(segment.sampleRateHz)
         val frames = FrameBuffer()
         return try {
             decoder.decode(audio, segment.sampleRateHz, segment.channelCount) { pcm, count ->
-                vad.process(pcm, count, frames)
+                vad.process(pcm, count)
             }
+            vad.finish(frames)
             val summary = SpeechRegions.build(
                 frames.values,
                 frames.size,
@@ -90,7 +93,7 @@ class SpeechAnalyzer(
     private suspend fun save(segment: SegmentEntity, outcome: SpeechOutcome, summary: SpeechSummary?) {
         val analysis = SegmentSpeechEntity(
             segmentId = segment.segmentId,
-            analyzer = EnergyVad.VERSION,
+            analyzer = VoiceVad.VERSION,
             outcome = outcome.name,
             totalMs = segment.durationMs,
             speechMs = summary?.speechMs ?: 0,

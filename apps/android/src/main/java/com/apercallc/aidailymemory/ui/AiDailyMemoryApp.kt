@@ -94,6 +94,7 @@ import com.apercallc.aidailymemory.capture.CaptureOverview
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.permission.BatteryGuidance
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import com.apercallc.aidailymemory.recording.permission.CapturePreconditionInputs
 import com.apercallc.aidailymemory.recording.permission.DeviceVendor
 import com.apercallc.aidailymemory.recording.permission.CapturePreconditions
@@ -194,6 +195,7 @@ fun AiDailyMemoryApp(
     CaptureScreen(
         model = state.model,
         overview = state.overview,
+        origin = state.origin,
         batteryRestricted = batteryRestricted,
         indicator = indicator,
         onNotificationSettings = {
@@ -358,6 +360,7 @@ fun CaptureScreen(
     vendor: DeviceVendor = DeviceVendor.OTHER,
     indicator: IndicatorVisibility = IndicatorVisibility.VISIBLE,
     onNotificationSettings: () -> Unit = {},
+    origin: RecordingOrigin? = null,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Scaffold(
@@ -398,6 +401,16 @@ fun CaptureScreen(
             if (batteryRestricted) BatteryCard(vendor, onBatterySettings, onAppBatterySettings)
 
             CaptureStatusCard(model = model, overview = overview)
+            // Only while a session is open: it says whose button started the recording.
+            if (origin != null && model.canStop) {
+                Text(
+                    text = stringResource(
+                        if (origin == RecordingOrigin.WATCH) R.string.origin_watch else R.string.origin_phone,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             if (model.primaryAction != PrimaryAction.NONE) {
                 PrimaryActionButton(model = model, onClick = onPrimaryAction)

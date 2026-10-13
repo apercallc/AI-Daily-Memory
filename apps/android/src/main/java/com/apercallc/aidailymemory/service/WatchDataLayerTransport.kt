@@ -17,6 +17,7 @@ object WatchDataLayerTransport {
             snapshot.problem?.let { dataMap.putString(KEY_PROBLEM, it) }
             dataMap.putString(KEY_CAPTURE_HEALTH, snapshot.captureHealth)
             dataMap.putBoolean(KEY_RESET, snapshot.reset)
+            snapshot.origin?.let { dataMap.putString(KEY_ORIGIN, it) }
         }.asPutDataRequest()
             .setUrgent()
         Wearable.getDataClient(context.applicationContext)
@@ -50,4 +51,5 @@ object WatchDataLayerTransport {
     private const val KEY_PROBLEM = "problem"
     private const val KEY_CAPTURE_HEALTH = "captureHealth"
     private const val KEY_RESET = "reset"
+    private const val KEY_ORIGIN = "origin"
 }

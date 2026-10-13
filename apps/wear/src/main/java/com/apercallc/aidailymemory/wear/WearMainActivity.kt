@@ -261,6 +261,7 @@ class WearMainActivity : ComponentActivity(),
             problem = problem,
             captureHealth = optString(KEY_CAPTURE_HEALTH, "UNKNOWN"),
             reset = optBoolean(KEY_RESET, false),
+            origin = optString(KEY_ORIGIN).takeUnless { it.isBlank() || it == "null" },
         )
     }
 
@@ -280,6 +281,7 @@ class WearMainActivity : ComponentActivity(),
             problem = problem,
             captureHealth = getString(KEY_CAPTURE_HEALTH) ?: "UNKNOWN",
             reset = getBoolean(KEY_RESET, false),
+            origin = getString(KEY_ORIGIN),
         )
     }
 
@@ -322,6 +324,7 @@ class WearMainActivity : ComponentActivity(),
         const val KEY_PROBLEM = "problem"
         const val KEY_CAPTURE_HEALTH = "captureHealth"
         const val KEY_RESET = "reset"
+        const val KEY_ORIGIN = "origin"
         private const val PENDING_COMMAND_PREFERENCES = "wear_control"
         private const val PENDING_ID_KEY = "pending_command_id"
         private const val PENDING_ACTION_KEY = "pending_command_action"

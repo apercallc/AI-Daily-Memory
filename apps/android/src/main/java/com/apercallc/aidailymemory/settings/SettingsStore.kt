@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.settings
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.core.content.edit
+import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.RhythmCodec
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
@@ -35,6 +36,26 @@ class SettingsStore(private val prefs: SharedPreferences) {
 
     /** A saved schedule couldn't be read and none is active; the user should be told. */
     val hadUnreadableRhythm: Boolean get() = prefs.contains(KEY_RHYTHM_UNREADABLE)
+
+    private val _themeMode = MutableStateFlow(ThemeMode.parse(prefs.getString(KEY_THEME, null)))
+
+    /** Light, dark, or follow the phone (the default). */
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit { putString(KEY_THEME, mode.name) }
+        _themeMode.value = mode
+    }
+
+    private val _onboardingDone = MutableStateFlow(prefs.getBoolean(KEY_ONBOARDING_DONE, false))
+
+    /** The first-run walkthrough has been finished or skipped. */
+    val onboardingDone: StateFlow<Boolean> = _onboardingDone.asStateFlow()
+
+    fun setOnboardingDone(done: Boolean) {
+        prefs.edit { putBoolean(KEY_ONBOARDING_DONE, done) }
+        _onboardingDone.value = done
+    }
 
     fun setRetention(retention: AudioRetention) {
         prefs.edit { putString(KEY_RETENTION, retention.name) }
@@ -78,6 +99,8 @@ class SettingsStore(private val prefs: SharedPreferences) {
         private const val KEY_RHYTHM_UNREADABLE = "daily_rhythm_unreadable"
         private const val KEY_RETENTION = "audio_retention"
         private const val KEY_LAST_CHECK = "rhythm_last_check_epoch_ms"
+        private const val KEY_THEME = "theme_mode"
+        private const val KEY_ONBOARDING_DONE = "onboarding_done"
         private const val NONE = Long.MIN_VALUE
     }
 }

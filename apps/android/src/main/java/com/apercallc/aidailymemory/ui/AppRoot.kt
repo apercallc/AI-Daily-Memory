@@ -35,7 +35,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.server.HostedServer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -52,7 +60,7 @@ import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
 import com.apercallc.aidailymemory.ui.settings.NextChange
-import com.apercallc.aidailymemory.ui.settings.AccountActions
+import com.apercallc.aidailymemory.ui.settings.AccountCallbacks
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -88,8 +96,20 @@ fun AppRoot(
     settings: () -> SettingsViewModel,
     updates: () -> UpdateViewModel,
     permissions: Permissions,
+    onboardingDone: Boolean = true,
+    onOnboardingFinished: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.CAPTURE) }
+    // A fresh install starts with the walkthrough; finishing (or skipping) it is remembered.
+    val sessionOpen = capture.uiState.collectAsStateWithLifecycle().value.model.canStop
+    // Never while a session is open: the recording indicator and controls must stay reachable.
+    if (!onboardingDone && !sessionOpen) {
+        OnboardingScreen { result ->
+            onOnboardingFinished()
+            if (result == OnboardingResult.CONNECT_ACCOUNT) screen = AppScreen.SETTINGS
+        }
+        return
+    }
     var openSession by rememberSaveable { mutableStateOf<String?>(null) }
     var openTitle by rememberSaveable { mutableStateOf("") }
     val back = {
@@ -219,6 +239,13 @@ private fun SettingsRoute(
     val update by updates.state.collectAsStateWithLifecycle()
     val processing by viewModel.processing.collectAsStateWithLifecycle()
     val sync by viewModel.sync.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    // Confirmations and errors are toasts so they show even when the changed control is off screen.
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
     // Recomputed on a slow tick too, so "Next: …" never shows a time that already passed.
     val next by produceState<NextChange?>(initialValue = null, rhythm) {
         while (true) {
@@ -236,28 +263,57 @@ private fun SettingsRoute(
             onRhythmChange = viewModel::updateRhythm,
             onRetentionChange = viewModel::updateRetention,
             account = account,
-            accountActions = remember(viewModel) {
-                AccountActions(
-                    connect = viewModel::connect,
-                    edit = viewModel::clearConnectError,
-                    disconnect = viewModel::disconnect,
-                    retryUploads = viewModel::retryUploads,
-                    changeStorageMode = viewModel::changeStorageMode,
-                    retryStorageMode = viewModel::reloadStorageMode,
+            accountCallbacks = remember(viewModel, uriHandler, context) {
+                AccountCallbacks(
+                    onConnectToken = viewModel::connect,
+                    onSignUp = viewModel::signUp,
+                    onLogIn = viewModel::logIn,
+                    onEdit = viewModel::clearConnectError,
+                    onDisconnect = viewModel::disconnect,
+                    onRetryUploads = viewModel::retryUploads,
+                    onTest = viewModel::testConnection,
+                    onStorageModeChange = viewModel::changeStorageMode,
+                    onStorageModeRetry = viewModel::reloadStorageMode,
+                    onOpenWebsite = { openLink(uriHandler, context, HostedServer.WEBSITE_URL) },
+                    onServerChange = viewModel::changeServer,
+                    clipboardText = { clipboardText(context) },
                 )
             },
+            themeMode = themeMode,
+            onThemeModeChange = viewModel::updateThemeMode,
             update = update,
             onUpdateCheck = updates::check,
             onUpdateDownload = updates::download,
             onUpdateInstall = updates::install,
             processing = processing,
-            processingActions = viewModel.processingActions,
+            processingActions = remember(viewModel, uriHandler, context) {
+                viewModel.processingActions.copy(onOpenLink = { openLink(uriHandler, context, it) })
+            },
             sync = sync,
             syncActions = viewModel.syncActions,
             modifier = modifier,
         )
     }
 }
+
+/** Opens a page in the browser; a phone with no browser gets a toast, not a crash. */
+private fun openLink(uriHandler: UriHandler, context: Context, url: String) {
+    try {
+        uriHandler.openUri(url)
+    } catch (e: IllegalArgumentException) {
+        logFailure("AppRoot", "link_unavailable", e)
+        Toast.makeText(context, R.string.settings_screen_unavailable, Toast.LENGTH_LONG).show()
+    }
+}
+
+/** The clipboard's text, if it has any; read only when the person taps Paste. */
+private fun clipboardText(context: Context): String? =
+    context.getSystemService(ClipboardManager::class.java)
+        ?.primaryClip
+        ?.takeIf { it.itemCount > 0 }
+        ?.getItemAt(0)
+        ?.coerceToText(context)
+        ?.toString()
 
 @Composable
 private fun SecondaryScreen(

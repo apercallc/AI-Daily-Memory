@@ -50,6 +50,13 @@ class WearPresentationTest {
     }
 
     @Test
+    fun `who started a session shows for a live connected one even with no start time`() {
+        assertTrue(WearPresentation.showsSessionStart(state(startedAt = null), ignoreStartTime = true))
+        assertFalse(WearPresentation.showsSessionStart(state(startedAt = null, connected = false), ignoreStartTime = true))
+        assertFalse(WearPresentation.showsSessionStart(state(startedAt = null, status = "IDLE"), ignoreStartTime = true))
+    }
+
+    @Test
     fun `while recording a marker comes first and Stop comes last`() {
         val shown = WearPresentation.displayOrder(WatchControls.availableCommands(snapshot()))
         assertEquals(

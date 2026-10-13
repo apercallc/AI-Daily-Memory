@@ -29,9 +29,10 @@ internal object WearPresentation {
     }
 
     /** The phone only reports a start time for a live session; it is meaningless otherwise. */
-    fun showsSessionStart(state: WearControlState): Boolean {
+    fun showsSessionStart(state: WearControlState, ignoreStartTime: Boolean = false): Boolean {
         val snapshot = state.snapshot ?: return false
-        if (!state.phoneConnected || snapshot.sessionStartedAt == null) return false
+        if (!state.phoneConnected) return false
+        if (!ignoreStartTime && snapshot.sessionStartedAt == null) return false
         return snapshot.status in LIVE_STATUSES
     }
 

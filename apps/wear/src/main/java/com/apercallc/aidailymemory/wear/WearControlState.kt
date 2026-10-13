@@ -25,6 +25,8 @@ data class WearControlState(
     val pendingCommandId: String? = null,
     val pendingCommand: WatchCommand? = null,
     val lastAcknowledgement: CommandAcknowledgement? = null,
+    /** The command [lastAcknowledgement] answers, so a refusal can say why. */
+    val lastCommand: WatchCommand? = null,
     val error: WearError? = null,
 )
 
@@ -63,6 +65,7 @@ object WearControlReducer {
         pendingCommandId = commandId,
         pendingCommand = command,
         lastAcknowledgement = null,
+        lastCommand = null,
         error = null,
     )
 
@@ -77,6 +80,7 @@ object WearControlReducer {
             pendingCommandId = null,
             pendingCommand = null,
             lastAcknowledgement = acknowledgement,
+            lastCommand = state.pendingCommand,
             error = if (acknowledgement.outcome == CommandOutcome.Rejected) {
                 WearError.PHONE_REJECTED
             } else {

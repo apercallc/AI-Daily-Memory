@@ -9,6 +9,7 @@ import com.apercallc.aidailymemory.recording.wear.AcknowledgementCodec
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgement
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgements
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,6 +28,15 @@ class WatchCommandBridge(
      * still answers a retried command with its original outcome instead of running it twice.
      */
     private val persist: (String) -> Unit = {},
+    /** Called before a Start is dispatched, so the new session's first snapshot knows its origin. */
+    private val recordOrigin: (SessionId, RecordingOrigin) -> Unit = { _, _ -> },
+    /** Called when that Start was not applied, so a refused start leaves no entry behind. */
+    private val forgetOrigin: (SessionId) -> Unit = {},
+    /**
+     * Called once for each command the phone actually acted on (never for a redelivered one),
+     * so the phone can tell the person that their watch just did something.
+     */
+    private val onApplied: (WatchCommand) -> Unit = {},
 ) {
     private val commandLock = Mutex()
 
@@ -39,10 +49,13 @@ class WatchCommandBridge(
                 cached
             } else {
                 val acknowledgement = when (command) {
-                    WatchCommand.Start -> fromTransition(
-                        commandId,
-                        dispatch(RecordingCommand.Start(newSessionId())),
-                    )
+                    WatchCommand.Start -> {
+                        val sessionId = newSessionId()
+                        recordOrigin(sessionId, RecordingOrigin.WATCH)
+                        val transition = dispatch(RecordingCommand.Start(sessionId))
+                        if (transition !is Transition.Applied) forgetOrigin(sessionId)
+                        fromTransition(commandId, transition)
+                    }
                     WatchCommand.Pause -> fromTransition(commandId, dispatch(RecordingCommand.Pause))
                     WatchCommand.Resume -> fromTransition(commandId, dispatch(RecordingCommand.Resume))
                     WatchCommand.Stop -> fromTransition(commandId, dispatch(RecordingCommand.Stop))
@@ -51,6 +64,7 @@ class WatchCommandBridge(
                 }
                 acknowledgements.remember(commandId, acknowledgement)
                 persist(AcknowledgementCodec.encode(acknowledgements.snapshot().map { it.second }))
+                if (acknowledgement.outcome == CommandOutcome.Applied) onApplied(command)
                 acknowledgement
             }
         }

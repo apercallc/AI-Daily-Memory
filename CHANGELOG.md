@@ -5,6 +5,34 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- One server at a time: the app is either Offline or Connected, and the default is
+  aidailymem.apercallc.com (ADR-0022, ADR-0023). Sync has no address of its own; it uses the
+  connected account. People running their own backend can set its https address under
+  Advanced on the account screen (offline only); a saved link to any valid https server is kept.
+- Own AI provider: pick a provider and model from lists (Deepgram for transcription; OpenAI,
+  Anthropic, Groq or OpenRouter for the summary). Turning it on pre-fills them, so only the key
+  is left, with a tap-to-open link to where each provider issues keys. Custom still takes any
+  address and model.
+- Memory processing and daily-report sync are on by default (they do nothing offline).
+- Settings: Account & server now holds the account, processing and daily reports together;
+  bringing your own AI provider moved behind an Advanced switch.
+- The recording analyzer keeps human voices only (`voice-v1`): silence, steady noise, held or
+  repeated instrument notes and rumble are no longer sent for transcription. Existing segments
+  that still have audio are re-analyzed.
+- Starting on the phone and watch at the same time now tells the second device why ("Already
+  recording"), on both screens.
+
+### Added
+
+- First-run walkthrough (four steps, skippable).
+- Create account / Sign in inside the app (email + password), a link that opens the site, a
+  paste button for tokens, and Test connection with a toast for each outcome.
+- Theme: Match my phone (default), Light, Dark.
+- The phone and the watch show which device started the session, and the phone says when its
+  watch paused, resumed, stopped or started it.
+
 ## [0.2.0] - 2026-10-13
 
 ### Changed

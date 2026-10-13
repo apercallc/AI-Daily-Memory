@@ -1,11 +1,20 @@
 package com.apercallc.aidailymemory.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.os.Build
 import com.apercallc.aidailymemory.AppContainer
+import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.processing.EndpointUrl
+import com.apercallc.aidailymemory.recording.processing.ProviderPresets
+import com.apercallc.aidailymemory.recording.server.ConnectLink
+import com.apercallc.aidailymemory.recording.server.ServerAddress
+import com.apercallc.aidailymemory.recording.server.ConnectionCheck
+import com.apercallc.aidailymemory.recording.server.ServerMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
@@ -20,6 +29,9 @@ import java.time.ZonedDateTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +53,6 @@ internal data class StorageModeUi(
 private data class UrlDrafts(
     val transcription: String? = null,
     val extraction: String? = null,
-    val sync: String? = null,
 )
 
 /** The next thing the schedule will do, for the "Next: …" line. */
@@ -77,8 +88,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val linker = container.accountLinker
     private val connecting = MutableStateFlow(false)
+    private val testing = MutableStateFlow(false)
     private val connectError = MutableStateFlow<ConnectError?>(null)
     private val storage = MutableStateFlow(StorageModeUi())
+
+    /** Server text that is not a usable address yet; shown as typed, never stored. */
+    private val serverDraft = MutableStateFlow<String?>(null)
+
+    /** Blank returns to the hosted server; a valid https address is stored; anything else is kept as a draft. */
+    fun changeServer(input: String) {
+        when (val parsed = ServerAddress.parse(input)) {
+            is ServerAddress.Valid -> {
+                serverDraft.value = null
+                container.links.setServerUrl(parsed.origin)
+            }
+            ServerAddress.Blank -> {
+                serverDraft.value = null
+                container.links.setServerUrl(null)
+            }
+            ServerAddress.Invalid -> serverDraft.value = input
+        }
+        connectError.value = null
+    }
 
     init {
         // Refetched from scratch on every link change: a mode fetched under an old token must
@@ -119,17 +150,20 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             combine(container.links.revokePending, container.links.revokeManual, ::Pair),
             ::Triple,
         ),
-        connecting,
+        combine(connecting, testing, ::Pair),
         connectError,
         container.links.link.flatMapLatest {
             container.database.clips().observeProblems(container.links.uploadSinceEpochMs)
         },
-        storage,
-    ) { (link, problem, revoke), busy, error, problems, storageUi ->
+        combine(storage, container.links.serverUrl, serverDraft, ::Triple),
+    ) { (link, problem, revoke), (busy, testingNow), error, problems, (storageUi, server, draft) ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
+            serverUrl = server,
+            serverDraft = draft,
             problem = problem,
             connecting = busy,
+            testing = testingNow,
             error = error,
             uploadProblems = problems,
             revokePending = revoke.first,
@@ -151,9 +185,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.processingEnabled,
         pSettings.transcriptionProvider,
         pSettings.deleteAudioAfterTranscription,
-        pSettings.configRevision,
         urlDrafts,
-    ) { enabled, tp, deleteAudio, _, drafts ->
+        // Any provider edit or connect/disconnect refreshes the section.
+        combine(pSettings.configRevision, container.links.link) { _, link -> link },
+    ) { enabled, tp, deleteAudio, drafts, _ ->
+        val transcriptionPreset = ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl)
         ProcessingUi(
             enabled = enabled,
             transcriptionProvider = tp,
@@ -161,12 +197,20 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             transcriptionApiUrl = drafts.transcription ?: pSettings.transcriptionApiUrl ?: "",
             transcriptionApiUrlInvalid = drafts.transcription != null,
             extractionProvider = pSettings.extractionProvider.value,
+            ownProvider = tp == ProcessingSettings.PROVIDER_USER_API ||
+                pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_USER_API,
             extractionApiKey = pSettings.extractionApiKey ?: "",
             extractionApiUrl = drafts.extraction ?: pSettings.extractionApiUrl ?: "",
             extractionApiUrlInvalid = drafts.extraction != null,
             extractionModel = pSettings.extractionModel ?: "",
+            transcriptionPresetId = transcriptionPreset?.id ?: ProviderPresets.CUSTOM_ID,
+            transcriptionModel = ProviderPresets.modelInUrl(pSettings.transcriptionApiUrl)
+                ?: transcriptionPreset?.defaultModel.orEmpty(),
+            extractionPresetId = ProviderPresets.match(ProviderPresets.summary, pSettings.extractionApiUrl)?.id
+                ?: ProviderPresets.CUSTOM_ID,
             deleteAudioAfterTranscription = deleteAudio,
             configGaps = pSettings.configGaps(),
+            mode = ServerMode.of(container.links.isLinked),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
 
@@ -175,13 +219,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.syncIncludeTranscripts,
         pSettings.lastSyncFailed,
         pSettings.configRevision,
-        urlDrafts,
-    ) { enabled, includeTranscripts, lastSyncFailed, _, drafts ->
+        container.links.link,
+    ) { enabled, includeTranscripts, lastSyncFailed, _, link ->
         SyncUi(
             enabled = enabled,
-            url = drafts.sync ?: pSettings.syncUrl ?: "",
-            urlInvalid = drafts.sync != null,
-            token = pSettings.syncToken ?: "",
+            connected = link != null,
             includeTranscripts = includeTranscripts,
             lastSyncEpochMs = pSettings.lastSyncEpochMs,
             lastSyncFailed = lastSyncFailed,
@@ -190,18 +232,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val processingActions = ProcessingActions(
         onEnableChange = { enabled ->
-            if (enabled) {
-                // The screen no longer asks for a provider: turning processing on means "use my
-                // own API key", so a provider left on "off" would only strand the setup.
-                if (pSettings.transcriptionProvider.value == ProcessingSettings.PROVIDER_DISABLED) {
-                    pSettings.setTranscriptionProvider(ProcessingSettings.PROVIDER_USER_API)
-                }
-                if (pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_DISABLED) {
-                    pSettings.setExtractionProvider(ProcessingSettings.PROVIDER_USER_API)
-                }
-            }
             pSettings.setProcessingEnabled(enabled)
             onProcessingSettingsChanged()
+            say(R.string.settings_saved)
         },
         onTranscriptionProviderChange = { provider ->
             pSettings.setTranscriptionProvider(provider)
@@ -229,24 +262,63 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             pSettings.extractionModel = value
             onProcessingSettingsChanged()
         },
-        onDeleteAudioChange = pSettings::setDeleteAudioAfterTranscription,
+        onDeleteAudioChange = { enabled ->
+            pSettings.setDeleteAudioAfterTranscription(enabled)
+            say(R.string.settings_saved)
+        },
+        onOwnProviderChange = { enabled ->
+            val provider = if (enabled) ProcessingSettings.PROVIDER_USER_API else ProcessingSettings.PROVIDER_DISABLED
+            pSettings.setTranscriptionProvider(provider)
+            pSettings.setExtractionProvider(provider)
+            // Pre-filled so the only thing left to add is a key.
+            if (enabled) prefillProviders()
+            onProcessingSettingsChanged()
+            say(R.string.settings_saved)
+        },
+        onTranscriptionPresetChange = { id ->
+            urlDrafts.update { it.copy(transcription = null) }
+            val preset = ProviderPresets.transcription.firstOrNull { it.id == id }
+            if (preset != null) {
+                pSettings.transcriptionApiUrl = preset.endpointFor(preset.defaultModel)
+            } else if (ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl) != null) {
+                pSettings.transcriptionApiUrl = null
+            }
+            onProcessingSettingsChanged()
+        },
+        onTranscriptionModelChange = { model ->
+            val preset = ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl)
+            if (preset != null) pSettings.transcriptionApiUrl = preset.endpointFor(model)
+            onProcessingSettingsChanged()
+        },
+        onExtractionPresetChange = { id ->
+            urlDrafts.update { it.copy(extraction = null) }
+            val preset = ProviderPresets.summary.firstOrNull { it.id == id }
+            if (preset != null) {
+                pSettings.extractionApiUrl = preset.endpoint
+                if (pSettings.extractionModel !in preset.models) pSettings.extractionModel = preset.defaultModel
+            } else if (ProviderPresets.match(ProviderPresets.summary, pSettings.extractionApiUrl) != null) {
+                pSettings.extractionApiUrl = null
+                pSettings.extractionModel = null
+            }
+            onProcessingSettingsChanged()
+        },
+        onTest = ::testConnection,
+        onSaveProvider = {
+            onProcessingSettingsChanged()
+            say(R.string.settings_saved)
+        },
     )
 
     val syncActions = SyncActions(
         onEnableChange = { enabled ->
             pSettings.setSyncEnabled(enabled)
             onProcessingSettingsChanged()
-        },
-        onUrlChange = { value ->
-            applyUrl(value, { d, v -> d.copy(sync = v) }) { pSettings.syncUrl = it }
-        },
-        onTokenChange = { value ->
-            pSettings.syncToken = value
-            onProcessingSettingsChanged()
+            say(R.string.settings_saved)
         },
         onIncludeTranscriptsChange = { include ->
             pSettings.setSyncIncludeTranscripts(include)
             onProcessingSettingsChanged()
+            say(R.string.settings_saved)
         },
     )
 
@@ -271,6 +343,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 onProcessingSettingsChanged()
             }
             EndpointUrl.Invalid -> urlDrafts.update { withDraft(it, input) }
+        }
+    }
+
+    /** Fills the first ready-made provider into any stage that has no address yet. */
+    private fun prefillProviders() {
+        if (pSettings.transcriptionApiUrl == null) {
+            ProviderPresets.transcription.first().let { pSettings.transcriptionApiUrl = it.endpointFor(it.defaultModel) }
+        }
+        if (pSettings.extractionApiUrl == null) {
+            ProviderPresets.summary.first().let {
+                pSettings.extractionApiUrl = it.endpoint
+                if (pSettings.extractionModel.isNullOrBlank()) pSettings.extractionModel = it.defaultModel
+            }
         }
     }
 
@@ -313,15 +398,81 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Verifies the token with the server, then stores it sealed. Off the main thread. */
-    fun connect(url: String, token: String, includeBacklog: Boolean) {
+    private val _messages = Channel<Int>(Channel.BUFFERED)
+
+    /** One-shot confirmations and errors, shown as toasts; they wait for the next collector. */
+    val messages: Flow<Int> = _messages.receiveAsFlow()
+
+    private fun say(@StringRes message: Int) {
+        _messages.trySend(message)
+    }
+
+    /** Verifies a pasted token (or connect link) with the server, then stores it sealed. */
+    fun connect(tokenOrLink: String, includeBacklog: Boolean) {
+        val token = ConnectLink.tokenFromPaste(tokenOrLink) ?: tokenOrLink
+        runConnect { linker.connect(token, includeBacklog) }
+    }
+
+    /** Creates an account on the hosted server and connects this phone. */
+    fun signUp(email: String, password: String, includeBacklog: Boolean) =
+        runConnect { linker.signUp(email, password, Build.MODEL.orEmpty().ifBlank { "Android phone" }, includeBacklog) }
+
+    /** Signs in to an existing account and connects this phone. */
+    fun logIn(email: String, password: String, includeBacklog: Boolean) =
+        runConnect { linker.logIn(email, password, Build.MODEL.orEmpty().ifBlank { "Android phone" }, includeBacklog) }
+
+    private fun runConnect(attempt: () -> ConnectError?) {
         if (connecting.value) return
         connecting.value = true
         connectError.value = null
         viewModelScope.launch {
-            connectError.value = withContext(Dispatchers.IO) { linker.connect(url, token, includeBacklog) }
-            connecting.value = false
+            val error = try {
+                withContext(Dispatchers.IO) { attempt() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "connect_failed_unexpectedly", e)
+                ConnectError.SAVE_FAILED
+            } finally {
+                connecting.value = false
+            }
+            connectError.value = error
+            say(if (error == null) R.string.connect_success else R.string.connect_failed)
         }
+    }
+
+    /** Asks the hosted server who this phone is and reports the result as a toast. */
+    fun testConnection() {
+        if (testing.value) return
+        testing.value = true
+        viewModelScope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) { linker.testConnection() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logFailure(TAG, "connection_test_failed_unexpectedly", e)
+                ConnectionCheck.UNREACHABLE
+            } finally {
+                testing.value = false
+            }
+            say(
+                when (result) {
+                    ConnectionCheck.OK -> R.string.test_ok
+                    ConnectionCheck.SIGN_IN_REJECTED -> R.string.test_rejected
+                    ConnectionCheck.SERVER_ERROR -> R.string.test_server_error
+                    ConnectionCheck.UNREACHABLE -> R.string.test_unreachable
+                    ConnectionCheck.NOT_CONNECTED -> R.string.test_not_connected
+                },
+            )
+        }
+    }
+
+    val themeMode: StateFlow<ThemeMode> = settings.themeMode
+
+    fun updateThemeMode(mode: ThemeMode) {
+        settings.setThemeMode(mode)
+        say(R.string.settings_saved)
     }
 
     fun clearConnectError() {

@@ -104,6 +104,8 @@ class WearControlReducerTest {
         )
 
         assertEquals(WearError.PHONE_REJECTED, reduced.error)
+        // The command is kept so the refusal can say why.
+        assertEquals(WatchCommand.Pause, reduced.lastCommand)
     }
 
     @Test

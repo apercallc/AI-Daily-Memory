@@ -33,6 +33,14 @@
     <string name="command_ignored">No change made on the phone.</string>
     <string name="command_rejected">Action unavailable. Check the phone.</string>
     <string name="command_unconfirmed">The phone hasn\'t confirmed this action. Check the phone or try again.</string>
+    <string name="rejected_already_on_phone">Already recording on the phone. Use Pause or Stop here.</string>
+    <string name="rejected_already_from_watch">Already recording. You started it from this watch.</string>
+    <string name="rejected_already_recording">Already recording. Use Pause or Stop here.</string>
+    <string name="rejected_not_recording">Nothing is recording right now.</string>
+    <string name="rejected_starting">Still starting on the phone. Try again in a moment.</string>
+    <string name="rejected_ending">The phone is saving the session. Try again in a moment.</string>
+    <string name="origin_phone">Started on the phone</string>
+    <string name="origin_watch">Started from this watch</string>
     <string name="error_phone_not_connected">Phone not connected. Open the phone app and check Bluetooth.</string>
     <string name="error_connection_check_failed">Couldn\'t check the phone connection. Try again.</string>
     <string name="error_snapshot_read_failed">Couldn\'t read the phone\'s latest state.</string>

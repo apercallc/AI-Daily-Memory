@@ -7,6 +7,7 @@ import java.net.URL
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import com.apercallc.aidailymemory.recording.server.HostedServer
 
 /** Where to reach the backend and as whom. The token is a secret: never log it. */
 data class ServerLink(val baseUrl: String, val token: String) {
@@ -68,6 +69,18 @@ interface AccountApi {
     fun revokeCurrent(link: ServerLink)
 }
 
+/**
+ * Getting a device token without copying one by hand (backend/app/api/signup.py). These calls
+ * have no bearer token yet and always go to the hosted server: there is no address to choose.
+ */
+interface SignInApi {
+    /** Creates an account and returns this device's token (shown once by the server). */
+    fun signUp(server: String, email: String, password: String, deviceName: String): String
+
+    /** Signs in to an existing account and returns a new token for this device. */
+    fun logIn(server: String, email: String, password: String, deviceName: String): String
+}
+
 /** A sealed transcript waiting on the server (backend/app/api/deliveries.py). */
 data class SealedDelivery(val deliveryId: String, val uploadId: String, val ciphertext: ByteArray) {
     override fun equals(other: Any?): Boolean =
@@ -107,7 +120,7 @@ interface UploadApi {
 class HttpUploadApi(
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 60_000,
-) : UploadApi, AccountApi, DeliveryApi {
+) : UploadApi, AccountApi, DeliveryApi, SignInApi {
     override fun registerKey(link: ServerLink, publicKey: ByteArray) {
         val body = JSONObject().put("public_key", Base64.encodeToString(publicKey, Base64.NO_WRAP))
         request(link, "PUT", "/v1/device-key", body)
@@ -133,6 +146,19 @@ class HttpUploadApi(
 
     override fun me(link: ServerLink): String =
         request(link, "GET", "/v1/me", null).optString("storage_mode").ifEmpty { throw IOException("missing_mode") }
+
+    override fun signUp(server: String, email: String, password: String, deviceName: String): String =
+        issueToken(server, "/v1/signup", email, password, deviceName)
+
+    override fun logIn(server: String, email: String, password: String, deviceName: String): String =
+        issueToken(server, "/v1/login", email, password, deviceName)
+
+    private fun issueToken(server: String, path: String, email: String, password: String, deviceName: String): String {
+        val body = JSONObject().put("email", email).put("password", password).put("device_name", deviceName)
+        return send(server.trimEnd('/') + path, "POST", null, body).optString("token").ifEmpty {
+            throw IOException("missing_token")
+        }
+    }
 
     override fun setStorageMode(link: ServerLink, mode: String) {
         request(link, "PUT", "/v1/me", JSONObject().put("storage_mode", mode))
@@ -184,10 +210,14 @@ class HttpUploadApi(
         }
     }
 
-    private fun request(link: ServerLink, method: String, path: String, body: JSONObject?): JSONObject {
-        val connection = open(link.baseUrl.trimEnd('/') + path, method)
+    private fun request(link: ServerLink, method: String, path: String, body: JSONObject?): JSONObject =
+        send(link.baseUrl.trimEnd('/') + path, method, link.token, body)
+
+    /** One JSON call. [token] is null only for sign-up and sign-in, which have none yet. */
+    private fun send(url: String, method: String, token: String?, body: JSONObject?): JSONObject {
+        val connection = open(url, method)
         try {
-            connection.setRequestProperty("Authorization", "Bearer ${link.token}")
+            if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Accept", "application/json")
             if (body != null) {
                 val bytes = body.toString().toByteArray(Charsets.UTF_8)
@@ -202,6 +232,8 @@ class HttpUploadApi(
             val json = try {
                 if (text.isBlank()) JSONObject() else JSONObject(text)
             } catch (e: JSONException) {
+                // A proxy error page is still a "no" from the server, not a lost connection.
+                if (status !in 200..299) throw ApiException(status, "http_$status")
                 throw IOException("unparseable_response status=$status", e)
             }
             if (status !in 200..299) {
@@ -248,20 +280,16 @@ class HttpUploadApi(
 /** What the user typed on the connect screen, checked before anything is stored. */
 sealed interface LinkInput {
     data class Valid(val link: ServerLink) : LinkInput
-    data object InvalidUrl : LinkInput
     data object InvalidToken : LinkInput
 
     companion object {
         private val TOKEN = Regex("^adm_[A-Za-z0-9_-]{20,120}$")
 
-        fun parse(url: String, token: String): LinkInput {
-            val base = url.trim().trimEnd('/')
+        /** [server] is the chosen origin: the hosted one unless the person set their own. */
+        fun parse(token: String, server: String = HostedServer.BASE_URL): LinkInput {
             val secret = token.trim()
-            if (!base.startsWith("https://") || base.length <= "https://".length || base.contains(' ')) {
-                return InvalidUrl
-            }
             if (!TOKEN.matches(secret)) return InvalidToken
-            return Valid(ServerLink(base, secret))
+            return Valid(ServerLink(server, secret))
         }
     }
 }

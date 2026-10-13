@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.settings
 import android.content.Context
 import androidx.core.content.edit
 import androidx.test.core.app.ApplicationProvider
+import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
@@ -73,5 +74,34 @@ class SettingsStoreTest {
         prefs.edit { putString("audio_retention", "KEEP_FOREVER_AND_EVER") }
 
         assertEquals(AudioRetention.TRANSCRIPT_ONLY, SettingsStore(prefs).retention.value)
+    }
+
+    @Test
+    fun `the theme follows the phone until chosen, and a choice persists`() {
+        val store = SettingsStore(prefs)
+        assertEquals(ThemeMode.SYSTEM, store.themeMode.value)
+
+        store.setThemeMode(ThemeMode.DARK)
+
+        assertEquals(ThemeMode.DARK, store.themeMode.value)
+        assertEquals(ThemeMode.DARK, SettingsStore(prefs).themeMode.value)
+    }
+
+    @Test
+    fun `an unreadable stored theme falls back to following the phone`() {
+        prefs.edit { putString("theme_mode", "NEON") }
+
+        assertEquals(ThemeMode.SYSTEM, SettingsStore(prefs).themeMode.value)
+    }
+
+    @Test
+    fun `the walkthrough shows until it is finished once`() {
+        val store = SettingsStore(prefs)
+        assertFalse(store.onboardingDone.value)
+
+        store.setOnboardingDone(true)
+
+        assertTrue(store.onboardingDone.value)
+        assertTrue(SettingsStore(prefs).onboardingDone.value)
     }
 }

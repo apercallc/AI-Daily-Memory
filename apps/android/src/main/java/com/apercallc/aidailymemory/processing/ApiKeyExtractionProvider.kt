@@ -73,6 +73,7 @@ class ApiKeyExtractionProvider(
         val url = URL(apiUrl)
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
+            instanceFollowRedirects = false
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
             setRequestProperty("Content-Type", "application/json")

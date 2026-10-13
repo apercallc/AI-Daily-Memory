@@ -1,0 +1,67 @@
+package com.apercallc.aidailymemory.ui
+
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertEquals
+
+@RunWith(RobolectricTestRunner::class)
+class OnboardingScreenTest {
+    @get:Rule
+    val compose = createComposeRule()
+
+    private var result: OnboardingResult? = null
+
+    private fun show() = compose.setContent {
+        AiDailyMemoryTheme { OnboardingScreen { result = it } }
+    }
+
+    @Test
+    fun `a new install walks through four steps and ends offline by default`() {
+        show()
+
+        compose.onNodeWithText("Step 1 of 4").assertExists()
+        compose.onNodeWithText("Your day, remembered").assertExists()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Where should your memory live?").assertExists()
+        compose.onNodeWithText("Offline").assertIsSelected()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Allow what recording needs").assertExists()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("You're ready").assertExists()
+        compose.onNodeWithText("Get started").performClick()
+
+        assertEquals(OnboardingResult.STAY_OFFLINE, result)
+    }
+
+    @Test
+    fun `choosing to connect sends the person to set up their account`() {
+        show()
+
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Connect an account").performClick()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Set up my account").performClick()
+
+        assertEquals(OnboardingResult.CONNECT_ACCOUNT, result)
+    }
+
+    @Test
+    fun `skip leaves at once with the current choice, and back goes a step`() {
+        show()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Step 1 of 4").assertExists()
+
+        compose.onNodeWithText("Skip").performClick()
+
+        assertEquals(OnboardingResult.STAY_OFFLINE, result)
+    }
+}

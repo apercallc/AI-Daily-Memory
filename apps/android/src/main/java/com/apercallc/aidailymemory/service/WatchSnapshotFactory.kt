@@ -2,12 +2,14 @@ package com.apercallc.aidailymemory.service
 
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
+import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 
 object WatchSnapshotFactory {
     fun from(
         state: RecordingState,
         captureHealth: String,
         reset: Boolean = false,
+        origin: RecordingOrigin? = null,
     ): PhoneRecordingSnapshot = PhoneRecordingSnapshot(
         revision = state.revision,
         status = state.status.name,
@@ -15,6 +17,7 @@ object WatchSnapshotFactory {
         problem = state.problem?.name,
         captureHealth = captureHealth,
         reset = reset,
+        origin = origin?.name,
     )
 
     /**

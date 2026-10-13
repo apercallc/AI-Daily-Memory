@@ -73,6 +73,7 @@ import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.marker.MarkerPolicy
 import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
+import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.recovery.InterruptionRecoveryPolicy
@@ -80,6 +81,7 @@ import com.apercallc.aidailymemory.recording.recovery.RecoveryCondition
 import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.storage.StoragePolicy
 import com.apercallc.aidailymemory.service.CaptureNotifications
+import com.apercallc.aidailymemory.service.SessionOrigins
 import com.apercallc.aidailymemory.service.WatchCommandBridge
 import com.apercallc.aidailymemory.service.restoreAcknowledgements
 import com.apercallc.aidailymemory.service.WatchDataLayerTransport
@@ -93,6 +95,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -325,8 +328,19 @@ class AppContainer(context: Context) {
                 watchAckPreferences.getString(WATCH_ACKS_KEY, null),
             ),
             persist = { encoded -> watchAckPreferences.edit { putString(WATCH_ACKS_KEY, encoded) } },
+            recordOrigin = sessionOrigins::record,
+            forgetOrigin = sessionOrigins::forget,
+            onApplied = { command -> watchActivity.tryEmit(command) },
         )
     }
+
+    /** Which device each recent session was started from (the microphone is always the phone's). */
+    val sessionOrigins: SessionOrigins by lazy {
+        SessionOrigins(app.getSharedPreferences(SessionOrigins.FILE_NAME, Context.MODE_PRIVATE))
+    }
+
+    /** Commands the watch just got the phone to act on, for a "from your watch" message. */
+    val watchActivity = MutableSharedFlow<WatchCommand>(extraBufferCapacity = 8)
 
     /** Applies the sleep schedule and quiet times to recording (ADR-0012). */
     val rhythm: RhythmRunner by lazy {
@@ -358,7 +372,7 @@ class AppContainer(context: Context) {
             // A session whose derived memory may already be on the sync target is queued for
             // server-side purge; the queue drains on the next successful sync (ADR-0020).
             onDeleted = { sessionId ->
-                if (processingSettings.syncEnabled.value && !processingSettings.syncUrl.isNullOrBlank()) {
+                if (processingSettings.syncEnabled.value && links.isLinked) {
                     database.syncDeletions()
                         .enqueue(SyncDeletionQueueEntity(sessionId, System.currentTimeMillis()))
                     syncScheduler.schedule()
@@ -394,6 +408,8 @@ class AppContainer(context: Context) {
             database = database,
             settings = processingSettings,
             deviceId = deviceId,
+            link = { links.link.value },
+            notBeforeEpochMs = { links.uploadSinceEpochMs },
         )
     }
 
@@ -505,10 +521,17 @@ class AppContainer(context: Context) {
         AccountLinker(
             links = links,
             api = backend,
-            onLinked = uploadScheduler::schedule,
-            onUnlinked = uploadScheduler::cancel,
+            onLinked = {
+                uploadScheduler.schedule()
+                if (processingSettings.syncEnabled.value) syncScheduler.schedule()
+            },
+            onUnlinked = {
+                uploadScheduler.cancel()
+                syncScheduler.cancel()
+            },
             onRevokePending = uploadScheduler::scheduleRevoke,
             registerKey = { link -> runBlocking { deliveryReceiver.ensureRegistered(link) } },
+            signIn = backend,
         )
     }
 
@@ -586,6 +609,7 @@ class AppContainer(context: Context) {
             state = state,
             captureHealth = health.overview.value?.health?.level?.name ?: "UNKNOWN",
             reset = WatchSnapshotFactory.needsReset(state.revision, watchRevisions.lastPublished),
+            origin = sessionOrigins.originOf(state.sessionId),
         )
     }
 
@@ -615,6 +639,7 @@ class AppContainer(context: Context) {
                     state = state,
                     captureHealth = overview?.health?.level?.name ?: "UNKNOWN",
                     reset = WatchSnapshotFactory.needsReset(state.revision, watchRevisions.lastPublished),
+                    origin = sessionOrigins.originOf(state.sessionId),
                 )
             }
                 .distinctUntilChanged()
