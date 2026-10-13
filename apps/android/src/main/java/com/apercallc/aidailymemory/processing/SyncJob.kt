@@ -129,7 +129,13 @@ class SyncManager(
      */
     suspend fun syncPending(): Boolean {
         if (!settings.syncEnabled.value) return true
-        val url = settings.syncUrl ?: return true
+        val url = settings.syncUrl
+        if (url == null) {
+            // Enabled without an endpoint is a misconfiguration the user must see, not a success.
+            Log.w(TAG, "sync_url_missing")
+            settings.setLastSyncFailed(true)
+            return false
+        }
         val token = settings.syncToken
         val includeTranscripts = settings.syncIncludeTranscripts.value
 
@@ -142,9 +148,10 @@ class SyncManager(
         val body = json.encodeToString(SyncPayload.serializer(), payload)
         return try {
             if (poster != null) poster.invoke(url, token, body) else post(url, token, body)
-            // The timestamp marks which reports were pushed; a deletions-only payload must
-            // not advance it or reports generated in the same window would be skipped.
-            if (reports.isNotEmpty()) settings.lastSyncEpochMs = System.currentTimeMillis()
+            // The cursor is the newest generated_at actually sent, never the wall clock: a
+            // report generated while the POST was in flight must still be picked up next time.
+            // A deletions-only payload leaves it untouched.
+            reports.maxOfOrNull { it.generatedAtEpochMs }?.let { settings.lastSyncEpochMs = it }
             if (deletions.isNotEmpty()) database.syncDeletions().clear(deletions)
             settings.setLastSyncFailed(false)
             Log.i(TAG, "sync_succeeded reports=${reports.size} deletions=${deletions.size}")

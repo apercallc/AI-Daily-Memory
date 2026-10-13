@@ -110,8 +110,28 @@ class SyncManagerTest {
         val root = Json.parseToJsonElement(bodies.single()).jsonObject
         assertEquals(1, root["reports"]!!.jsonArray.size)
         assertEquals(listOf("gone-1"), sentDeletedSessions())
-        assertTrue(settings.lastSyncEpochMs?.let { it >= 5_000 } == true)
+        assertEquals(5_000L, settings.lastSyncEpochMs)
         assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
+    }
+
+    @Test
+    fun `cursor is the newest generated_at sent, not the wall clock`() = runTest {
+        db.dailyReports().upsert(report("2026-10-11", generatedAt = 5_000))
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 9_000))
+
+        assertTrue(manager().syncPending())
+
+        assertEquals(9_000L, settings.lastSyncEpochMs)
+    }
+
+    @Test
+    fun `enabled sync without a url fails visibly`() = runTest {
+        settings.syncUrl = null
+
+        assertFalse(manager().syncPending())
+
+        assertTrue(settings.lastSyncFailed.value)
+        assertEquals(emptyList<String>(), bodies)
     }
 
     @Test
