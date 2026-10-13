@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.media.AudioManager
 import android.provider.Settings
 import android.util.Log
@@ -125,6 +126,25 @@ class AppContainer(context: Context) {
     val settings = SettingsStore(
         app.getSharedPreferences(SettingsStore.FILE_NAME, Context.MODE_PRIVATE),
     )
+
+    init {
+        // A phone updated from a version that had no walkthrough already knows the app.
+        if (!settings.onboardingRecorded && isUpdatedInstall()) settings.setOnboardingDone(true)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isUpdatedInstall(): Boolean = try {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            app.packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            app.packageManager.getPackageInfo(app.packageName, 0)
+        }
+        info.firstInstallTime != info.lastUpdateTime
+    } catch (e: PackageManager.NameNotFoundException) {
+        logFailure(TAG, "install_time_unavailable", e)
+        false
+    }
+
     val processingSettings = ProcessingSettings(
         app.getSharedPreferences(ProcessingSettings.FILE_NAME, Context.MODE_PRIVATE),
         aead = { processingAead },

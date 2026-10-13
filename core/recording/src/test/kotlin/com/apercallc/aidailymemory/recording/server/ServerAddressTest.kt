@@ -28,7 +28,19 @@ class ServerAddressTest {
             "my.example",
             "https://",
             "https://bad host",
+            "https://my.example:0",
+            "https://my.example:65536",
+            "https://my.example:99999",
+            "https://my.example?a=1",
+            "https://my.example#a",
+            "ftp://my.example",
         ).forEach { assertEquals(ServerAddress.Invalid, ServerAddress.parse(it), it) }
+    }
+
+    @Test
+    fun `an address with a trailing dot slash or an IP literal is still reduced to an origin`() {
+        assertEquals("https://192.168.1.5:8443", origin("https://192.168.1.5:8443/"))
+        assertEquals("https://[::1]", origin("https://[::1]/x"))
     }
 
     @Test

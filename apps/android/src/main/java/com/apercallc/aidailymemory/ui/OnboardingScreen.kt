@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,9 @@ fun OnboardingScreen(onFinish: (OnboardingResult) -> Unit) {
     val last = index == Page.entries.lastIndex
     val finish = { onFinish(if (connect) OnboardingResult.CONNECT_ACCOUNT else OnboardingResult.STAY_OFFLINE) }
 
+    // Back steps through the walkthrough instead of leaving the app on page two.
+    BackHandler(enabled = index > 0) { index-- }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -86,7 +90,7 @@ fun OnboardingScreen(onFinish: (OnboardingResult) -> Unit) {
             )
             if (!last) {
                 TextButton(
-                    onClick = finish,
+                    onClick = { onFinish(OnboardingResult.STAY_OFFLINE) },
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 ) { Text(stringResource(R.string.onboarding_skip)) }
             }

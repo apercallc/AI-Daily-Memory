@@ -226,4 +226,37 @@ class SettingsViewModelTest {
         assertNull(settled { it.serverUrl == HostedServer.BASE_URL }.serverDraft)
         warm.cancel()
     }
+
+    @Test
+    fun `an api key is forgotten when its address moves to another host`() = withViewModel { vm ->
+        vm.processingActions.onExtractionPresetChange("openai")
+        vm.processingActions.onExtractionApiKeyChange("sk-openai")
+
+        vm.processingActions.onExtractionModelChange("gpt-4o")
+        assertEquals("sk-openai", container.processingSettings.extractionApiKey)
+
+        vm.processingActions.onExtractionPresetChange("groq")
+        assertNull(container.processingSettings.extractionApiKey)
+    }
+
+    @Test
+    fun `an api key survives edits that keep the same host`() = withViewModel { vm ->
+        vm.processingActions.onExtractionApiUrlChange("https://llm.example/v1/a")
+        vm.processingActions.onExtractionApiKeyChange("k")
+        vm.processingActions.onExtractionApiUrlChange("https://llm.example/v1/b")
+
+        assertEquals("k", container.processingSettings.extractionApiKey)
+
+        vm.processingActions.onExtractionApiUrlChange("https://other.example/v1")
+        assertNull(container.processingSettings.extractionApiKey)
+    }
+
+    @Test
+    fun `leaving a preset for custom forgets its key`() = withViewModel { vm ->
+        vm.processingActions.onTranscriptionPresetChange("deepgram")
+        vm.processingActions.onTranscriptionApiKeyChange("dg-key")
+        vm.processingActions.onTranscriptionPresetChange(ProviderPresets.CUSTOM_ID)
+
+        assertNull(container.processingSettings.transcriptionApiKey)
+    }
 }

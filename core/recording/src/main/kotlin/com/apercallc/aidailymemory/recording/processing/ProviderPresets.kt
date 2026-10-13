@@ -1,5 +1,7 @@
 package com.apercallc.aidailymemory.recording.processing
 
+import java.net.URLEncoder
+
 /**
  * Ready-made choices for the two own-provider stages, so a person picks from a list instead of
  * typing addresses and model names. Picking one fills the address and model; both stay editable,
@@ -25,7 +27,7 @@ data class ProviderPreset(
 
     /** The address to call for [model]; same as [endpoint] unless the model rides in the query. */
     fun endpointFor(model: String): String = if (modelInQuery) {
-        "$endpoint?model=${model.trim()}&smart_format=true&diarize=true"
+        "$endpoint?model=${URLEncoder.encode(model.trim(), Charsets.UTF_8)}&smart_format=true&diarize=true"
     } else {
         endpoint
     }
@@ -92,5 +94,6 @@ object ProviderPresets {
         ?.split('&')
         ?.firstOrNull { it.startsWith("model=") }
         ?.removePrefix("model=")
+        ?.let { java.net.URLDecoder.decode(it, Charsets.UTF_8) }
         ?.takeIf { it.isNotBlank() }
 }

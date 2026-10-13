@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Base64
 import androidx.core.content.edit
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.recording.server.HostedServer
 import com.apercallc.aidailymemory.recording.server.ServerAddress
 import com.google.crypto.tink.Aead
@@ -106,7 +107,7 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         val stored = prefs.getString(KEY_URL, null) ?: return
         // The server may be the hosted one or the person's own, but never an address that is not
         // a plain https origin: a token is not sent to anything else.
-        val url = (ServerAddress.parse(stored) as? ServerAddress.Valid)?.origin
+        val url = (EndpointUrl.parse(stored) as? EndpointUrl.Valid)?.value?.trimEnd('/')
         if (url == null) {
             logFailure(TAG, "link_invalid_server", IllegalStateException("not_https_origin"), warning = true)
             forget(LinkProblem.OTHER_SERVER)
@@ -131,6 +132,7 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
      */
     @Synchronized
     fun save(link: ServerLink, linkedAtEpochMs: Long, includeBacklog: Boolean) {
+        require(EndpointUrl.parse(link.baseUrl) is EndpointUrl.Valid) { "link must be an https address" }
         val sealed = aead().encrypt(link.token.toByteArray(Charsets.UTF_8), AD)
         prefs.edit {
             putString(KEY_URL, link.baseUrl)
@@ -180,6 +182,13 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
         for (i in 0 until entries.length()) {
             val entry = entries.getJSONObject(i)
             val id = entry.getString("id")
+            if (EndpointUrl.parse(entry.getString("url")) !is EndpointUrl.Valid) {
+                // A token is never sent to an address that is not https.
+                logFailure(TAG, "revoke_invalid_server", IllegalStateException("not_https"), warning = true)
+                revokeDone(id)
+                markRevokeManual()
+                continue
+            }
             try {
                 val token = aead().decrypt(Base64.decode(entry.getString("token"), Base64.NO_WRAP), REVOKE_AD)
                 pending[id] = ServerLink(entry.getString("url"), token.toString(Charsets.UTF_8))

@@ -11,6 +11,7 @@ import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgements
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -52,7 +53,16 @@ class WatchCommandBridge(
                     WatchCommand.Start -> {
                         val sessionId = newSessionId()
                         recordOrigin(sessionId, RecordingOrigin.WATCH)
-                        val transition = dispatch(RecordingCommand.Start(sessionId))
+                        val transition = try {
+                            dispatch(RecordingCommand.Start(sessionId))
+                        } catch (e: CancellationException) {
+                            forgetOrigin(sessionId)
+                            throw e
+                        } catch (e: RuntimeException) {
+                            // No session was opened, so the origin must not outlive the failed Start.
+                            forgetOrigin(sessionId)
+                            throw e
+                        }
                         if (transition !is Transition.Applied) forgetOrigin(sessionId)
                         fromTransition(commandId, transition)
                     }

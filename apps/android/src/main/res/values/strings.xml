@@ -239,7 +239,7 @@
     <string name="account_token">Device token</string>
     <string name="account_token_invalid">That doesn\'t look like a device token (it starts with adm_).</string>
     <string name="account_token_rejected">The server didn\'t accept this token. Check it or get a new one from the website.</string>
-    <string name="account_unreachable">Couldn\'t reach aidailymem.apercallc.com. Check your internet connection and try again.</string>
+    <string name="account_unreachable">Couldn\'t reach the server. Check your internet connection and try again.</string>
     <string name="account_save_failed">Couldn\'t store the token securely on this phone. Nothing was saved.</string>
     <string name="account_include_backlog">Also process speech already recorded on this phone</string>
     <string name="account_connect">Connect</string>
@@ -292,7 +292,7 @@
     <string name="processing_status_incomplete">Needs setup</string>
     <string name="processing_transcription_url_hint">Your speech-to-text service, like https://api.deepgram.com/v1/listen</string>
     <string name="processing_extraction_url_hint">An OpenAI-compatible chat endpoint, like https://api.openai.com/v1/chat/completions</string>
-    <string name="processing_explainer">Turns your recordings into transcripts and a daily summary. With an account connected this happens on aidailymem.apercallc.com; offline, recordings wait on your phone.</string>
+    <string name="processing_explainer">Turns your recordings into transcripts and a daily summary. With an account connected this happens on the server you connected to; offline, recordings wait on your phone.</string>
     <string name="processing_enabled">Process my recordings</string>
     <string name="processing_disabled_hint">Processing is off. Your audio stays on this phone untouched.</string>
     <string name="processing_transcription">Transcription</string>
@@ -340,6 +340,7 @@
     <string name="account_offline_status">Offline. Nothing leaves this phone.</string>
     <string name="account_steps">To connect: 1) Choose Create account or Sign in. 2) Enter your email and password. 3) Tap the button. The app checks the connection and saves it, so there is no address or token to copy.</string>
     <string name="account_processing_disclosure_custom">Connecting sends only the parts of your day where someone is talking, over an encrypted connection, to %1$s, the server you chose. Nothing else leaves your phone. Recording works without an account.</string>
+    <string name="account_server_credentials_warning">Your email and password, or a pasted token, go to %1$s, not to %2$s. Only continue if you run that server. It will also receive the speech clips you choose to process.</string>
     <string name="account_server_default">Server: %1$s (default)</string>
     <string name="account_server_custom">Server: %1$s (your own)</string>
     <string name="account_server_use_own">Use my own server</string>
@@ -363,18 +364,18 @@
     <string name="account_use_token">I have a connect token instead</string>
     <string name="account_use_email">Use email and password instead</string>
     <string name="account_paste">Paste from clipboard</string>
-    <string name="account_other_server">This phone\'s saved server address could not be used, so the connection was removed from this phone. Its address was not a valid https address; connect below or stay offline. If you want the old connection\'s token invalid, revoke it on that server.</string>
+    <string name="account_other_server">This phone\'s saved server address could not be used, so the connection was removed from this phone. Its address was not a valid https address; connect below or stay offline. To invalidate the old token, revoke it on that server.</string>
     <string name="test_connection">Test connection</string>
     <string name="test_running">Testing…</string>
-    <string name="test_ok">Connected to aidailymem.apercallc.com. Everything is saved.</string>
+    <string name="test_ok">Connected. Everything is saved.</string>
     <string name="test_rejected">The server no longer accepts this sign-in. Disconnect and sign in again.</string>
-    <string name="test_server_error">aidailymem.apercallc.com had a problem. Try again in a few minutes.</string>
-    <string name="test_unreachable">Couldn\'t reach aidailymem.apercallc.com. Check your internet connection.</string>
+    <string name="test_server_error">The server had a problem. Try again in a few minutes.</string>
+    <string name="test_unreachable">Couldn\'t reach the server. Check your internet connection.</string>
     <string name="test_not_connected">Not connected yet. Open Account &amp; server to create an account or sign in.</string>
-    <string name="connect_success">Connected to aidailymem.apercallc.com and saved.</string>
+    <string name="connect_success">Connected and saved.</string>
     <string name="connect_failed">Couldn\'t connect. See the message under the form.</string>
     <string name="settings_saved">Saved</string>
-    <string name="processing_mode_connected">Connected: speech clips are processed on aidailymem.apercallc.com while the phone charges on Wi-Fi.</string>
+    <string name="processing_mode_connected">Connected: speech clips are processed on the server you connected to while the phone charges on Wi-Fi.</string>
     <string name="processing_mode_offline">Offline: recordings stay on this phone and wait. Connect an account to process them.</string>
     <string name="processing_status_connected">On, using your account</string>
     <string name="processing_status_offline">On, waiting for an account</string>
@@ -385,7 +386,7 @@
     <string name="processing_model_other">Other…</string>
     <string name="processing_model_name">Model name</string>
     <string name="processing_get_key">Get a %1$s API key</string>
-    <string name="processing_save">Save provider settings</string>
+    <string name="processing_save">Done</string>
     <string name="sync_needs_account">Waiting for an account. Nothing is sent while you are offline.</string>
     <string name="sync_status_waiting">On, waiting for an account</string>
 
@@ -408,9 +409,9 @@
     <string name="onboarding_offline_title">Offline</string>
     <string name="onboarding_offline_body">Nothing leaves your phone. Recordings stay encrypted here. No account needed.</string>
     <string name="onboarding_connect_title">Connect an account</string>
-    <string name="onboarding_connect_body">A free account on aidailymem.apercallc.com turns speech into transcripts, summaries and searchable memory.</string>
+    <string name="onboarding_connect_body">An account on aidailymem.apercallc.com turns speech into transcripts, summaries and searchable memory.</string>
     <string name="onboarding_allow_title">Allow what recording needs</string>
-    <string name="onboarding_allow_body">When you first tap Start, Android asks for two things.</string>
+    <string name="onboarding_allow_body">When you first tap Start, Android asks for permission to use the microphone and, on newer versions, to show notifications.</string>
     <string name="onboarding_allow_detail">Microphone, to hear the conversation. Notifications, so the recording indicator is always visible. Some phones also close apps to save battery; if that happens, Today shows a card that takes you straight to the right setting.</string>
     <string name="onboarding_ready_title">You\'re ready</string>
     <string name="onboarding_ready_body">Open the Today tab and tap Start. A paired watch can start, pause and stop the same recording; the phone\'s microphone does the listening, so only one device records at a time.</string>

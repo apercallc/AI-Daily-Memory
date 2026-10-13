@@ -4,8 +4,8 @@ package com.apercallc.aidailymemory.recording.server
  * A tappable link that connects the app: `aidailymem://connect?token=adm_…`. The website shows
  * it after sign-in, so a person never copies a token by hand.
  *
- * Only the token is read. Any `host` or `server` parameter is ignored on purpose: there is one
- * server, and a link must not be able to point the app somewhere else.
+ * Only the token is read. Any `host` or `server` parameter is ignored on purpose: the server is
+ * chosen in Settings, and a link must not be able to point the app somewhere else.
  */
 object ConnectLink {
     const val SCHEME = "aidailymem"

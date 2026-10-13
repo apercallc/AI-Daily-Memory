@@ -1,8 +1,8 @@
 package com.apercallc.aidailymemory.recording.server
 
 /**
- * The one server this app talks to. There is no user-typed server address anywhere: the choice
- * is "Offline" (nothing leaves the phone) or "Connected" to this host.
+ * The default server. A phone is either Offline (nothing leaves it) or Connected, and unless the
+ * person set their own address under Advanced ([ServerAddress], ADR-0023) it connects to this host.
  */
 object HostedServer {
     const val HOST = "aidailymem.apercallc.com"

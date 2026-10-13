@@ -34,6 +34,13 @@ class ProviderPresetsTest {
     }
 
     @Test
+    fun `a typed model cannot add parameters to the address`() {
+        val url = deepgram.endpointFor("x&callback=https://evil.example")
+        assertTrue(!url.contains("callback="))
+        assertTrue(url.contains("model=x%26callback%3Dhttps%3A%2F%2Fevil.example"))
+    }
+
+    @Test
     fun `a summary preset keeps its address whatever the model`() {
         val openai = ProviderPresets.summary.first { it.id == "openai" }
         assertEquals(openai.endpoint, openai.endpointFor("gpt-4o"))

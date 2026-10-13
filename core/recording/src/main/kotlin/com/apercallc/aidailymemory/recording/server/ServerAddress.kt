@@ -21,12 +21,15 @@ sealed interface ServerAddress {
     data object Invalid : ServerAddress
 
     companion object {
+        private const val MAX_PORT = 65_535
+
         fun parse(input: String): ServerAddress {
             val text = input.trim()
             if (text.isEmpty()) return Blank
             val endpoint = EndpointUrl.parse(text) as? EndpointUrl.Valid ?: return Invalid
             val uri = java.net.URI(endpoint.value)
             if (uri.rawQuery != null || uri.rawFragment != null) return Invalid
+            if (uri.port != -1 && uri.port !in 1..MAX_PORT) return Invalid
             val port = if (uri.port == -1) "" else ":${uri.port}"
             return Valid("https://${uri.host.lowercase()}$port")
         }

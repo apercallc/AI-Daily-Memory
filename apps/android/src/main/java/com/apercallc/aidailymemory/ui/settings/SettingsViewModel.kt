@@ -245,7 +245,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
         onTranscriptionApiUrlChange = { value ->
-            applyUrl(value, { d, v -> d.copy(transcription = v) }) { pSettings.transcriptionApiUrl = it }
+            applyUrl(value, { d, v -> d.copy(transcription = v) }) {
+                dropKeyIfHostChanges(pSettings.transcriptionApiUrl, it) { pSettings.transcriptionApiKey = null }
+                pSettings.transcriptionApiUrl = it
+            }
         },
         onExtractionProviderChange = { provider ->
             pSettings.setExtractionProvider(provider)
@@ -256,7 +259,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
         onExtractionApiUrlChange = { value ->
-            applyUrl(value, { d, v -> d.copy(extraction = v) }) { pSettings.extractionApiUrl = it }
+            applyUrl(value, { d, v -> d.copy(extraction = v) }) {
+                dropKeyIfHostChanges(pSettings.extractionApiUrl, it) { pSettings.extractionApiKey = null }
+                pSettings.extractionApiUrl = it
+            }
         },
         onExtractionModelChange = { value ->
             pSettings.extractionModel = value
@@ -279,8 +285,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             urlDrafts.update { it.copy(transcription = null) }
             val preset = ProviderPresets.transcription.firstOrNull { it.id == id }
             if (preset != null) {
+                dropKeyIfHostChanges(pSettings.transcriptionApiUrl, preset.endpoint) { pSettings.transcriptionApiKey = null }
                 pSettings.transcriptionApiUrl = preset.endpointFor(preset.defaultModel)
             } else if (ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl) != null) {
+                pSettings.transcriptionApiKey = null
                 pSettings.transcriptionApiUrl = null
             }
             onProcessingSettingsChanged()
@@ -294,9 +302,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             urlDrafts.update { it.copy(extraction = null) }
             val preset = ProviderPresets.summary.firstOrNull { it.id == id }
             if (preset != null) {
+                dropKeyIfHostChanges(pSettings.extractionApiUrl, preset.endpoint) { pSettings.extractionApiKey = null }
                 pSettings.extractionApiUrl = preset.endpoint
                 if (pSettings.extractionModel !in preset.models) pSettings.extractionModel = preset.defaultModel
             } else if (ProviderPresets.match(ProviderPresets.summary, pSettings.extractionApiUrl) != null) {
+                pSettings.extractionApiKey = null
                 pSettings.extractionApiUrl = null
                 pSettings.extractionModel = null
             }
@@ -344,6 +354,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             }
             EndpointUrl.Invalid -> urlDrafts.update { withDraft(it, input) }
         }
+    }
+
+    /**
+     * An API key belongs to the service it was issued by. When the address moves to another host,
+     * the old key is forgotten instead of being sent there.
+     */
+    private fun dropKeyIfHostChanges(oldUrl: String?, newUrl: String?, clearKey: () -> Unit) {
+        if (oldUrl != null && hostOf(oldUrl) != newUrl?.let(::hostOf)) clearKey()
     }
 
     /** Fills the first ready-made provider into any stage that has no address yet. */

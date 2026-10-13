@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import com.apercallc.aidailymemory.recording.processing.ProviderPreset
 import com.apercallc.aidailymemory.recording.processing.ProviderPresets
@@ -309,7 +310,8 @@ private fun DropdownField(
                 .semantics { role = Role.DropdownList },
         ) {
             Text(text = "$label: $selected", modifier = Modifier.weight(1f))
-            Text(text = "\u25BE")
+            // Decorative: the button already reads as a list, so the glyph must not be announced.
+            Text(text = "\u25BE", modifier = Modifier.clearAndSetSemantics {})
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { (id, text) ->

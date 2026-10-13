@@ -5,6 +5,8 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
 ### Changed
 
 - One server at a time: the app is either Offline or Connected, and the default is
@@ -26,6 +28,8 @@ All notable changes to AI Daily Memory. Format follows
 
 ### Added
 
+- Upgrade note: daily-report sync no longer has its own address or token. It uses the connected
+  account, and any sync address saved by an older version is removed.
 - First-run walkthrough (four steps, skippable).
 - Create account / Sign in inside the app (email + password), a link that opens the site, a
   paste button for tokens, and Test connection with a toast for each outcome.

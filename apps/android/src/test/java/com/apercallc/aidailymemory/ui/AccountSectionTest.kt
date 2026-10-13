@@ -144,9 +144,9 @@ class AccountSectionTest {
         assertExplained(ConnectError.TOO_MANY_ATTEMPTS, "Too many attempts. Wait a few minutes and try again.")
 
     @Test
-    fun `an unreachable server names the host`() = assertExplained(
+    fun `an unreachable server is reported`() = assertExplained(
         ConnectError.UNREACHABLE,
-        "Couldn't reach aidailymem.apercallc.com. Check your internet connection and try again.",
+        "Couldn't reach the server. Check your internet connection and try again.",
     )
 
     @Test
@@ -233,6 +233,20 @@ class AccountSectionTest {
         compose.onNodeWithText("Use the default server").performClick()
 
         assertEquals(listOf(""), typed)
+    }
+
+    @Test
+    fun `an own server is named as the place credentials go before sign-in`() {
+        show(AccountUi(serverUrl = "https://memory.example"))
+
+        compose.onNodeWithText("go to memory.example, not to aidailymem.apercallc.com", substring = true).assertExists()
+    }
+
+    @Test
+    fun `the hosted default shows no credentials warning`() {
+        show(AccountUi())
+
+        compose.onNodeWithText("Only continue if you run that server", substring = true).assertDoesNotExist()
     }
 
     @Test

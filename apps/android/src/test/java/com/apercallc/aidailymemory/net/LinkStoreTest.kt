@@ -186,6 +186,23 @@ class LinkStoreTest {
     }
 
     @Test
+    fun `a link that is not an https address is refused at save`() {
+        val store = reopened(newAead())
+
+        assertFailsWith<IllegalArgumentException> { store.save(ServerLink("http://api.example", token), 1, false) }
+        assertNull(store.link.value)
+    }
+
+    @Test
+    fun `a stored link with a path keeps it, without a trailing slash`() {
+        val aead = newAead()
+        reopened(aead).save(ServerLink("https://api.example/backend", token), 1, false)
+        prefs.edit().putString("base_url", "https://api.example/backend/").commit()
+
+        assertEquals("https://api.example/backend", reopened(aead).link.value?.baseUrl)
+    }
+
+    @Test
     fun `the server defaults to hosted, can be set, and resets`() {
         val store = reopened(newAead())
         assertEquals(HostedServer.BASE_URL, store.serverUrl.value)

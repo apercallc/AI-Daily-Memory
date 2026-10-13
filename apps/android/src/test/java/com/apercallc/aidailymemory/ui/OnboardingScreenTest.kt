@@ -54,11 +54,22 @@ class OnboardingScreenTest {
     }
 
     @Test
-    fun `skip leaves at once with the current choice, and back goes a step`() {
+    fun `skip leaves at once and back goes a step`() {
         show()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Step 1 of 4").assertExists()
+
+        compose.onNodeWithText("Skip").performClick()
+
+        assertEquals(OnboardingResult.STAY_OFFLINE, result)
+    }
+
+    @Test
+    fun `skip never connects, even after choosing to`() {
+        show()
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Connect an account").performClick()
 
         compose.onNodeWithText("Skip").performClick()
 

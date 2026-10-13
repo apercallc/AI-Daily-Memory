@@ -52,6 +52,9 @@ class SettingsStore(private val prefs: SharedPreferences) {
     /** The first-run walkthrough has been finished or skipped. */
     val onboardingDone: StateFlow<Boolean> = _onboardingDone.asStateFlow()
 
+    /** Whether the walkthrough has ever been marked finished or skipped (or skipped on upgrade). */
+    val onboardingRecorded: Boolean get() = prefs.contains(KEY_ONBOARDING_DONE)
+
     fun setOnboardingDone(done: Boolean) {
         prefs.edit { putBoolean(KEY_ONBOARDING_DONE, done) }
         _onboardingDone.value = done

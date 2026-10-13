@@ -216,6 +216,13 @@ private fun Offline(account: AccountUi, callbacks: AccountCallbacks) {
         ) { Text(stringResource(R.string.account_open_website, HostedServer.HOST)) }
     }
     ServerChoice(account, isHosted, callbacks.onServerChange, enabled = !busy)
+    if (!isHosted) {
+        // A pasted token or a password is sent to this server, so say so before the button.
+        Status(
+            stringResource(R.string.account_server_credentials_warning, hostOf(account.serverUrl), HostedServer.HOST),
+            isError = false,
+        )
+    }
 
     val error = account.error
     if (useToken) {
@@ -371,7 +378,10 @@ private fun Offline(account: AccountUi, callbacks: AccountCallbacks) {
 @Composable
 private fun ServerChoice(account: AccountUi, isHosted: Boolean, onChange: (String) -> Unit, enabled: Boolean) {
     val spacing = AiDailyMemoryTheme.spacing
-    var open by rememberSaveable { mutableStateOf(!isHosted || account.serverDraft != null) }
+    var open by rememberSaveable { mutableStateOf(false) }
+    val showField = open || !isHosted || account.serverDraft != null
+    // What is typed stays as typed; only a usable address is stored behind it.
+    var text by rememberSaveable { mutableStateOf(if (isHosted) "" else account.serverUrl) }
     Text(
         text = stringResource(
             if (isHosted) R.string.account_server_default else R.string.account_server_custom,
@@ -379,7 +389,7 @@ private fun ServerChoice(account: AccountUi, isHosted: Boolean, onChange: (Strin
         ),
         style = MaterialTheme.typography.bodyMedium,
     )
-    if (!open) {
+    if (!showField) {
         TextButton(
             onClick = { open = true },
             enabled = enabled,
@@ -390,8 +400,11 @@ private fun ServerChoice(account: AccountUi, isHosted: Boolean, onChange: (Strin
     val invalid = account.serverDraft != null
     val errorText = stringResource(R.string.account_server_invalid)
     OutlinedTextField(
-        value = account.serverDraft ?: if (isHosted) "" else account.serverUrl,
-        onValueChange = onChange,
+        value = text,
+        onValueChange = {
+            text = it
+            onChange(it)
+        },
         label = { Text(stringResource(R.string.account_server_label)) },
         placeholder = { Text(HostedServer.BASE_URL) },
         enabled = enabled,
@@ -405,10 +418,11 @@ private fun ServerChoice(account: AccountUi, isHosted: Boolean, onChange: (Strin
     )
     TextButton(
         onClick = {
+            text = ""
             onChange("")
             open = false
         },
-        enabled = enabled && !isHosted || invalid,
+        enabled = enabled,
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
     ) { Text(stringResource(R.string.account_server_use_default)) }
 }
