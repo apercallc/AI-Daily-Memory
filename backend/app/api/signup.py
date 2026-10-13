@@ -14,6 +14,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,7 +65,7 @@ class IssuedDeviceToken(BaseModel):
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("signup", limit=5, window_seconds=3_600))],
 )
-async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken:
+async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken | JSONResponse:
     try:
         signed_up = await sign_up(
             session, email=body.email, password=body.password, device_name=body.device_name
@@ -72,7 +73,7 @@ async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken:
     except SignupError as e:
         await session.rollback()
         status = _SIGNUP_STATUS.get(e.code, 400)
-        return error_response(status, code=e.code)  # type: ignore[return-value]
+        return error_response(status, code=e.code)
     await session.commit()
     return IssuedDeviceToken(token=signed_up.token.token)
 
@@ -83,7 +84,7 @@ async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken:
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("login", limit=10, window_seconds=60))],
 )
-async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken:
+async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken | JSONResponse:
     try:
         logged_in = await log_in(
             session, email=body.email, password=body.password, device_name=body.device_name
@@ -94,6 +95,6 @@ async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken:
         await session.commit()
         error_code = "invalid_credentials" if e.code == "account_locked" else e.code
         status = _LOGIN_STATUS.get(error_code, 401)
-        return error_response(status, code=error_code)  # type: ignore[return-value]
+        return error_response(status, code=error_code)
     await session.commit()
     return IssuedDeviceToken(token=logged_in.token.token)

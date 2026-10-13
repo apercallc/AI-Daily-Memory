@@ -45,22 +45,24 @@ possession and is revoked by the same delete.
 | --- | --- | --- | --- |
 | POST | `/v1/sync` | `upload:write` | Push structured daily memory the phone produced on-device |
 
-The backend never processes audio in this flow; it stores what the phone sends. Idempotent by
-replacement: a report for a `memoryDay` replaces that day's prior memory items and report.
+The backend never processes audio in this flow; it stores what the phone sends. Idempotent per
+session: a report for a `memoryDay` replaces the memory items and transcript lines of the
+sessions it carries and leaves other sessions' data for that day (for example from a second
+device) untouched.
 
 Request body (camelCase fields):
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `device` | string | Required |
+| `device` | string | Required, max 80 characters |
 | `generatedAtEpochMs` | integer | Required |
-| `reports` | array | Required, may be empty. Each report: `memoryDay` (ISO date), `zoneId`, `headline`, `summary`, `items`, `coverage` (`recordedMs`, `speechMs`, `transcribedMs`, `sessions`), `generatedAtEpochMs`, `extractionModel`, `extractionVersion`; optional `transcriptLines` |
+| `reports` | array | Required, may be empty, max 31. Each report: `memoryDay` (ISO date), `zoneId` (IANA zone), `headline` (max 280), `summary` (max 1680), `items`, `coverage` (`recordedMs`, `speechMs`, `transcribedMs`, `sessions`), `generatedAtEpochMs`, `extractionModel`, `extractionVersion`; optional `transcriptLines` |
 | `includeTranscripts` | boolean | Default `false`. Transcript lines are stored only when `true` |
-| `deletedSessions` | array of UUID | Max 500. Removes the derived memory (items, report items, transcript lines) of sessions deleted on the phone; repeating an id is a no-op |
+| `deletedSessions` | array of UUID | Max 500. Removes everything derived from sessions deleted on the phone: memory items, report content, and any server-held clips (objects included), transcripts, sealed deliveries and jobs. Repeating an id is a no-op; `503` if stored audio cannot be deleted (nothing changes, retry) |
 
-Each item has `kind`, `text` (max 2000 characters on input, stored truncated to 280),
-`confidence`, `sessionId` (UUID), and optional `quote`, `owner`, `due`, `direction`,
-`counterpart`, `evidenceEpochMs`. A `commitment` item requires `direction`. A report holds at
+Each item has `kind`, `text` (1 to 280 characters; longer is `422`, never truncated),
+`confidence`, `sessionId` (UUID), and optional `quote` (max 280), `owner` and `counterpart`
+(max 80), `due`, `direction`, `evidenceEpochMs`. A `commitment` item requires `direction`. A report holds at
 most 2000 items and 20000 transcript lines.
 
 Response `200`: `{"synced": <reports>, "items": <items stored>, "deletedSessions": <count>}`.
@@ -106,7 +108,12 @@ with `v: 1`, the upload and segment ids, `offset_ms`, provider/model/language, a
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/reports/{memory_day}` | `memory:read` | The daily report contract v1; `404 report_not_found` if nothing was generated |
+| GET | `/v1/reports/{memory_day}` | `memory:read` | The daily report contract v1 (plus `transcriptLines` with `transcript:read` when synced with transcripts); `404 report_not_found` if nothing was generated |
+
+A synced report is stored as the phone sent it and projected onto the v1 contract on read
+(items become the `action_items` / `commitments` / `decisions` / `ideas` / `open_questions`
+sections, each with one evidence entry), so the response shape is the same whether the last
+writer was a sync or server-side extraction.
 
 Reports are available to an authenticated owner when they exist, including after explicit sync;
 storage mode alone does not determine report visibility. `memory:read` is also the scope of

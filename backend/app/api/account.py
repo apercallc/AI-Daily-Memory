@@ -46,7 +46,9 @@ class StorageModeUpdate(BaseModel):
 @router.get("/me", response_model=Me, responses=_ERRORS)
 async def me(session: Session, device: Device) -> Me:
     mode = await session.scalar(select(User.storage_mode).where(User.id == device.user_id))
-    return Me(storage_mode=mode, scopes=sorted(device.scopes))  # type: ignore[arg-type]
+    # The CHECK constraint on users.storage_mode keeps this inside the Literal; a missing user
+    # can't happen for an authenticated device, and validation turns a surprise into an error.
+    return Me.model_validate({"storage_mode": mode, "scopes": sorted(device.scopes)})
 
 
 @router.put("/me", response_model=Me, responses=_ERRORS)

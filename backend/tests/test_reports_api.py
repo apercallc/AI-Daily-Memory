@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from app.main import create_app
+from app.reports.daily import Coverage, DailyReport
 from tests.conftest import make_account, settings_for
 
 pytestmark = pytest.mark.anyio
@@ -17,6 +18,16 @@ pytestmark = pytest.mark.anyio
 def client(db: Engine, database_url: str) -> Iterator[TestClient]:
     with TestClient(create_app(settings_for(database_url))) as c:
         yield c
+
+
+def valid_report(memory_day: date) -> dict[str, object]:
+    return DailyReport(
+        memory_day=memory_day,
+        timezone="UTC",
+        generated_at=datetime(2026, 9, 25, 12, tzinfo=UTC),
+        status="complete",
+        coverage=Coverage(recorded_minutes=1),
+    ).model_dump(mode="json")
 
 
 def insert_report(
@@ -43,7 +54,7 @@ def insert_report(
 def test_a_report_that_exists_is_returned(db: Engine, client: TestClient) -> None:
     account = make_account(db, storage_mode="full_cloud")
     memory_day = date(2026, 9, 25)
-    report = {"schema_version": 1, "memory_day": "2026-09-25", "status": "complete"}
+    report = valid_report(memory_day)
     insert_report(db, account.user_id, memory_day, report)
 
     response = client.get(
@@ -78,7 +89,7 @@ def test_synced_reports_remain_accessible_after_optional_phone_sync(
 ) -> None:
     account = make_account(db, storage_mode=storage_mode)
     memory_day = date(2026, 9, 25)
-    report = {"schema_version": 1, "memory_day": "2026-09-25", "status": "complete"}
+    report = valid_report(memory_day)
     insert_report(db, account.user_id, memory_day, report)
 
     response = client.get(
@@ -94,7 +105,7 @@ def test_a_report_never_leaks_across_accounts(db: Engine, client: TestClient) ->
     owner = make_account(db, storage_mode="full_cloud")
     other = make_account(db, storage_mode="full_cloud")
     memory_day = date(2026, 9, 25)
-    insert_report(db, owner.user_id, memory_day, {"status": "complete"})
+    insert_report(db, owner.user_id, memory_day, valid_report(memory_day))
 
     response = client.get(
         f"/v1/reports/{memory_day.isoformat()}",
