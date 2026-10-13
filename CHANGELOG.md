@@ -5,6 +5,23 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-13
+
+### Changed
+
+- Phone: new adaptive launcher icon, fixed indigo dark/light theme (no longer wallpaper colors),
+  bottom tab bar (Today, Sessions, Memory, Settings) replacing the three bottom buttons.
+- Phone: pulsing red dot while recording; Highlight and Quick Note carry plain-language captions;
+  the battery warning is a prominent card with steps and an "Open battery settings" button
+  (Samsung-specific steps included).
+- Phone: Settings regrouped into schedule, audio, memory processing, account and server, and
+  app update. Memory processing and "send memory to your own server" are collapsed with an
+  On/Off/Needs setup summary; turning processing on selects your own API key automatically.
+- Phone: Sessions, Memory and Transcript get proper empty and loading states with a next step;
+  session Rename/Delete moved into a "More options" menu.
+- Watch: status dot and headline at the top, marker buttons first, Stop clearly separated,
+  consistent severity-colored messages, same icon as the phone.
+
 ### Added
 
 - Landing page (`website/index.html`): product explainer, who it's for, privacy,

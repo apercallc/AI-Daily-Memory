@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.data.TranscriptText
+import com.apercallc.aidailymemory.ui.EmptyState
+import com.apercallc.aidailymemory.ui.LoadingState
 import com.apercallc.aidailymemory.ui.TimeText
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.DateTimeException
@@ -36,14 +38,12 @@ fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         when {
-            lines == null -> item {
-                Text(stringResource(R.string.transcript_loading), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            }
+            lines == null -> item { LoadingState(stringResource(R.string.transcript_loading)) }
             lines.isEmpty() -> item {
-                Text(
-                    text = stringResource(R.string.transcript_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                EmptyState(
+                    icon = R.drawable.ic_nav_sessions,
+                    title = stringResource(R.string.transcript_empty_title),
+                    body = stringResource(R.string.transcript_empty),
                 )
             }
             else -> items(lines, key = { it.key }) { line ->

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_title">Daily Memory</string>
+    <string name="app_name">AI Daily Memory</string>
     <string name="sentry_dsn">https://559258c22138d64370262bdc425ba58d@o4508955926396928.ingest.us.sentry.io/4512245212315648</string>
-    <string name="phone_controller">Audio records on your phone.</string>
+    <string name="phone_controller">Audio records on your phone</string>
     <string name="phone_disconnected">Phone not connected</string>
     <string name="phone_waiting">Waiting for phone status…</string>
     <string name="status_idle">Not recording</string>
@@ -50,4 +50,7 @@
     <string name="action_stop">Stop</string>
     <string name="action_highlight">Highlight</string>
     <string name="action_quick_note">Quick note</string>
+    <string name="action_highlight_hint">Last 30 seconds</string>
+    <string name="action_quick_note_hint">Next minute</string>
+    <string name="session_since">Since %1$s</string>
 </resources>

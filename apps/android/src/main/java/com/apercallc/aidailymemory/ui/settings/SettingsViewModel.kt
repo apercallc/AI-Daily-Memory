@@ -11,6 +11,7 @@ import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
+import com.apercallc.aidailymemory.settings.ProcessingSettings
 import com.apercallc.aidailymemory.net.ConnectError
 import com.apercallc.aidailymemory.net.ServerLink
 import java.time.Instant
@@ -189,6 +190,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val processingActions = ProcessingActions(
         onEnableChange = { enabled ->
+            if (enabled) {
+                // The screen no longer asks for a provider: turning processing on means "use my
+                // own API key", so a provider left on "off" would only strand the setup.
+                if (pSettings.transcriptionProvider.value == ProcessingSettings.PROVIDER_DISABLED) {
+                    pSettings.setTranscriptionProvider(ProcessingSettings.PROVIDER_USER_API)
+                }
+                if (pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_DISABLED) {
+                    pSettings.setExtractionProvider(ProcessingSettings.PROVIDER_USER_API)
+                }
+            }
             pSettings.setProcessingEnabled(enabled)
             onProcessingSettingsChanged()
         },

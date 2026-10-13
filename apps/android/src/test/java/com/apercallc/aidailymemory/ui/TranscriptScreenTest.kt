@@ -49,8 +49,9 @@ class TranscriptScreenTest {
     fun `no transcript yet explains when one will appear`() {
         compose.setContent { AiDailyMemoryTheme { TranscriptScreen(lines = emptyList()) } }
 
+        compose.onNodeWithText("No transcript yet").assertExists()
         compose.onNodeWithText(
-            "No transcript yet. Speech is transcribed while your phone charges on Wi-Fi, once your account is connected.",
+            "Speech is transcribed while your phone charges on Wi-Fi, once your account is connected.",
         ).assertExists()
     }
 }

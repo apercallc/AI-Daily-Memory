@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
@@ -12,6 +13,8 @@ import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.recording.session.SessionTitle
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
+import com.apercallc.aidailymemory.ui.memory.MemoryLoadState
+import com.apercallc.aidailymemory.ui.memory.MemoryScreen
 import com.apercallc.aidailymemory.ui.sessions.DayGroup
 import com.apercallc.aidailymemory.ui.sessions.SessionItem
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
@@ -44,6 +47,36 @@ class ScheduleScreensTest {
             }
         }
         compose.onNodeWithText("Loading sessions…").assertExists()
+    }
+
+    @Test
+    fun `an empty sessions list offers the way back to recording`() {
+        var opened = 0
+        compose.setContent {
+            AiDailyMemoryTheme {
+                SessionsScreen(days = emptyList(), today = today, onRename = { _, _ -> }, onStartRecording = { opened++ })
+            }
+        }
+        compose.onNodeWithText("No sessions yet").assertExists()
+        compose.onNodeWithText("Go to Today").performClick()
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun `an empty memory points to processing setup`() {
+        var opened = 0
+        compose.setContent {
+            AiDailyMemoryTheme {
+                MemoryScreen(
+                    state = MemoryLoadState.Content(emptyList()),
+                    onRetry = {},
+                    onSetUpProcessing = { opened++ },
+                )
+            }
+        }
+        compose.onNodeWithText("No memory yet").assertExists()
+        compose.onNodeWithText("Set up memory processing").performClick()
+        assertEquals(1, opened)
     }
 
     @Test
@@ -93,6 +126,7 @@ class ScheduleScreensTest {
         }
 
         compose.onNodeWithText("Today").assertExists()
+        compose.onNodeWithContentDescription("More options for this session").performClick()
         compose.onNodeWithText("Rename").performClick()
         compose.onNodeWithText("Name").performTextInput("x".repeat(61))
         compose.onNodeWithText("Keep it to 60 characters or fewer.").assertExists()
@@ -175,5 +209,30 @@ class ScheduleScreensTest {
         compose.onNodeWithText("Keep audio until I delete it").performScrollTo().performClick()
         assertEquals(AudioRetention.KEEP_UNTIL_DELETED, retention)
         compose.onNodeWithText("Grows every day", substring = true).assertExists()
+    }
+
+    @Test
+    fun `memory processing and own-server sync stay collapsed until opened`() {
+        compose.setContent {
+            AiDailyMemoryTheme(dynamicColor = false) {
+                RhythmSettingsScreen(
+                    rhythm = DailyRhythm.None,
+                    retention = AudioRetention.TRANSCRIPT_ONLY,
+                    nextChange = null,
+                    bytesPerHour = 15L * 1024 * 1024,
+                    showUnreadableNotice = false,
+                    onRhythmChange = {},
+                    onRetentionChange = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Memory processing").performScrollTo().assertExists()
+        compose.onNodeWithText("Process my recordings").assertDoesNotExist()
+        compose.onNodeWithText("Memory processing").performClick()
+        compose.onNodeWithText("Process my recordings").performScrollTo().assertExists()
+
+        compose.onNodeWithText("Send memory to your own server").performScrollTo().assertExists()
+        compose.onNodeWithText("Enable sync").assertDoesNotExist()
     }
 }

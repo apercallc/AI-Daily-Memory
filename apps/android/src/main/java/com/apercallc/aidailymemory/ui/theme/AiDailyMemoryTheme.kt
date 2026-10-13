@@ -15,11 +15,12 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun AiDailyMemoryTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    // Dynamic color styles the chrome only; capture state uses fixed StatusColors.
+    // The brand palette is the default so the app looks the same on every phone; dynamic color
+    // is opt-in and styles the chrome only. Capture state always uses the fixed StatusColors.
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && darkTheme ->
             dynamicDarkColorScheme(context)
@@ -27,8 +28,8 @@ fun AiDailyMemoryTheme(
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             dynamicLightColorScheme(context)
 
-        darkTheme -> darkColorScheme()
-        else -> lightColorScheme()
+        darkTheme -> BrandDarkColors
+        else -> BrandLightColors
     }
 
     CompositionLocalProvider(

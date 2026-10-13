@@ -10,7 +10,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
+import com.apercallc.aidailymemory.ui.EmptyState
+import com.apercallc.aidailymemory.ui.LoadingState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -28,8 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextOverflow
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.session.PartOfDay
@@ -53,6 +61,8 @@ fun SessionsScreen(
     /** Opens a session's transcript, with the title as shown on its card. */
     onOpen: (sessionId: String, title: String) -> Unit = { _, _ -> },
     onDelete: (sessionId: String) -> Unit = {},
+    /** Empty state's way forward: back to the Today tab. */
+    onStartRecording: (() -> Unit)? = null,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
@@ -63,14 +73,13 @@ fun SessionsScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         when {
-            days == null -> item {
-                Text(stringResource(R.string.sessions_loading), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            }
+            days == null -> item { LoadingState(stringResource(R.string.sessions_loading)) }
             days.isEmpty() -> item {
-                Text(
-                    text = stringResource(R.string.sessions_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                EmptyState(
+                    icon = R.drawable.ic_nav_sessions,
+                    title = stringResource(R.string.sessions_empty_title),
+                    body = stringResource(R.string.sessions_empty_body),
+                    action = onStartRecording?.let { stringResource(R.string.sessions_empty_action) to it },
                 )
             }
             else -> days.forEach { group ->
@@ -192,14 +201,39 @@ private fun SessionCard(
                     text = durationText(session.capturedMs),
                     style = MaterialTheme.typography.labelLarge,
                 )
-                TextButton(
-                    onClick = onRename,
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.session_rename)) }
-                TextButton(
-                    onClick = onDelete,
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.session_delete_action)) }
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        modifier = Modifier.size(spacing.minTouchTarget),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_more_vert),
+                            contentDescription = stringResource(R.string.session_more),
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.session_rename)) },
+                            onClick = {
+                                menuOpen = false
+                                onRename()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(R.string.session_delete_action),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onDelete()
+                            },
+                        )
+                    }
+                }
             }
         }
     }

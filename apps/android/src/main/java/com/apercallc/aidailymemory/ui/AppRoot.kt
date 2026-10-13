@@ -1,7 +1,13 @@
 package com.apercallc.aidailymemory.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +16,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -27,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -51,13 +61,24 @@ import com.apercallc.aidailymemory.update.UpdateViewModel
 import java.time.Instant
 import java.time.ZoneId
 
-enum class AppScreen { CAPTURE, SESSIONS, MEMORY, SETTINGS, TRANSCRIPT }
+/** A bottom-bar destination; null for detail screens that are reached from a tab. */
+class Tab(@StringRes val label: Int, @DrawableRes val icon: Int)
+
+enum class AppScreen(val tab: Tab?) {
+    CAPTURE(Tab(R.string.nav_today, R.drawable.ic_nav_today)),
+    SESSIONS(Tab(R.string.nav_sessions, R.drawable.ic_nav_sessions)),
+    MEMORY(Tab(R.string.nav_memory, R.drawable.ic_nav_memory)),
+    SETTINGS(Tab(R.string.nav_settings, R.drawable.ic_nav_settings)),
+    TRANSCRIPT(null),
+}
 
 private const val NEXT_CHANGE_REFRESH_MS = 30_000L
+private const val TAB_FADE_MS = 120
 
 /**
- * Top-level screen switch. Three screens don't justify a navigation library; state survives
- * rotation and process recreation via rememberSaveable, and Back returns to capture.
+ * Top-level screen switch with a bottom tab bar. A handful of screens don't justify a navigation
+ * library; state survives rotation and process recreation via rememberSaveable, and Back
+ * returns to Today.
  */
 @Composable
 fun AppRoot(
@@ -79,30 +100,60 @@ fun AppRoot(
     // Auto-check for updates once per process; the settings card can always re-check.
     LaunchedEffect(Unit) { updates().checkIfIdle() }
 
-    when (screen) {
-        AppScreen.CAPTURE -> AiDailyMemoryApp(
-            viewModel = capture,
-            updates = updates(),
-            permissions = permissions,
-            onOpenSessions = { screen = AppScreen.SESSIONS },
-            onOpenMemory = { screen = AppScreen.MEMORY },
-            onOpenSettings = { screen = AppScreen.SETTINGS },
-        )
-        AppScreen.SESSIONS -> SessionsRoute(sessions(), onBack = back) { id, title ->
-            openSession = id
-            openTitle = title
-            screen = AppScreen.TRANSCRIPT
-        }
-        AppScreen.MEMORY -> MemoryRoute(memory(), onBack = back)
-        AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
-        AppScreen.TRANSCRIPT -> {
-            val id = openSession
-            if (id != null) {
-                TranscriptRoute(sessions(), id, openTitle, onBack = back)
-            } else {
-                // Nothing to show (state lost): fall back to the list, outside composition.
-                LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+    val onTab = screen.tab != null
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        // Each screen handles the status bar and cutouts itself; this one only adds the tab bar.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            // Hidden while reading a transcript: that is a detail view with its own Back.
+            if (onTab) BottomTabs(selected = screen, onSelect = { screen = it })
+        },
+    ) { padding ->
+        // The tab bar owns the bottom inset; each screen keeps handling the rest itself.
+        val tabBarPadding = PaddingValues(bottom = padding.calculateBottomPadding())
+        Box(Modifier.padding(tabBarPadding).consumeWindowInsets(tabBarPadding)) {
+            Crossfade(targetState = screen, animationSpec = tween(TAB_FADE_MS), label = "screen") { shown ->
+            when (shown) {
+                AppScreen.CAPTURE -> AiDailyMemoryApp(
+                    viewModel = capture,
+                    updates = updates(),
+                    permissions = permissions,
+                    onOpenSettings = { screen = AppScreen.SETTINGS },
+                )
+                AppScreen.SESSIONS -> SessionsRoute(sessions(), onStartRecording = { screen = AppScreen.CAPTURE }) { id, title ->
+                    openSession = id
+                    openTitle = title
+                    screen = AppScreen.TRANSCRIPT
+                }
+                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = { screen = AppScreen.SETTINGS })
+                AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
+                AppScreen.TRANSCRIPT -> {
+                    val id = openSession
+                    if (id != null) {
+                        TranscriptRoute(sessions(), id, openTitle, onBack = back)
+                    } else {
+                        // Nothing to show (state lost): fall back to the list, outside composition.
+                        LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+                    }
+                }
             }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomTabs(selected: AppScreen, onSelect: (AppScreen) -> Unit) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        AppScreen.entries.mapNotNull { screen -> screen.tab?.let { screen to it } }.forEach { (screen, tab) ->
+            val label = stringResource(tab.label)
+            NavigationBarItem(
+                selected = screen == selected,
+                onClick = { onSelect(screen) },
+                icon = { Icon(painterResource(tab.icon), contentDescription = null) },
+                label = { Text(label) },
+            )
         }
     }
 }
@@ -110,7 +161,7 @@ fun AppRoot(
 @Composable
 private fun SessionsRoute(
     viewModel: SessionsViewModel,
-    onBack: () -> Unit,
+    onStartRecording: () -> Unit,
     onOpen: (sessionId: String, title: String) -> Unit,
 ) {
     val days by viewModel.days.collectAsStateWithLifecycle()
@@ -121,7 +172,7 @@ private fun SessionsRoute(
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
-    SecondaryScreen(stringResource(R.string.sessions_title), onBack, snackbar) { modifier ->
+    SecondaryScreen(stringResource(R.string.sessions_title), null, snackbar) { modifier ->
         SessionsScreen(
             days = days,
             today = today,
@@ -129,15 +180,21 @@ private fun SessionsRoute(
             modifier = modifier,
             onOpen = onOpen,
             onDelete = viewModel::delete,
+            onStartRecording = onStartRecording,
         )
     }
 }
 
 @Composable
-private fun MemoryRoute(viewModel: MemoryViewModel, onBack: () -> Unit) {
+private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    SecondaryScreen(stringResource(R.string.memory_title), onBack, snackbar = null) { modifier ->
-        MemoryScreen(state = state, onRetry = viewModel::retry, modifier = modifier)
+    SecondaryScreen(stringResource(R.string.memory_title), null, snackbar = null) { modifier ->
+        MemoryScreen(
+            state = state,
+            onRetry = viewModel::retry,
+            modifier = modifier,
+            onSetUpProcessing = onSetUpProcessing,
+        )
     }
 }
 
@@ -169,7 +226,7 @@ private fun SettingsRoute(
             delay(NEXT_CHANGE_REFRESH_MS)
         }
     }
-    SecondaryScreen(stringResource(R.string.nav_settings), onBack, snackbar = null) { modifier ->
+    SecondaryScreen(stringResource(R.string.settings_title), null, snackbar = null) { modifier ->
         RhythmSettingsScreen(
             rhythm = rhythm,
             retention = retention,
@@ -205,13 +262,14 @@ private fun SettingsRoute(
 @Composable
 private fun SecondaryScreen(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     snackbar: SnackbarHostState?,
     content: @Composable (Modifier) -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { snackbar?.let { SnackbarHost(it) } },
     ) { padding ->
         Column(
@@ -225,13 +283,15 @@ private fun SecondaryScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = onBack,
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.nav_back)) }
+                if (onBack != null) {
+                    TextButton(
+                        onClick = onBack,
+                        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                    ) { Text(stringResource(R.string.nav_back)) }
+                }
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.semantics { heading() },
                 )
             }

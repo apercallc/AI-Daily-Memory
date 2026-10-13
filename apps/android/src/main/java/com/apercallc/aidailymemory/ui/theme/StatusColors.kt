@@ -24,6 +24,8 @@ data class StatusColors(
     val onError: Color,
     val neutral: Color,
     val onNeutral: Color,
+    /** The vivid dot beside "Recording": the same saturated red in light and dark. */
+    val recordingDot: Color = Color(0xFFFF3B30),
 ) {
     fun container(tone: StatusTone): Color = when (tone) {
         StatusTone.RECORDING -> recording

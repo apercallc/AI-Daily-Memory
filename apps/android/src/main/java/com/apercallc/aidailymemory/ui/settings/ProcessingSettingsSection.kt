@@ -1,22 +1,19 @@
 package com.apercallc.aidailymemory.ui.settings
 
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.RadioButton
 import androidx.compose.ui.semantics.Role
-import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.settings.ProcessingSettings
+import androidx.compose.foundation.layout.heightIn
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer as LayoutSpacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -28,7 +25,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -82,7 +78,10 @@ data class SyncActions(
     val onIncludeTranscriptsChange: (Boolean) -> Unit = {},
 )
 
-/** Stateless: renders the processing and sync settings sections. */
+/**
+ * Stateless: the body of the "Memory processing" group. The group's title, summary and
+ * expand/collapse live in the parent card; this renders what is inside it.
+ */
 @Composable
 fun ProcessingSettingsSection(
     processing: ProcessingUi,
@@ -92,19 +91,11 @@ fun ProcessingSettingsSection(
     val spacing = AiDailyMemoryTheme.spacing
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        HorizontalDivider()
-
-        // Processing section
-        Text(
-            text = stringResource(R.string.processing_section),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
         Text(
             text = stringResource(R.string.processing_explainer),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         SettingsCard {
@@ -120,132 +111,96 @@ fun ProcessingSettingsSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            return@Column
         }
-        if (processing.enabled) {
-            if (processing.configGaps.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.processing_incomplete),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
-            // Transcription provider
-            SettingsCard {
-                Column {
-                    Text(
-                        text = stringResource(R.string.processing_transcription),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(spacing.md),
-                    )
-                    ProviderSelector(
-                        selected = processing.transcriptionProvider,
-                        onSelect = actions.onTranscriptionProviderChange,
-                    )
-                    if (processing.transcriptionProvider == ProcessingSettings.PROVIDER_USER_API) {
-                        Column(modifier = Modifier.padding(spacing.md)) {
-                            OutlinedTextField(
-                                value = processing.transcriptionApiUrl,
-                                onValueChange = actions.onTranscriptionApiUrlChange,
-                                label = { Text(stringResource(R.string.processing_api_url)) },
-                                isError = processing.transcriptionApiUrlInvalid,
-                                supportingText = if (processing.transcriptionApiUrlInvalid) {
-                                    { Text(stringResource(R.string.url_must_be_https)) }
-                                } else {
-                                    null
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                            )
-                            Spacer()
-                            OutlinedTextField(
-                                value = processing.transcriptionApiKey,
-                                onValueChange = actions.onTranscriptionApiKeyChange,
-                                label = { Text(stringResource(R.string.processing_api_key)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                            )
-                            Text(
-                                text = stringResource(R.string.processing_api_key_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = spacing.xs),
-                            )
-                        }
-                    }
-                }
-            }
 
-            // Extraction provider
-            SettingsCard {
-                Column {
-                    Text(
-                        text = stringResource(R.string.processing_extraction),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(spacing.md),
-                    )
-                    ProviderSelector(
-                        selected = processing.extractionProvider,
-                        onSelect = actions.onExtractionProviderChange,
-                    )
-                    if (processing.extractionProvider == ProcessingSettings.PROVIDER_USER_API) {
-                        Column(modifier = Modifier.padding(spacing.md)) {
-                            OutlinedTextField(
-                                value = processing.extractionApiUrl,
-                                onValueChange = actions.onExtractionApiUrlChange,
-                                label = { Text(stringResource(R.string.processing_api_url)) },
-                                isError = processing.extractionApiUrlInvalid,
-                                supportingText = if (processing.extractionApiUrlInvalid) {
-                                    { Text(stringResource(R.string.url_must_be_https)) }
-                                } else {
-                                    null
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                            )
-                            Spacer()
-                            OutlinedTextField(
-                                value = processing.extractionModel,
-                                onValueChange = actions.onExtractionModelChange,
-                                label = { Text(stringResource(R.string.processing_model)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                            )
-                            Spacer()
-                            OutlinedTextField(
-                                value = processing.extractionApiKey,
-                                onValueChange = actions.onExtractionApiKeyChange,
-                                label = { Text(stringResource(R.string.processing_api_key)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                            )
-                            Text(
-                                text = stringResource(R.string.processing_api_key_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = spacing.xs),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Audio deletion toggle
-            SettingsCard {
-                ToggleRow(
-                    label = stringResource(R.string.processing_delete_audio),
-                    sublabel = stringResource(R.string.processing_delete_audio_body),
-                    checked = processing.deleteAudioAfterTranscription,
-                    onCheckedChange = actions.onDeleteAudioChange,
-                )
-            }
+        if (processing.configGaps.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.processing_incomplete),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        ProviderCard(title = R.string.processing_transcription) {
+            ApiUrlField(
+                value = processing.transcriptionApiUrl,
+                invalid = processing.transcriptionApiUrlInvalid,
+                hint = R.string.processing_transcription_url_hint,
+                onChange = actions.onTranscriptionApiUrlChange,
+            )
+            ApiKeyField(processing.transcriptionApiKey, actions.onTranscriptionApiKeyChange)
+        }
+        ProviderCard(title = R.string.processing_extraction) {
+            ApiUrlField(
+                value = processing.extractionApiUrl,
+                invalid = processing.extractionApiUrlInvalid,
+                hint = R.string.processing_extraction_url_hint,
+                onChange = actions.onExtractionApiUrlChange,
+            )
+            OutlinedTextField(
+                value = processing.extractionModel,
+                onValueChange = actions.onExtractionModelChange,
+                label = { Text(stringResource(R.string.processing_model)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            ApiKeyField(processing.extractionApiKey, actions.onExtractionApiKeyChange)
+        }
+        SettingsCard {
+            ToggleRow(
+                label = stringResource(R.string.processing_delete_audio),
+                sublabel = stringResource(R.string.processing_delete_audio_body),
+                checked = processing.deleteAudioAfterTranscription,
+                onCheckedChange = actions.onDeleteAudioChange,
+            )
         }
     }
 }
 
-/** Stateless: renders the sync settings section. */
+@Composable
+private fun ProviderCard(@StringRes title: Int, content: @Composable ColumnScope.() -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    SettingsCard {
+        Column(
+            modifier = Modifier.padding(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(text = stringResource(title), style = MaterialTheme.typography.titleSmall)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ApiUrlField(value: String, invalid: Boolean, @StringRes hint: Int, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(stringResource(R.string.processing_api_url)) },
+        isError = invalid,
+        supportingText = {
+            Text(stringResource(if (invalid) R.string.url_must_be_https else hint))
+        },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+}
+
+@Composable
+private fun ApiKeyField(value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(stringResource(R.string.processing_api_key)) },
+        supportingText = { Text(stringResource(R.string.processing_api_key_hint)) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+    )
+}
+
+/** Stateless: the body of the "Send to your own server" group (title lives in the parent card). */
 @Composable
 fun SyncSettingsSection(
     sync: SyncUi,
@@ -255,18 +210,11 @@ fun SyncSettingsSection(
     val spacing = AiDailyMemoryTheme.spacing
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        HorizontalDivider()
-
-        Text(
-            text = stringResource(R.string.sync_section),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
         Text(
             text = stringResource(R.string.sync_explainer),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         SettingsCard {
@@ -278,7 +226,10 @@ fun SyncSettingsSection(
         }
         if (sync.enabled) {
             SettingsCard {
-                Column(modifier = Modifier.padding(spacing.md)) {
+                Column(
+                    modifier = Modifier.padding(spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
                     if (sync.lastSyncFailed) {
                         Text(
                             text = stringResource(R.string.sync_failed),
@@ -286,7 +237,6 @@ fun SyncSettingsSection(
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
-                        Spacer()
                     }
                     OutlinedTextField(
                         value = sync.url,
@@ -301,7 +251,6 @@ fun SyncSettingsSection(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
-                    Spacer()
                     OutlinedTextField(
                         value = sync.token,
                         onValueChange = actions.onTokenChange,
@@ -310,7 +259,6 @@ fun SyncSettingsSection(
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                     )
-                    Spacer()
                     ToggleRow(
                         label = stringResource(R.string.sync_include_transcripts),
                         checked = sync.includeTranscripts,
@@ -323,46 +271,12 @@ fun SyncSettingsSection(
 }
 
 @Composable
-private fun ProviderSelector(selected: String, onSelect: (String) -> Unit) {
-    val spacing = AiDailyMemoryTheme.spacing
-    val options = listOf(
-        ProcessingSettings.PROVIDER_DISABLED to R.string.processing_provider_disabled,
-        ProcessingSettings.PROVIDER_USER_API to R.string.processing_provider_user_api,
-    )
-    Column(
-        modifier = Modifier
-            .padding(horizontal = spacing.md, vertical = spacing.sm)
-            .selectableGroup(),
-        verticalArrangement = Arrangement.spacedBy(spacing.sm),
-    ) {
-        options.forEach { (value, labelRes) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = spacing.minTouchTarget)
-                    .selectable(
-                        selected = selected == value,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(value) },
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-            ) {
-                RadioButton(selected = selected == value, onClick = null)
-                Text(
-                    text = stringResource(labelRes),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
     ) {
         content()
     }
@@ -402,9 +316,4 @@ private fun ToggleRow(
         }
         Switch(checked = checked, onCheckedChange = null)
     }
-}
-
-@Composable
-private fun Spacer() {
-    LayoutSpacer(modifier = Modifier.padding(top = AiDailyMemoryTheme.spacing.sm))
 }

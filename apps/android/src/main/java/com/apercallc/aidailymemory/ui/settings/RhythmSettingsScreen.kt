@@ -5,6 +5,8 @@ import android.text.format.Formatter
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +23,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -101,40 +102,158 @@ fun RhythmSettingsScreen(
         if (showUnreadableNotice) Notice(R.string.schedule_unreadable)
         nextChange?.let { NextChangeLine(it) }
 
-        SleepSection(rhythm, onRhythmChange)
-        HorizontalDivider()
-        QuietSection(rhythm, onRhythmChange)
-        HorizontalDivider()
-        AudioSection(retention, bytesPerHour, onRetentionChange)
-        account?.let {
-            HorizontalDivider()
-            AccountSection(
-                account = it,
-                onConnect = accountActions.connect,
-                onEdit = accountActions.edit,
-                onDisconnect = accountActions.disconnect,
-                onRetryUploads = accountActions.retryUploads,
-                onStorageModeChange = accountActions.changeStorageMode,
-                onStorageModeRetry = accountActions.retryStorageMode,
+        GroupLabel(R.string.settings_group_schedule)
+        GroupCard { SleepSection(rhythm, onRhythmChange) }
+        GroupCard { QuietSection(rhythm, onRhythmChange) }
+
+        GroupLabel(R.string.settings_group_audio)
+        GroupCard { AudioSection(retention, bytesPerHour, onRetentionChange) }
+        ExpandableCard(
+            title = R.string.processing_section,
+            summary = when {
+                !processing.enabled -> R.string.processing_status_off
+                processing.configGaps.isNotEmpty() -> R.string.processing_status_incomplete
+                else -> R.string.processing_status_on
+            },
+            initiallyExpanded = processing.enabled && processing.configGaps.isNotEmpty(),
+        ) {
+            ProcessingSettingsSection(
+                processing = processing,
+                actions = processingActions,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-        HorizontalDivider()
-        UpdateSection(
-            state = update,
-            onCheck = onUpdateCheck,
-            onDownload = onUpdateDownload,
-            onInstall = onUpdateInstall,
+
+        // One place for everything that talks to a server: the account first, then the
+        // optional "your own server" push, so the two no longer look like duplicates.
+        account?.let {
+            GroupCard {
+                AccountSection(
+                    account = it,
+                    onConnect = accountActions.connect,
+                    onEdit = accountActions.edit,
+                    onDisconnect = accountActions.disconnect,
+                    onRetryUploads = accountActions.retryUploads,
+                    onStorageModeChange = accountActions.changeStorageMode,
+                    onStorageModeRetry = accountActions.retryStorageMode,
+                )
+            }
+        }
+        ExpandableCard(
+            title = R.string.sync_section,
+            summary = if (sync.enabled) R.string.sync_status_on else R.string.sync_status_off,
+            label = R.string.advanced_label,
+            initiallyExpanded = sync.enabled && (sync.url.isEmpty() || sync.lastSyncFailed),
+        ) {
+            SyncSettingsSection(
+                sync = sync,
+                actions = syncActions,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        GroupLabel(R.string.settings_group_app)
+        GroupCard {
+            UpdateSection(
+                state = update,
+                onCheck = onUpdateCheck,
+                onDownload = onUpdateDownload,
+                onInstall = onUpdateInstall,
+            )
+        }
+    }
+}
+
+/** Small overline above a run of cards; headings let TalkBack users jump between groups. */
+@Composable
+private fun GroupLabel(@StringRes text: Int) {
+    Text(
+        text = stringResource(text).uppercase(),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .padding(top = AiDailyMemoryTheme.spacing.sm)
+            .semantics { heading() },
+    )
+}
+
+/** A rounded surface that holds one settings topic. */
+@Composable
+private fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+            content = content,
         )
-        ProcessingSettingsSection(
-            processing = processing,
-            actions = processingActions,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        SyncSettingsSection(
-            sync = sync,
-            actions = syncActions,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    }
+}
+
+/**
+ * A topic that most people never need to open: collapsed it shows only its title and whether
+ * it is on, so the screen stays short.
+ */
+@Composable
+private fun ExpandableCard(
+    @StringRes title: Int,
+    @StringRes summary: Int,
+    modifier: Modifier = Modifier,
+    @StringRes label: Int? = null,
+    initiallyExpanded: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val spacing = AiDailyMemoryTheme.spacing
+    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            val toggleLabel = stringResource(if (expanded) R.string.settings_collapse else R.string.settings_expand)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = spacing.minTouchTarget)
+                    .clickable(onClickLabel = toggleLabel, role = Role.Button) { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    label?.let {
+                        Text(
+                            text = stringResource(it).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        text = stringResource(title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        text = stringResource(summary),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = toggleLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (expanded) content()
+        }
     }
 }
 
@@ -177,7 +296,19 @@ private fun NextChangeLine(next: NextChange) {
         RhythmAction.END_DAY -> stringResource(R.string.next_end_day, time)
         RhythmAction.WAKE_REMINDER -> stringResource(R.string.next_reminder, time)
     }
-    Text(text = text, style = MaterialTheme.typography.bodyLarge)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(AiDailyMemoryTheme.spacing.lg),
+        )
+    }
 }
 
 /** A full-width row with a switch; the whole row is the touch target (48dp+). */

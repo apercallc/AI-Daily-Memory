@@ -39,6 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.session.SessionTitle
+import com.apercallc.aidailymemory.ui.EmptyState
+import com.apercallc.aidailymemory.ui.LoadingState
 import com.apercallc.aidailymemory.ui.durationText
 import com.apercallc.aidailymemory.ui.sessions.sessionTitleText
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
@@ -96,6 +98,8 @@ fun MemoryScreen(
     state: MemoryLoadState,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Empty state's way forward: Settings, where memory processing is turned on. */
+    onSetUpProcessing: (() -> Unit)? = null,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     LazyColumn(
@@ -103,13 +107,7 @@ fun MemoryScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         when (state) {
-            MemoryLoadState.Loading -> item {
-                Text(
-                    text = stringResource(R.string.sessions_loading),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            MemoryLoadState.Loading -> item { LoadingState(stringResource(R.string.sessions_loading)) }
             MemoryLoadState.Failed -> item {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     Text(
@@ -124,10 +122,11 @@ fun MemoryScreen(
             }
             is MemoryLoadState.Content -> if (state.days.isEmpty()) {
                 item {
-                    Text(
-                        text = stringResource(R.string.memory_empty),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    EmptyState(
+                        icon = R.drawable.ic_nav_memory,
+                        title = stringResource(R.string.memory_empty_title),
+                        body = stringResource(R.string.memory_empty),
+                        action = onSetUpProcessing?.let { stringResource(R.string.memory_empty_action) to it },
                     )
                 }
             } else {
@@ -164,7 +163,7 @@ private fun MemorySessionCard(session: MemorySession) {
     val spacing = AiDailyMemoryTheme.spacing
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column(
             modifier = Modifier.padding(spacing.lg),

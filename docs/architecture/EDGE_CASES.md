@@ -34,7 +34,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Uploads stuck for days | Pending bytes over budget → warning. Unacknowledged audio is **never** deleted to make room | `StoragePolicy`, `SegmentLifecycle` | ✅ |
 | Device locked all day | Keystore key without a user-auth requirement | `SegmentCipher` | ✅ (device test pending) |
 | Before first unlock after reboot | App is not direct-boot aware: no component runs before unlock; Start is also blocked by `DEVICE_LOCKED` | manifest, `CapturePreconditions` | ✅ |
-| OEM battery killers (aggressive vendors) | Kill shows up as a process-restart interruption; an info card links to battery settings without promising it helps | `RecordingController`, capture screen | ✅ (vendor matrix pending) |
+| OEM battery killers (aggressive vendors) | Kill shows up as a process-restart interruption; an info card links to battery settings without promising it helps | `RecordingController`, capture screen, `BatteryGuidance` | ✅ Samsung: card shows One UI steps (Unrestricted, Sleeping/Deep sleeping apps) and an app-battery button; other vendors still pending |
 | Keystore unusable (Tink would silently fall back to a cleartext keyset) | Refused: `ENCRYPTION_UNAVAILABLE`, nothing written unencrypted, no phantom segment row | `SegmentCipher`, `SegmentStore` | ✅ |
 | Journal's newest row undecodable | Restart IDLE with `UNKNOWN` problem, revision kept monotonic | `JournalCodec`, `RecordingController` | ✅ |
 | Journal write fails | Transition not published and no effect runs; failure logged to the operator | `RecordingController` | ✅ |

@@ -86,4 +86,16 @@ class SettingsViewModelTest {
         assertEquals(emptyList(), vm.processing.value.configGaps)
         vm.processingActions.onEnableChange(false)
     }
+
+    @Test
+    fun `turning processing on selects the api-key provider so setup is just url and key`() =
+        withViewModel { vm ->
+            vm.processingActions.onEnableChange(true)
+
+            assertEquals("user-api", vm.processing.value.transcriptionProvider)
+            assertEquals("user-api", vm.processing.value.extractionProvider)
+            // Only the address, key and model are still missing; the provider is never a gap.
+            assertTrue(vm.processing.value.configGaps.none { it.name.endsWith("PROVIDER") })
+            vm.processingActions.onEnableChange(false)
+        }
 }

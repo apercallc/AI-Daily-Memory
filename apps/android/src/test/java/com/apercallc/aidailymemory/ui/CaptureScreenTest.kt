@@ -54,6 +54,7 @@ class CaptureScreenTest {
         health: CaptureHealth = CaptureHealth.Unknown,
         overview: CaptureOverview? = null,
         fontScale: Float = 1f,
+        batteryRestricted: Boolean = false,
     ) {
         val state = RecordingState(
             status = status,
@@ -67,15 +68,13 @@ class CaptureScreenTest {
                 CaptureScreen(
                     model = CaptureStatusPresenter.present(state, health),
                     overview = overview,
-                    batteryRestricted = false,
+                    batteryRestricted = batteryRestricted,
                     snackbar = SnackbarHostState(),
                     onPrimaryAction = { actions += "primary:$it" },
                     onRetry = { actions += "retry" },
                     onStop = { actions += "stop" },
                     onMark = { actions += "mark:$it" },
                     onBatterySettings = { actions += "battery" },
-                    onOpenSessions = { actions += "sessions" },
-                    onOpenSettings = { actions += "settings" },
                 )
               }
             }
@@ -153,14 +152,6 @@ class CaptureScreenTest {
     }
 
     @Test
-    fun `navigation opens sessions and settings without changing recording`() {
-        show(RecordingStatus.RECORDING)
-        compose.onNodeWithText("Sessions").performScrollTo().performClick()
-        compose.onNodeWithText("Schedule & audio").performScrollTo().performClick()
-        assertEquals(listOf("sessions", "settings"), actions)
-    }
-
-    @Test
     @Config(qualifiers = "w320dp-h640dp")
     fun `storage value stays readable at double font scale on a narrow phone`() {
         show(
@@ -189,5 +180,22 @@ class CaptureScreenTest {
             compose.onNodeWithText(it, useUnmergedTree = true).assertExists()
             compose.onNodeWithText(it).assertHeightIsAtLeast(48.dp)
         }
+    }
+
+    @Test
+    fun `battery restriction is a prominent fix-it card above the status`() {
+        show(RecordingStatus.IDLE, batteryRestricted = true)
+
+        compose.onNodeWithText("Recording may stop in the background").assertExists()
+        compose.onNodeWithText("Open battery settings").performClick()
+        assertEquals(listOf("battery"), actions)
+    }
+
+    @Test
+    fun `markers say which audio they flag`() {
+        show(RecordingStatus.RECORDING)
+
+        compose.onNodeWithText("Flags the last 30 seconds").assertExists()
+        compose.onNodeWithText("Flags the next minute").assertExists()
     }
 }

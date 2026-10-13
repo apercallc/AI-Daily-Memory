@@ -38,7 +38,7 @@ fun UpdateSection(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         Text(
             text = stringResource(R.string.update_title),
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { heading() },
         )
         Text(

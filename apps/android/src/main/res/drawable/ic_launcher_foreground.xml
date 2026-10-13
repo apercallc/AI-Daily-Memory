@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Minimal launcher foreground: a centered dot within the adaptive-icon safe zone. -->
+<!-- A sound wave (the day being captured) with a red recording dot. Kept inside the 66dp
+     adaptive-icon safe zone (21..87). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,34 a20,20 0 1,0 0.01,0 z" />
+        android:pathData="M34,47L34,61M44,39L44,69M54,31L54,77M64,41L64,67M74,49L74,59"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFF5A4D"
+        android:pathData="M78,30m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0" />
 </vector>
