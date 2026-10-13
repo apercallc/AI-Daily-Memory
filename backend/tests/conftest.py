@@ -36,7 +36,15 @@ _TABLES = (
 def _database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
-        pytest.fail("TEST_DATABASE_URL is not set; database tests need PostgreSQL", pytrace=False)
+        # Failing (not skipping) is deliberate: a skip would let CI go green without running
+        # the database tests if the variable were ever dropped from the workflow.
+        pytest.fail(
+            "TEST_DATABASE_URL is not set. Database tests need a throwaway PostgreSQL 16: "
+            "start one and run e.g. export "
+            "TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/aidm_test "
+            "(its public schema is dropped and rebuilt). See backend/README.",
+            pytrace=False,
+        )
     return url
 
 
