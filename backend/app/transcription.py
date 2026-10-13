@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import (
     AudioUpload,
     DeviceKey,
+    ProcessingJob,
     SealedDelivery,
     Transcript,
     TranscriptSegment,
@@ -215,15 +216,37 @@ class TranscribeHandler:
             upload.active_transcript_id = transcript.id
             upload.state = "transcribed"
             # Phase 2 (ADR-0019): the only server-side transcript is a full_cloud one, so this
-            # is the only path that can ever have something to extract. One job per session:
-            # a later clip in the same session adds evidence but doesn't retrigger a rerun.
-            await enqueue(
-                session,
-                user_id=user_id,
-                kind="extract",
-                subject_id=upload.session_id,
-                idempotency_key=f"extract:{upload.session_id}",
+            # is the only path that can ever have something to extract. Extraction is
+            # idempotent by replacement, so every newly transcribed clip gets a fresh run
+            # (the key carries the clip count) that sees the whole session so far. A run that
+            # is still queued will read this clip's transcript anyway, so none is added then.
+            await session.flush()
+            clips = await session.scalar(
+                select(func.count())
+                .select_from(AudioUpload)
+                .where(
+                    AudioUpload.user_id == user_id,
+                    AudioUpload.session_id == upload.session_id,
+                    AudioUpload.state == "transcribed",
+                ),
             )
+            waiting = await session.scalar(
+                select(ProcessingJob.id)
+                .where(
+                    ProcessingJob.kind == "extract",
+                    ProcessingJob.subject_id == upload.session_id,
+                    ProcessingJob.state == "queued",
+                )
+                .limit(1),
+            )
+            if waiting is None:
+                await enqueue(
+                    session,
+                    user_id=user_id,
+                    kind="extract",
+                    subject_id=upload.session_id,
+                    idempotency_key=f"extract:{upload.session_id}:{clips}",
+                )
 
     async def _persist_sealed(
         self,
@@ -253,20 +276,32 @@ class TranscribeHandler:
             upload.state = "transcribed"
 
     async def on_dead(self, job: ClaimedJob, error_code: str) -> None:
-        """The job won't run again: record why on the upload and delete its audio now, so a
-        failed clip never lingers in the bucket (ADR-0003). Deletion failures are left to
-        the retention sweep."""
+        """The job won't run again: delete the clip's audio now and record why on the upload,
+        so a failed clip never lingers in the bucket (ADR-0003).
+
+        The object goes first. If the delete raises, the upload stays `received` next to its
+        dead job, which is exactly what the retention sweep selects and retries; marking it
+        `failed` first would hide the still-existing audio from the sweep.
+        """
         async with self.sessions() as session:
             key = await session.scalar(
+                select(AudioUpload.object_key).where(
+                    AudioUpload.id == job.subject_id,
+                    AudioUpload.user_id == job.user_id,
+                    AudioUpload.state == "received",
+                ),
+            )
+        if key is None:
+            return
+        await self.store.delete(key)
+        async with self.sessions() as session:
+            await session.execute(
                 update(AudioUpload)
                 .where(
                     AudioUpload.id == job.subject_id,
                     AudioUpload.user_id == job.user_id,
                     AudioUpload.state == "received",
                 )
-                .values(state="failed", failure_code=error_code)
-                .returning(AudioUpload.object_key),
+                .values(state="failed", failure_code=error_code),
             )
             await session.commit()
-        if key is not None:
-            await self.store.delete(key)

@@ -475,7 +475,9 @@ async def test_a_failing_dead_letter_hook_is_logged_not_raised(
     handler = TranscribeHandler(database.sessions, broken, bad)
     await Worker(database, {"transcribe": handler}, worker_id="w", now=lambda: NOW).run_once()
 
-    assert state(db) == ("failed", "dead")  # the sweep deletes the audio later
+    # The delete failed, so the upload stays `received` beside its dead job: the retention
+    # sweep selects exactly that combination and retries the delete.
+    assert state(db) == ("received", "dead")
 
 
 async def test_the_loop_survives_a_failing_iteration(database: Database) -> None:
@@ -509,3 +511,131 @@ async def test_sweeps_run_at_most_once_per_interval(database: Database) -> None:
     await looping._maybe_sweep()
 
     assert calls == 1
+
+
+def extract_jobs(db: Engine) -> list[str]:
+    with db.connect() as connection:
+        return list(
+            connection.scalars(
+                text("SELECT idempotency_key FROM processing_jobs WHERE kind = 'extract'"),
+            ),
+        )
+
+
+async def add_clip_to_session(database: Database, db: Engine, store: FakeObjectStore) -> None:
+    """A second received clip in the same session as the existing upload, with a transcribe job."""
+    with db.connect() as connection:
+        user, session_id, first_key = connection.execute(
+            text("SELECT user_id, session_id, object_key FROM audio_uploads LIMIT 1"),
+        ).one()
+    upload_id = uuid.uuid4()
+    key = audio_key(user, upload_id)
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO audio_uploads (id, user_id, session_id, segment_id, offset_ms, "
+                "duration_ms, byte_size, sha256, codec, sample_rate_hz, channel_count, "
+                "captured_at, state, object_key) VALUES (:id, :user, :s, :seg, 0, 3000, 102, "
+                ":sha, 'aac-lc-adts', 16000, 1, :at, 'received', :key)",
+            ),
+            {
+                "id": upload_id,
+                "user": user,
+                "s": session_id,
+                "seg": uuid.uuid4(),
+                "sha": hashlib.sha256(AUDIO).hexdigest(),
+                "at": NOW,
+                "key": key,
+            },
+        )
+    store.put(key, AUDIO)
+    async with database.sessions() as session:
+        await enqueue(
+            session,
+            user_id=user,
+            kind="transcribe",
+            subject_id=upload_id,
+            idempotency_key=f"transcribe:{upload_id}",
+        )
+        await session.execute(text("UPDATE processing_jobs SET run_after = :t"), {"t": NOW})
+        await session.commit()
+    assert first_key != key
+
+
+async def test_later_clips_of_a_session_are_extracted_again(
+    database: Database, db: Engine, store: FakeObjectStore
+) -> None:
+    await received_upload(database, db, store)
+    w = worker(database, store, FakeProvider())
+    assert await w.run_once()
+    first = extract_jobs(db)
+    assert len(first) == 1
+
+    # The first extraction has run; a second clip arrives and must trigger another run.
+    with db.begin() as connection:
+        connection.execute(
+            text("UPDATE processing_jobs SET state = 'succeeded' WHERE kind = 'extract'")
+        )
+    await add_clip_to_session(database, db, store)
+    assert await w.run_once()
+
+    assert len(extract_jobs(db)) == 2
+
+    # A third clip while the second run is still queued adds no redundant job.
+    await add_clip_to_session(database, db, store)
+    assert await w.run_once()
+    assert len(extract_jobs(db)) == 2
+
+
+async def test_a_failed_upload_is_a_terminal_error(
+    database: Database, db: Engine, store: FakeObjectStore
+) -> None:
+    await received_upload(database, db, store)
+    with db.begin() as connection:
+        connection.execute(text("UPDATE audio_uploads SET state = 'failed'"))
+    handler = TranscribeHandler(database.sessions, store, FakeProvider())
+    async with database.sessions() as session:
+        job_id, user_id, subject = (
+            await session.execute(text("SELECT id, user_id, subject_id FROM processing_jobs"))
+        ).one()
+
+    with pytest.raises(JobError) as raised:
+        await handler(ClaimedJob(job_id, user_id, "transcribe", subject, 1, 2, "w"))
+
+    assert raised.value.code == "upload_failed"
+    assert not raised.value.retryable
+
+
+async def test_dead_job_whose_object_delete_fails_stays_visible_to_the_sweep(
+    database: Database, db: Engine
+) -> None:
+    class FailingDelete(FakeObjectStore):
+        async def delete(self, key: str) -> None:
+            raise OSError("store down")
+
+    store = FailingDelete()
+    upload_id = await received_upload(database, db, store)
+    handler = TranscribeHandler(database.sessions, store, FakeProvider())
+    async with database.sessions() as session:
+        job_id, user_id, subject = (
+            await session.execute(text("SELECT id, user_id, subject_id FROM processing_jobs"))
+        ).one()
+
+    with pytest.raises(OSError, match="store down"):
+        await handler.on_dead(ClaimedJob(job_id, user_id, "transcribe", subject, 2, 2, "w"), "x")
+
+    with db.connect() as connection:
+        state_ = connection.scalar(
+            text("SELECT state FROM audio_uploads WHERE id = :i"), {"i": upload_id}
+        )
+    assert state_ == "received"  # not `failed`: the sweep still selects it once the job is dead
+
+    ok = FakeObjectStore()
+    ok.put(audio_key_of(db, upload_id), AUDIO)
+    await TranscribeHandler(database.sessions, ok, FakeProvider()).on_dead(
+        ClaimedJob(job_id, user_id, "transcribe", subject, 2, 2, "w"), "provider_failed"
+    )
+    with db.connect() as connection:
+        row = connection.execute(text("SELECT state, failure_code FROM audio_uploads")).one()
+    assert tuple(row) == ("failed", "provider_failed")
+    assert ok.objects == {}
