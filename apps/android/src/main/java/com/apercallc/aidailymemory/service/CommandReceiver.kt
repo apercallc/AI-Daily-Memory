@@ -21,7 +21,11 @@ class CommandReceiver : BroadcastReceiver() {
             container.notifications.repostStatusIfActive(container.currentStatusModel())
             return
         }
-        RecordingService.send(context, action)
+        val container = (context.applicationContext as AiDailyMemoryApplication).container
+        // Commands that run without the service finish on the app scope; hold the process
+        // until they have, so a Pause or Stop tap is applied before the process can be reclaimed.
+        val work = RecordingService.send(context, action) ?: return
+        finishAfter(container) { work.join() }
     }
 
     companion object {

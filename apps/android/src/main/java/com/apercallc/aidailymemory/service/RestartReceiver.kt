@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
-import kotlinx.coroutines.launch
 
 /**
  * Wakes the process after a reboot or an app update, both of which kill an active session.
@@ -18,14 +17,7 @@ class RestartReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in HANDLED) return
         val container = (context.applicationContext as AiDailyMemoryApplication).container
-        val pending = goAsync()
-        container.appScope.launch {
-            try {
-                container.controller.awaitRestored()
-            } finally {
-                pending.finish()
-            }
-        }
+        finishAfter(container) { container.controller.awaitRestored() }
     }
 
     private companion object {

@@ -344,7 +344,7 @@ class RecordingService : Service(), EffectHandler {
          * the controller; its effects then run detached, report the problem, and never touch
          * the microphone. Markers need no service at all.
          */
-        fun send(context: Context, action: String) {
+        fun send(context: Context, action: String): Job? {
             val container = (context.applicationContext as AiDailyMemoryApplication).container
             when (action) {
                 ACTION_HIGHLIGHT -> return mark(container, MarkerKind.HIGHLIGHT)
@@ -358,8 +358,9 @@ class RecordingService : Service(), EffectHandler {
             if (action in NO_SERVICE_NEEDED && !container.serviceRunning) {
                 return dispatchDirect(container, action)
             }
-            try {
+            return try {
                 ContextCompat.startForegroundService(context, intent(context, action))
+                null
             } catch (e: IllegalStateException) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     e is ForegroundServiceStartNotAllowedException
@@ -440,22 +441,21 @@ class RecordingService : Service(), EffectHandler {
             container.controller.dispatch(RecordingCommand.Start(sessionId))
         }
 
-        private fun mark(container: AppContainer, kind: MarkerKind) {
+        private fun mark(container: AppContainer, kind: MarkerKind): Job =
             container.appScope.launch { container.placeMarker(kind) }
-        }
 
-        private fun dispatchDirect(container: AppContainer, action: String) {
+        /** Runs [action] without a service; the returned job completes when its effects have. */
+        private fun dispatchDirect(container: AppContainer, action: String): Job? {
             if (action == ACTION_START) {
-                container.appScope.launch { startIfIdle(container) }
-                return
+                return container.appScope.launch { startIfIdle(container) }
             }
             val command = when (action) {
                 ACTION_PAUSE -> RecordingCommand.Pause
                 ACTION_RESUME -> RecordingCommand.Resume
                 ACTION_STOP -> RecordingCommand.Stop
-                else -> return
+                else -> return null
             }
-            container.appScope.launch { container.controller.dispatch(command) }
+            return container.appScope.launch { container.controller.dispatch(command) }
         }
     }
 }
