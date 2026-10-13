@@ -793,62 +793,7 @@ main:focus { outline: none; }
   src="https://browser.sentry-cdn.com/11.7.0/bundle.min.js"
   integrity="sha384-pcGGZENc/9ixLGuPGs+iPsafE9o5guu+5zU+Zq54OXzaw7GuDno4Mvs0VCLgEQkZ"
   crossorigin="anonymous"></script>
-<script>
-(function () {
-  "use strict";
-  if (!window.Sentry) return;
-  window.Sentry.init({
-    dsn: "https://9680d640a14320fb3282ed4112c55c3f@o4508955926396928.ingest.us.sentry.io/4512245212512256",
-    environment: location.hostname === "localhost" ? "development" : "production",
-    release: "ai-daily-memory-web@0.1.0",
-    sendDefaultPii: false,
-    maxBreadcrumbs: 0,
-    tracesSampleRate: 0,
-    beforeBreadcrumb: function () { return null; },
-    beforeSend: function (event) {
-      [
-        "breadcrumbs", "contexts", "culprit", "debug_meta", "extra", "logentry", "message",
-        "request", "server_name", "spans", "tags", "threads", "transaction", "user"
-      ].forEach(function (field) { delete event[field]; });
-      if (event.exception && event.exception.values) {
-        event.exception.values.forEach(function (value) {
-          delete value.value;
-          if (value.stacktrace && value.stacktrace.frames) {
-            value.stacktrace.frames.forEach(function (frame) {
-              if (typeof frame.filename === "string") {
-                var normalizedPath = frame.filename.replace(/\\/g, "/");
-                if (normalizedPath.charAt(0) === "/" || /^[A-Za-z]:\//.test(normalizedPath)) {
-                  frame.filename = normalizedPath.split("/").pop();
-                }
-              }
-              ["abs_path", "vars", "pre_context", "context_line", "post_context"]
-                .forEach(function (field) { delete frame[field]; });
-            });
-          }
-        });
-      }
-      return event;
-    }
-  });
-})();
-</script>
-<script>
-(function () {
-  "use strict";
-  var toast = document.getElementById("dl-toast");
-  var hideTimer = null;
-  function showToast(message) {
-    toast.textContent = message;
-    toast.classList.add("show");
-    if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(function () { toast.classList.remove("show"); }, 6000);
-  }
-  document.addEventListener("click", function (event) {
-    var link = event.target && event.target.closest ? event.target.closest(".js-apk-dl") : null;
-    if (!link) return;
-    showToast("Opening the latest GitHub release APK. If it isn't there yet, no release has been published; see All releases.");
-  });
-})();
-</script>
+<script src="/sentry-init.js"></script>
+<script src="/site.js"></script>
 </body>
 </html>

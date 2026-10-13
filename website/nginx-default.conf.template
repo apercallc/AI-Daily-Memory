@@ -4,6 +4,18 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Security headers. The page loads one external script (the pinned, SRI-checked Sentry
+    # bundle) and its two own scripts from this origin; there are no inline scripts, so no
+    # script nonce or hash is needed. The inline <style> block needs 'unsafe-inline' for styles
+    # only; img-src data: covers the inline SVG favicon and background texture. connect-src is the
+    # Sentry ingest host from sentry-init.js. If you add another origin to index.html, add it here.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://o4508955926396928.ingest.us.sentry.io; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
     # Single-page static site; everything that is not a file is the page itself.
     location / {
         try_files $uri $uri/ /index.html;
