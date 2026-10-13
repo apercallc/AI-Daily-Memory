@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Daily Memory — Your day, remembered.</title>
-<meta name="description" content="A personal memory project for Android and Wear OS. Free direct APK download with in-app updates — explore the approach and privacy choices.">
+<meta name="description" content="A personal memory project for Android and Wear OS. Free direct APK download from GitHub Releases — explore the approach and privacy choices.">
 <meta name="theme-color" content="#f6f1e7">
 <meta property="og:title" content="AI Daily Memory — Your day, remembered.">
-<meta property="og:description" content="A personal memory project for Android and Wear OS. Free direct APK download — the app updates itself in-app.">
+<meta property="og:description" content="A personal memory project for Android and Wear OS. Free direct APK download from GitHub Releases.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23211b14'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23c8361f'/%3E%3C/svg%3E">
 <style>
@@ -444,7 +444,7 @@ main:focus { outline: none; }
         <p class="kicker fade-1">In development · Android + Wear OS</p>
         <h1 class="fade-1">Your day, <em>remembered.</em></h1>
         <p class="lede fade-2">A place to return to the conversations that matter. We’re building a personal memory system that connects decisions and commitments to the moments they came from.</p>
-        <p class="promise fade-3">Free direct download for Android. The app updates itself — no store needed.</p>
+        <p class="promise fade-3">Free direct download for Android from GitHub Releases. No store needed.</p>
         <div class="hero-ctas fade-3">
           <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download for Android</a>
           <a class="btn btn-ghost" href="#what">Explore the idea</a>
@@ -645,12 +645,12 @@ main:focus { outline: none; }
           </div>
           <div class="mode">
             <div class="mode-name">Reports in my cloud account</div>
-            <p>Designed to retain daily reports and structured items server-side while keeping full transcripts on your phone. This mode is a product target; report retention for this mode is not implemented yet.</p>
-            <div class="leak off-cloud">→ not available yet</div>
+            <p>The backend can hold daily reports and structured memory items that your phone syncs to it, while full transcripts stay on the phone. Sync is explicit and opt-in: the phone pushes only what you send, and transcript lines are included only if you turn that on. Deleting a session on the phone propagates to the server on the next sync.</p>
+            <div class="leak off-cloud">→ reports and items readable server-side, by choice</div>
           </div>
           <div class="mode">
             <div class="mode-name">Full cloud</div>
-            <p>Reports and synced memory are available to authorized clients through the public REST API. This requires an explicit choice; provider stages are disabled by default.</p>
+            <p>Reports and synced memory are available to authorized clients through the public REST API. This requires an explicit choice; cloud processing stages are disabled by default.</p>
             <div class="leak off-cloud">→ readable server-side, by choice and only when enabled</div>
           </div>
         </aside>
@@ -683,7 +683,7 @@ main:focus { outline: none; }
             <li>The in-app daily report screen</li>
             <li>Ask My Memory — natural-language recall with evidence</li>
             <li>API access for user-owned clients (read-only scopes)</li>
-            <li>Automatic APK releases with in-app updates</li>
+            <li>Published, signed APK releases (the in-app update check needs them)</li>
             <li>iPhone and Apple Watch, once Android is proven</li>
           </ul>
         </div>
@@ -697,12 +697,12 @@ main:focus { outline: none; }
     <div class="wrap">
       <p class="sec-label">06 · Get it</p>
       <h2 class="sec-head">Android first. Straight from the source.</h2>
-      <p class="sec-body">The phone app ships as a signed APK straight from GitHub Releases. Tap below to start the download — and once installed, the app checks for updates by itself every time it opens. It's not on Google Play yet, and we're not rushing it there.</p>
+      <p class="sec-body">The phone app is distributed as an APK through GitHub Releases, signed with a key kept outside the repository. Releases are cut by hand, so the latest release may be older than the code on GitHub, and the download link only works once a release with the phone APK attached has been published. The app can check GitHub Releases for newer versions. It's not on Google Play yet.</p>
       <div class="dl-card">
         <div>
           <h3>AI Daily Memory for Android</h3>
           <p>Tap Download, open the file when it lands, and allow installs from your browser when Android asks. Updates after that happen inside the app.</p>
-          <p class="dl-meta">Android 10+ · Wear OS companion · Signed APK via GitHub Releases</p>
+          <p class="dl-meta">Android 10+ · Wear OS companion · APK via GitHub Releases (manual releases)</p>
         </div>
         <div class="dl-actions">
           <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download APK</a>
@@ -749,7 +749,7 @@ main:focus { outline: none; }
         </details>
         <details>
           <summary><span class="qnum">Q8</span>Can I delete everything?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">Yes. Stopping a session asks Keep or Delete; deleting removes that session's audio and its derived data. Retention is a setting, and full account deletion — including derived memory — is planned as a right, not an upsell.</div>
+          <div class="answer">Yes. Stopping a session asks Keep or Delete; deleting removes that session's audio and its derived data, and a later sync removes the server-side copy of that session's memory. If you have a server account, deleting it (<code>DELETE /v1/me</code>) removes your server-side data and your storage prefix, and the call is retried if cleanup is incomplete. Self-service data export is not built yet.</div>
         </details>
       </div>
     </div>
@@ -846,7 +846,7 @@ main:focus { outline: none; }
   document.addEventListener("click", function (event) {
     var link = event.target && event.target.closest ? event.target.closest(".js-apk-dl") : null;
     if (!link) return;
-    showToast("Download starting — AI Daily Memory for Android (APK). On Android, open it when it lands to install.");
+    showToast("Opening the latest GitHub release APK. If it isn't there yet, no release has been published; see All releases.");
   });
 })();
 </script>

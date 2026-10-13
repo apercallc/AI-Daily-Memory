@@ -8,7 +8,8 @@ All notable changes to AI Daily Memory. Format follows
 ### Added
 
 - Landing page (`website/index.html`): product explainer, who it's for, privacy,
-  honest status, FAQ, and download section ahead of APK auto-releases.
+  honest status, FAQ, and a download section that links to GitHub Releases. Releases are
+  built and signed locally; there is no release workflow in CI yet.
 - README diagrams: system architecture, recording state machine, on-phone capture
   pipeline, upload/processing sequence, and storage-mode data flow (mermaid).
 - `apps/android/README.md`: first-run walkthrough and private-testing install guide.
