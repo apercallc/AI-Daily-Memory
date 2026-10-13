@@ -40,7 +40,7 @@ class ProcessingPipelineTest {
             .build()
         settings = ProcessingSettings(
             context.getSharedPreferences("processing-pipeline-test", Context.MODE_PRIVATE),
-        ).apply {
+        ) { com.apercallc.aidailymemory.settings.testAead() }.apply {
             setProcessingEnabled(true)
         }
     }

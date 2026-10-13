@@ -10,6 +10,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
@@ -20,6 +23,8 @@ class ProcessingSettingsTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val preferences = context.getSharedPreferences("processing-settings-test", Context.MODE_PRIVATE)
 
+    private val aead = testAead()
+
     @Before
     fun setUp() {
         preferences.edit().clear().commit()
@@ -27,7 +32,7 @@ class ProcessingSettingsTest {
 
     @Test
     fun `changing transcript sync consent resends all reports once`() {
-        val settings = ProcessingSettings(preferences)
+        val settings = ProcessingSettings(preferences) { aead }
         settings.lastSyncEpochMs = 10_000L
 
         settings.setSyncIncludeTranscripts(true)
@@ -44,18 +49,73 @@ class ProcessingSettingsTest {
     }
 
     @Test
+    fun `secrets are sealed at rest and round trip`() {
+        val settings = ProcessingSettings(preferences) { aead }
+
+        settings.transcriptionApiKey = "tr-secret"
+        settings.extractionApiKey = "ex-secret"
+        settings.syncToken = "sync-secret"
+
+        val stored = preferences.all.values.filterIsInstance<String>()
+        assertTrue(stored.none { it.contains("secret") })
+        val reopened = ProcessingSettings(preferences) { aead }
+        assertEquals("tr-secret", reopened.transcriptionApiKey)
+        assertEquals("ex-secret", reopened.extractionApiKey)
+        assertEquals("sync-secret", reopened.syncToken)
+    }
+
+    @Test
+    fun `plaintext values from older versions migrate on first read`() {
+        preferences.edit()
+            .putString("transcription_api_key", "old-key")
+            .putString("sync_token", "old-token")
+            .commit()
+        val settings = ProcessingSettings(preferences) { aead }
+
+        assertEquals("old-key", settings.transcriptionApiKey)
+        assertEquals("old-token", settings.syncToken)
+
+        assertFalse(preferences.contains("transcription_api_key"))
+        assertFalse(preferences.contains("sync_token"))
+        assertEquals("old-key", ProcessingSettings(preferences) { aead }.transcriptionApiKey)
+    }
+
+    @Test
+    fun `an undecryptable secret reads as unset and is not replaced by plaintext`() {
+        ProcessingSettings(preferences) { aead }.extractionApiKey = "ex-secret"
+
+        val otherAead = newTestAead()
+        val other = ProcessingSettings(preferences) { otherAead }
+
+        assertNull(other.extractionApiKey)
+    }
+
+    @Test
+    fun `clearing a secret removes sealed and plaintext entries`() {
+        preferences.edit().putString("sync_token", "old").commit()
+        val settings = ProcessingSettings(preferences) { aead }
+        settings.syncToken = "new"
+
+        settings.syncToken = null
+
+        assertNull(ProcessingSettings(preferences) { aead }.syncToken)
+        assertFalse(preferences.contains("sync_token"))
+        assertFalse(preferences.contains("sync_token_sealed"))
+    }
+
+    @Test
     fun `sync failure state is observable and persisted`() {
-        val settings = ProcessingSettings(preferences)
+        val settings = ProcessingSettings(preferences) { aead }
 
         settings.setLastSyncFailed(true)
         assertEquals(true, settings.lastSyncFailed.value)
 
-        assertEquals(true, ProcessingSettings(preferences).lastSyncFailed.value)
+        assertEquals(true, ProcessingSettings(preferences) { aead }.lastSyncFailed.value)
     }
 
     @Test
     fun `changing extraction provider emits a configuration revision`() {
-        val settings = ProcessingSettings(preferences)
+        val settings = ProcessingSettings(preferences) { aead }
 
         settings.setExtractionProvider(ProcessingSettings.PROVIDER_USER_API)
 
@@ -65,7 +125,7 @@ class ProcessingSettingsTest {
 
     @Test
     fun `text configuration edits emit revisions and persist`() = runTest {
-        val settings = ProcessingSettings(preferences)
+        val settings = ProcessingSettings(preferences) { aead }
         val revisions = mutableListOf<Long>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             settings.configRevision.take(3).toList(revisions)

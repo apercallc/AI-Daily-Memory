@@ -121,7 +121,16 @@ class AppContainer(context: Context) {
     )
     val processingSettings = ProcessingSettings(
         app.getSharedPreferences(ProcessingSettings.FILE_NAME, Context.MODE_PRIVATE),
+        aead = { processingAead },
     )
+    private val processingAead by lazy {
+        LinkStore.keystoreAead(
+            app,
+            "processing_keyset",
+            "processing_keys",
+            "android-keystore://aidm_processing_master_key",
+        )
+    }
     private val stopDecisionPreferences by lazy {
         app.getSharedPreferences(STOP_DECISION_PREFERENCES, Context.MODE_PRIVATE)
     }

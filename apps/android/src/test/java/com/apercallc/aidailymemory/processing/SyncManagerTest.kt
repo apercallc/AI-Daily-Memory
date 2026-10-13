@@ -35,7 +35,7 @@ class SyncManagerTest {
             .build()
         settings = ProcessingSettings(
             context.getSharedPreferences("sync-manager-test", Context.MODE_PRIVATE),
-        ).apply {
+        ) { com.apercallc.aidailymemory.settings.testAead() }.apply {
             setSyncEnabled(true)
             syncUrl = "https://sync.example/v1/sync"
         }

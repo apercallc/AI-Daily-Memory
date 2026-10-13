@@ -1,7 +1,11 @@
 package com.apercallc.aidailymemory.settings
 
 import android.content.SharedPreferences
+import android.util.Base64
 import androidx.core.content.edit
+import com.apercallc.aidailymemory.platform.logFailure
+import com.google.crypto.tink.Aead
+import java.security.GeneralSecurityException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,10 +19,87 @@ import kotlinx.coroutines.flow.asStateFlow
  * user-supplied API key) before any transcription or extraction runs. Sync is also off by
  * default until the user enters an API endpoint and auth token.
  *
- * Writes publish immediately; reads never throw. API keys and tokens are stored in
- * SharedPreferences (app-private, credential-encrypted storage) and never logged.
+ * Writes publish immediately; reads never throw. The transcription key, extraction key and
+ * sync bearer token are sealed with a Keystore-backed AEAD (same scheme as the account token in
+ * `LinkStore`) before they reach SharedPreferences, and are never logged. A value that can no
+ * longer be decrypted (Keystore reset) reads as unset; it is never guessed at. Plaintext values
+ * written by earlier versions are sealed on first read and the plaintext entry removed.
+ * Nothing touches the Keystore until a secret is read or written (call off the main thread
+ * where possible).
  */
-class ProcessingSettings(private val prefs: SharedPreferences) {
+class ProcessingSettings(private val prefs: SharedPreferences, private val aead: () -> Aead) {
+
+    /** One sealed secret: cached after the first read so the Keystore is hit once. */
+    private inner class SealedSecret(
+        private val legacyKey: String,
+        private val sealedKey: String,
+        private val purpose: String,
+    ) {
+        private val ad = "aidm:processing-secret:$purpose:v1".toByteArray(Charsets.UTF_8)
+        private var cached: String? = null
+        private var read = false
+
+        @Synchronized
+        fun get(): String? {
+            if (read) return cached
+            read = true
+            cached = load()
+            return cached
+        }
+
+        @Synchronized
+        fun set(value: String?) {
+            read = true
+            cached = value
+            if (value == null) {
+                prefs.edit {
+                    remove(sealedKey)
+                    remove(legacyKey)
+                }
+                return
+            }
+            val sealed = seal(value)
+            prefs.edit {
+                remove(legacyKey)
+                if (sealed != null) putString(sealedKey, sealed) else remove(sealedKey)
+            }
+        }
+
+        private fun seal(value: String): String? = try {
+            Base64.encodeToString(aead().encrypt(value.toByteArray(Charsets.UTF_8), ad), Base64.NO_WRAP)
+        } catch (e: GeneralSecurityException) {
+            // Never fall back to plaintext: the value lives in memory until the process ends.
+            logFailure(TAG, "secret_seal_failed", e, warning = true)
+            null
+        }
+
+        private fun load(): String? {
+            prefs.getString(sealedKey, null)?.let { sealed ->
+                return try {
+                    aead().decrypt(Base64.decode(sealed, Base64.NO_WRAP), ad).toString(Charsets.UTF_8)
+                } catch (e: GeneralSecurityException) {
+                    logFailure(TAG, "secret_unreadable", e, warning = true)
+                    null
+                } catch (e: IllegalArgumentException) {
+                    logFailure(TAG, "secret_invalid", e, warning = true)
+                    null
+                }
+            }
+            val legacy = prefs.getString(legacyKey, null) ?: return null
+            // Migrate: seal first, drop the plaintext only once the sealed copy is stored.
+            seal(legacy)?.let { sealed ->
+                prefs.edit {
+                    putString(sealedKey, sealed)
+                    remove(legacyKey)
+                }
+            }
+            return legacy
+        }
+    }
+
+    private val transcriptionKey = SealedSecret(KEY_TRANSCRIPTION_API_KEY, KEY_TRANSCRIPTION_API_KEY_SEALED, "transcription")
+    private val extractionKey = SealedSecret(KEY_EXTRACTION_API_KEY, KEY_EXTRACTION_API_KEY_SEALED, "extraction")
+    private val syncSecret = SealedSecret(KEY_SYNC_TOKEN, KEY_SYNC_TOKEN_SEALED, "sync")
 
     private val _configRevision = MutableStateFlow(0L)
     /** Emits whenever a non-flow provider or sync setting changes. */
@@ -51,11 +132,9 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
     }
 
     var transcriptionApiKey: String?
-        get() = prefs.getString(KEY_TRANSCRIPTION_API_KEY, null)
+        get() = transcriptionKey.get()
         set(value) {
-            prefs.edit {
-                if (value == null) remove(KEY_TRANSCRIPTION_API_KEY) else putString(KEY_TRANSCRIPTION_API_KEY, value)
-            }
+            transcriptionKey.set(value)
             configChanged()
         }
 
@@ -82,11 +161,9 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
     }
 
     var extractionApiKey: String?
-        get() = prefs.getString(KEY_EXTRACTION_API_KEY, null)
+        get() = extractionKey.get()
         set(value) {
-            prefs.edit {
-                if (value == null) remove(KEY_EXTRACTION_API_KEY) else putString(KEY_EXTRACTION_API_KEY, value)
-            }
+            extractionKey.set(value)
             configChanged()
         }
 
@@ -148,11 +225,9 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
         }
 
     var syncToken: String?
-        get() = prefs.getString(KEY_SYNC_TOKEN, null)
+        get() = syncSecret.get()
         set(value) {
-            prefs.edit {
-                if (value == null) remove(KEY_SYNC_TOKEN) else putString(KEY_SYNC_TOKEN, value)
-            }
+            syncSecret.set(value)
             configChanged()
         }
 
@@ -186,6 +261,10 @@ class ProcessingSettings(private val prefs: SharedPreferences) {
         private const val KEY_TRANSCRIPTION_PROVIDER = "transcription_provider"
         private const val KEY_TRANSCRIPTION_API_KEY = "transcription_api_key"
         private const val KEY_TRANSCRIPTION_API_URL = "transcription_api_url"
+        private const val TAG = "ProcessingSettings"
+        private const val KEY_TRANSCRIPTION_API_KEY_SEALED = "transcription_api_key_sealed"
+        private const val KEY_EXTRACTION_API_KEY_SEALED = "extraction_api_key_sealed"
+        private const val KEY_SYNC_TOKEN_SEALED = "sync_token_sealed"
         private const val KEY_EXTRACTION_PROVIDER = "extraction_provider"
         private const val KEY_EXTRACTION_API_KEY = "extraction_api_key"
         private const val KEY_EXTRACTION_API_URL = "extraction_api_url"
