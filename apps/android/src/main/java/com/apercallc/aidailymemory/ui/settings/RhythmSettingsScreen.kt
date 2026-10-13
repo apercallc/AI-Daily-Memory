@@ -68,6 +68,7 @@ data class AccountActions(
     val disconnect: () -> Unit = {},
     val retryUploads: () -> Unit = {},
     val changeStorageMode: (String) -> Unit = {},
+    val retryStorageMode: () -> Unit = {},
 )
 
 /** Stateless: renders the rhythm and retention, reports edits as whole new values. */
@@ -114,6 +115,7 @@ fun RhythmSettingsScreen(
                 onDisconnect = accountActions.disconnect,
                 onRetryUploads = accountActions.retryUploads,
                 onStorageModeChange = accountActions.changeStorageMode,
+                onStorageModeRetry = accountActions.retryStorageMode,
             )
         }
         HorizontalDivider()

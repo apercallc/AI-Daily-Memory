@@ -14,6 +14,7 @@ import com.apercallc.aidailymemory.net.ConnectError
 import com.apercallc.aidailymemory.net.LinkProblem
 import com.apercallc.aidailymemory.ui.settings.AccountSection
 import com.apercallc.aidailymemory.ui.settings.AccountUi
+import com.apercallc.aidailymemory.ui.settings.StorageModeError
 import com.apercallc.aidailymemory.ui.settings.hostOf
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import org.junit.Rule
@@ -87,6 +88,35 @@ class AccountSectionTest {
         show(AccountUi(error = ConnectError.UNREACHABLE))
         compose.onNodeWithText("Couldn't reach the server. Check the address and your connection.")
             .assertExists()
+    }
+
+    @Test
+    fun `a failed storage mode fetch is shown with a retry, not as endless loading`() {
+        var retries = 0
+        compose.setContent {
+            AiDailyMemoryTheme {
+                AccountSection(
+                    AccountUi(host = "api.example", storageModeError = StorageModeError.LOAD_FAILED),
+                    onConnect = { _, _, _ -> },
+                    onEdit = {},
+                    onDisconnect = {},
+                    onRetryUploads = {},
+                    onStorageModeRetry = { retries++ },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Couldn't load your storage setting. Check your connection and try again.")
+            .assertExists()
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(1, retries)
+    }
+
+    @Test
+    fun `a failed storage mode change is explained and keeps the current mode`() {
+        show(AccountUi(host = "api.example", storageMode = "phone_only", storageModeError = StorageModeError.CHANGE_FAILED))
+
+        compose.onNodeWithText("Couldn't change the storage setting. Nothing was changed; try again.").assertExists()
     }
 
     @Test

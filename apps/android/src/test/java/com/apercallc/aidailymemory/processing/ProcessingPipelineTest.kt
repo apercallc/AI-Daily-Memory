@@ -105,6 +105,25 @@ class ProcessingPipelineTest {
         assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
     }
 
+    @Test
+    fun `incomplete settings leave sessions pending instead of failing them`() = runTest {
+        addTranscribedSession()
+
+        val run = pipeline(
+            extractionProvider = object : ExtractionProvider {
+                override val name = "disabled"
+                override val model = "none"
+                override suspend fun extract(lines: List<NumberedLine>): ExtractionResult =
+                    error("must not run with incomplete settings")
+            },
+            configGaps = { listOf(com.apercallc.aidailymemory.recording.processing.ConfigGap.EXTRACTION_KEY) },
+        ).processPending()
+
+        assertEquals(ProcessingRun(0, 0, 0), run)
+        assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
+        assertEquals(null, database.processingState().forSession(SESSION_ID)?.lastError)
+    }
+
     private suspend fun addTranscribedSession(segmentState: String = "DELETED") {
         database.segments().insert(
             SegmentEntity(
@@ -155,6 +174,7 @@ class ProcessingPipelineTest {
     private fun pipeline(
         extractionProvider: ExtractionProvider,
         shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
+        configGaps: () -> List<com.apercallc.aidailymemory.recording.processing.ConfigGap> = { emptyList() },
     ) = ProcessingPipeline(
         segments = SegmentStore(
             directory = ApplicationProvider.getApplicationContext<Context>().cacheDir,
@@ -187,6 +207,7 @@ class ProcessingPipelineTest {
         ids = UuidV7Generator(),
         now = { 42L },
         shouldKeepAudioForUpload = shouldKeepAudioForUpload,
+        configGaps = configGaps,
     )
 
     private companion object {

@@ -17,6 +17,7 @@ import com.apercallc.aidailymemory.data.SegmentEntity
 import com.apercallc.aidailymemory.data.SpeechDao
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.processing.ExtractedItem
 import com.apercallc.aidailymemory.recording.processing.NumberedLine
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
@@ -59,6 +60,8 @@ class ProcessingPipeline(
     private val ids: UuidV7Generator,
     private val now: () -> Long = System::currentTimeMillis,
     private val shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
+    /** Non-empty = settings are incomplete: sessions wait instead of failing (see settings UI). */
+    private val configGaps: () -> List<ConfigGap> = { emptyList() },
 ) {
     /**
      * Processes up to [limit] sessions, oldest first. Cancellation stops between sessions.
@@ -66,6 +69,12 @@ class ProcessingPipeline(
      */
     suspend fun processPending(limit: Int = BATCH): ProcessingRun {
         if (!settings.processingEnabled.value) return ProcessingRun(0, 0, 0)
+        if (configGaps().isNotEmpty()) {
+            // Never run with a placeholder provider: that would mark every session FAILED.
+            // Settings show what is missing; saving them re-queues and reschedules.
+            Log.w(TAG, "processing_waiting_for_settings")
+            return ProcessingRun(0, 0, 0)
+        }
 
         processingStateDao.enqueueReadySessions(EnergyVad.VERSION, now())
         var processed = 0
@@ -82,7 +91,7 @@ class ProcessingPipeline(
                 }
                 throw e
             } catch (e: ProcessingException) {
-                Log.w(TAG, "processing_failed session=${state.sessionId} code=${e.code}")
+                Log.w(TAG, "processing_failed code=${e.code}")
                 failed++
                 updateState(state.sessionId, if (e.retryable) "PENDING" else "FAILED", e.code)
             } catch (e: Exception) {

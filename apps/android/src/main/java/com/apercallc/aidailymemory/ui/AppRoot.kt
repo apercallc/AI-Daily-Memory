@@ -186,6 +186,7 @@ private fun SettingsRoute(
                     disconnect = viewModel::disconnect,
                     retryUploads = viewModel::retryUploads,
                     changeStorageMode = viewModel::changeStorageMode,
+                    retryStorageMode = viewModel::reloadStorageMode,
                 )
             },
             update = update,

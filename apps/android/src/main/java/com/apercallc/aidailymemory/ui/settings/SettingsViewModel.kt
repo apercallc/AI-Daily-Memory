@@ -12,6 +12,7 @@ import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.apercallc.aidailymemory.net.ConnectError
+import com.apercallc.aidailymemory.net.ServerLink
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -28,6 +29,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Storage mode as the settings screen sees it: loading, loaded, updating, or failed. */
+internal data class StorageModeUi(
+    val mode: String? = null,
+    val updating: Boolean = false,
+    val error: StorageModeError? = null,
+)
 
 private data class UrlDrafts(
     val transcription: String? = null,
@@ -69,26 +77,38 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val linker = container.accountLinker
     private val connecting = MutableStateFlow(false)
     private val connectError = MutableStateFlow<ConnectError?>(null)
-    private val storageMode = MutableStateFlow<String?>(null)
-    private val storageModeUpdating = MutableStateFlow(false)
+    private val storage = MutableStateFlow(StorageModeUi())
 
     init {
         // Refetched from scratch on every link change: a mode fetched under an old token must
         // never be shown as if it were the new account's.
         viewModelScope.launch {
             container.links.link.collectLatest { link ->
-                storageMode.value = null
-                if (link == null) return@collectLatest
-                storageMode.value = try {
-                    withContext(Dispatchers.IO) { container.accountApi.me(link) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logFailure(TAG, "storage_mode_fetch_failed", e)
-                    null
-                }
+                storage.value = StorageModeUi()
+                if (link != null) fetchStorageMode(link)
             }
         }
+    }
+
+    private suspend fun fetchStorageMode(link: ServerLink) {
+        storage.update { it.copy(error = null) }
+        try {
+            val mode = withContext(Dispatchers.IO) { container.accountApi.me(link) }
+            storage.update { it.copy(mode = mode, error = null) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "storage_mode_fetch_failed", e)
+            // Distinct from "still loading" (mode == null, no error): the UI offers a retry.
+            storage.update { it.copy(mode = null, error = StorageModeError.LOAD_FAILED) }
+        }
+    }
+
+    /** Retry after a failed fetch. */
+    fun reloadStorageMode() {
+        val link = container.links.link.value ?: return
+        if (storage.value.updating) return
+        viewModelScope.launch { fetchStorageMode(link) }
     }
 
     val account: StateFlow<AccountUi> = combine(
@@ -103,8 +123,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.links.link.flatMapLatest {
             container.database.clips().observeProblems(container.links.uploadSinceEpochMs)
         },
-        combine(storageMode, storageModeUpdating, ::Pair),
-    ) { (link, problem, revoke), busy, error, problems, (mode, modeUpdating) ->
+        storage,
+    ) { (link, problem, revoke), busy, error, problems, storageUi ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
             problem = problem,
@@ -113,8 +133,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             uploadProblems = problems,
             revokePending = revoke.first,
             revokeManual = revoke.second,
-            storageMode = mode,
-            storageModeUpdating = modeUpdating,
+            storageMode = storageUi.mode,
+            storageModeUpdating = storageUi.updating,
+            storageModeError = storageUi.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 
@@ -144,6 +165,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             extractionApiUrlInvalid = drafts.extraction != null,
             extractionModel = pSettings.extractionModel ?: "",
             deleteAudioAfterTranscription = deleteAudio,
+            configGaps = pSettings.configGaps(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
 
@@ -258,8 +280,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** Switches storage mode server-side; audio already uploaded is unaffected (ADR-0014). */
     fun changeStorageMode(mode: String) {
         val link = container.links.link.value ?: return
-        if (storageModeUpdating.value) return
-        storageModeUpdating.value = true
+        if (storage.value.updating) return
+        storage.update { it.copy(updating = true, error = null) }
         viewModelScope.launch {
             val applied = try {
                 withContext(Dispatchers.IO) { container.accountApi.setStorageMode(link, mode) }
@@ -270,8 +292,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 logFailure(TAG, "storage_mode_change_failed", e)
                 false
             }
-            if (applied) storageMode.value = mode
-            storageModeUpdating.value = false
+            storage.update {
+                if (applied) {
+                    it.copy(mode = mode, updating = false)
+                } else {
+                    it.copy(updating = false, error = StorageModeError.CHANGE_FAILED)
+                }
+            }
         }
     }
 

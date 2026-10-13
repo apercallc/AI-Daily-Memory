@@ -1,6 +1,13 @@
 package com.apercallc.aidailymemory.ui.settings
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
+import com.apercallc.aidailymemory.settings.ProcessingSettings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -30,16 +36,18 @@ import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 /** State for the processing settings section. */
 data class ProcessingUi(
     val enabled: Boolean = false,
-    val transcriptionProvider: String = "disabled",
+    val transcriptionProvider: String = ProcessingSettings.PROVIDER_DISABLED,
     val transcriptionApiKey: String = "",
     val transcriptionApiUrl: String = "",
     val transcriptionApiUrlInvalid: Boolean = false,
-    val extractionProvider: String = "disabled",
+    val extractionProvider: String = ProcessingSettings.PROVIDER_DISABLED,
     val extractionApiKey: String = "",
     val extractionApiUrl: String = "",
     val extractionApiUrlInvalid: Boolean = false,
     val extractionModel: String = "",
     val deleteAudioAfterTranscription: Boolean = true,
+    /** Settings still missing; non-empty while enabled means sessions wait, not fail. */
+    val configGaps: List<ConfigGap> = emptyList(),
 )
 
 /** State for the sync settings section. */
@@ -114,6 +122,14 @@ fun ProcessingSettingsSection(
             )
         }
         if (processing.enabled) {
+            if (processing.configGaps.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.processing_incomplete),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
             // Transcription provider
             SettingsCard {
                 Column {
@@ -126,7 +142,7 @@ fun ProcessingSettingsSection(
                         selected = processing.transcriptionProvider,
                         onSelect = actions.onTranscriptionProviderChange,
                     )
-                    if (processing.transcriptionProvider == "user-api") {
+                    if (processing.transcriptionProvider == ProcessingSettings.PROVIDER_USER_API) {
                         Column(modifier = Modifier.padding(spacing.md)) {
                             OutlinedTextField(
                                 value = processing.transcriptionApiUrl,
@@ -173,7 +189,7 @@ fun ProcessingSettingsSection(
                         selected = processing.extractionProvider,
                         onSelect = actions.onExtractionProviderChange,
                     )
-                    if (processing.extractionProvider == "user-api") {
+                    if (processing.extractionProvider == ProcessingSettings.PROVIDER_USER_API) {
                         Column(modifier = Modifier.padding(spacing.md)) {
                             OutlinedTextField(
                                 value = processing.extractionApiUrl,
@@ -310,33 +326,32 @@ fun SyncSettingsSection(
 private fun ProviderSelector(selected: String, onSelect: (String) -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     val options = listOf(
-        "disabled" to R.string.processing_provider_disabled,
-        "on-device" to R.string.processing_provider_on_device,
-        "user-api" to R.string.processing_provider_user_api,
+        ProcessingSettings.PROVIDER_DISABLED to R.string.processing_provider_disabled,
+        ProcessingSettings.PROVIDER_USER_API to R.string.processing_provider_user_api,
     )
     Column(
-        modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+        modifier = Modifier
+            .padding(horizontal = spacing.md, vertical = spacing.sm)
+            .selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         options.forEach { (value, labelRes) ->
-            val available = value != "on-device"
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = available) { onSelect(value) }
-                    .padding(vertical = spacing.xs),
+                    .heightIn(min = spacing.minTouchTarget)
+                    .selectable(
+                        selected = selected == value,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(value) },
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                androidx.compose.material3.RadioButton(
-                    selected = selected == value,
-                    onClick = if (available) ({ onSelect(value) }) else null,
-                    enabled = available,
-                )
+                RadioButton(selected = selected == value, onClick = null)
                 Text(
                     text = stringResource(labelRes),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (available) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -361,9 +376,13 @@ private fun ToggleRow(
     sublabel: String? = null,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
+    // The whole row toggles, so the label is part of the touch target and TalkBack reads one
+    // switch with its label instead of a bare control.
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = spacing.minTouchTarget)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(spacing.md),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -381,11 +400,7 @@ private fun ToggleRow(
                 )
             }
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            modifier = Modifier.semantics { contentDescription = label },
-        )
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

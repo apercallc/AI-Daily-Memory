@@ -4,6 +4,10 @@ import android.content.SharedPreferences
 import android.util.Base64
 import androidx.core.content.edit
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
+import com.apercallc.aidailymemory.recording.processing.EndpointUrl
+import com.apercallc.aidailymemory.recording.processing.ProcessingConfig
+import com.apercallc.aidailymemory.recording.processing.StageConfig
 import com.google.crypto.tink.Aead
 import java.security.GeneralSecurityException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * SharedPreferences, which are excluded from backup and device transfer like all app data
  * (data_extraction_rules.xml).
  *
- * Processing is disabled by default: the user must configure a provider (on-device or a
- * user-supplied API key) before any transcription or extraction runs. Sync is also off by
+ * Processing is disabled by default: the user must configure a user-supplied API provider
+ * before any transcription or extraction runs (there is no on-device model in this build). Sync is also off by
  * default until the user enters an API endpoint and auth token.
  *
  * Writes publish immediately; reads never throw. The transcription key, extraction key and
@@ -185,6 +189,21 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
             configChanged()
         }
 
+    /** What is missing before processing can run; empty when fully configured. */
+    fun configGaps(): List<ConfigGap> = ProcessingConfig.gaps(
+        transcription = StageConfig(
+            providerIsUserApi = transcriptionProvider.value == PROVIDER_USER_API,
+            urlValid = EndpointUrl.parse(transcriptionApiUrl.orEmpty()) is EndpointUrl.Valid,
+            keyPresent = !transcriptionApiKey.isNullOrBlank(),
+        ),
+        extraction = StageConfig(
+            providerIsUserApi = extractionProvider.value == PROVIDER_USER_API,
+            urlValid = EndpointUrl.parse(extractionApiUrl.orEmpty()) is EndpointUrl.Valid,
+            keyPresent = !extractionApiKey.isNullOrBlank(),
+        ),
+        extractionModelPresent = !extractionModel.isNullOrBlank(),
+    )
+
     // --- Audio cleanup -------------------------------------------------------------
 
     private val _deleteAudioAfterTranscription = MutableStateFlow(
@@ -254,7 +273,6 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
         const val FILE_NAME = "processing_settings"
 
         const val PROVIDER_DISABLED = "disabled"
-        const val PROVIDER_ON_DEVICE = "on-device"
         const val PROVIDER_USER_API = "user-api"
 
         private const val KEY_PROCESSING_ENABLED = "processing_enabled"

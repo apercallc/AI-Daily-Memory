@@ -388,34 +388,33 @@ class AppContainer(context: Context) {
         )
     }
 
+    private fun validUrl(raw: String?): String =
+        (EndpointUrl.parse(raw.orEmpty()) as? EndpointUrl.Valid)?.value.orEmpty()
+
     /** Creates providers per job so edits in Settings apply without restarting the app. */
     val processingScheduler = ProcessingScheduler(app)
     val processingPipeline: ProcessingPipeline
         get() {
-            val tp = when (processingSettings.transcriptionProvider.value) {
-                ProcessingSettings.PROVIDER_USER_API -> {
-                    val url = (EndpointUrl.parse(processingSettings.transcriptionApiUrl.orEmpty()) as? EndpointUrl.Valid)?.value
-                    val key = processingSettings.transcriptionApiKey
-                    if (!url.isNullOrBlank() && !key.isNullOrBlank()) {
-                        ApiKeyTranscriptionProvider(url, key, "user-model")
-                    } else {
-                        StubTranscriptionProvider()
-                    }
-                }
-                else -> StubTranscriptionProvider()
+            // Incomplete settings never reach the providers: the pipeline waits on configGaps
+            // and the settings screen says what is missing. The stubs are unreachable
+            // placeholders that satisfy the types.
+            val tp = if (processingSettings.configGaps().isEmpty()) {
+                ApiKeyTranscriptionProvider(
+                    validUrl(processingSettings.transcriptionApiUrl),
+                    processingSettings.transcriptionApiKey.orEmpty(),
+                    "user-model",
+                )
+            } else {
+                StubTranscriptionProvider()
             }
-            val ep = when (processingSettings.extractionProvider.value) {
-                ProcessingSettings.PROVIDER_USER_API -> {
-                    val url = (EndpointUrl.parse(processingSettings.extractionApiUrl.orEmpty()) as? EndpointUrl.Valid)?.value
-                    val key = processingSettings.extractionApiKey
-                    val model = processingSettings.extractionModel
-                    if (!url.isNullOrBlank() && !key.isNullOrBlank() && !model.isNullOrBlank()) {
-                        ApiKeyExtractionProvider(url, key, model)
-                    } else {
-                        StubExtractionProvider()
-                    }
-                }
-                else -> StubExtractionProvider()
+            val ep = if (processingSettings.configGaps().isEmpty()) {
+                ApiKeyExtractionProvider(
+                    validUrl(processingSettings.extractionApiUrl),
+                    processingSettings.extractionApiKey.orEmpty(),
+                    processingSettings.extractionModel.orEmpty(),
+                )
+            } else {
+                StubExtractionProvider()
             }
             return ProcessingPipeline(
                 segments = segments,
@@ -429,6 +428,7 @@ class AppContainer(context: Context) {
                 transcriptionProvider = tp,
                 extractionProvider = ep,
                 settings = processingSettings,
+                configGaps = processingSettings::configGaps,
                 ids = ids,
                 shouldKeepAudioForUpload = { segment ->
                     links.ensureLoaded()

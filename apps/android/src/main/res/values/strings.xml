@@ -237,6 +237,9 @@
     <string name="account_revoke_manual">An old connection couldn\'t be revoked from this phone. Ask for its device token to be revoked on the server.</string>
     <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
     <string name="storage_mode_title">Where memory lives</string>
+    <string name="storage_mode_load_failed">Couldn\'t load your storage setting. Check your connection and try again.</string>
+    <string name="storage_mode_change_failed">Couldn\'t change the storage setting. Nothing was changed; try again.</string>
+    <string name="storage_mode_retry">Try again</string>
     <string name="storage_mode_phone_only">Phone only — transcripts stay on this phone</string>
     <string name="storage_mode_reports_cloud">Reports in the cloud — daily reports are stored on the server; transcripts stay on this phone</string>
     <string name="storage_mode_full_cloud">Full cloud — transcripts and reports are stored on the server</string>
@@ -260,16 +263,16 @@
     <string name="update_install_failed">Couldn\'t open the installer. The update is downloaded; try again, or allow installs from this app in system settings.</string>
     <string name="update_snackbar">Update available: %1$s</string>
 
-    <!-- On-device processing (ADR-0020) -->
+    <!-- Memory processing with the user\'s own API key (ADR-0020) -->
     <string name="processing_section">Memory processing</string>
-    <string name="processing_explainer">Transcribe and summarize on this phone. Free with on-device models, or use your own API key for higher quality. Audio is deleted after transcription.</string>
-    <string name="processing_enabled">Enable on-device processing</string>
-    <string name="processing_disabled_hint">Processing is off. Enable it to transcribe speech and build daily memory summaries on this phone.</string>
+    <string name="processing_explainer">Transcribe and summarize speech with your own API key. The phone sends audio and text straight to the provider you enter, never to us. Audio is deleted after transcription.</string>
+    <string name="processing_enabled">Enable memory processing</string>
+    <string name="processing_disabled_hint">Processing is off. Enable it to transcribe speech and build daily memory summaries with your own API provider.</string>
     <string name="processing_transcription">Transcription</string>
     <string name="processing_extraction">Summarization &amp; extraction</string>
     <string name="processing_provider_disabled">Off (no transcription)</string>
-    <string name="processing_provider_on_device">On-device processing unavailable in this build</string>
     <string name="processing_provider_user_api">My API key</string>
+    <string name="processing_incomplete">Setup is incomplete. Choose \"My API key\" for transcription and summarization and fill in the address, key and model. Recordings wait until then; nothing is lost.</string>
     <string name="processing_api_key">API key</string>
     <string name="processing_api_url">API endpoint URL</string>
     <string name="processing_model">Model name</string>

@@ -56,7 +56,11 @@ data class AccountUi(
     /** Where memory lives (ADR-0014); null while connected but not yet fetched. */
     val storageMode: String? = null,
     val storageModeUpdating: Boolean = false,
+    /** Fetching or changing the mode failed; distinct from "still loading" (mode == null). */
+    val storageModeError: StorageModeError? = null,
 )
+
+enum class StorageModeError { LOAD_FAILED, CHANGE_FAILED }
 
 /**
  * Connects the phone to the user's account so speech clips can be transcribed (Phase 1).
@@ -71,6 +75,7 @@ fun AccountSection(
     onDisconnect: () -> Unit,
     onRetryUploads: () -> Unit,
     onStorageModeChange: (String) -> Unit = {},
+    onStorageModeRetry: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -82,7 +87,7 @@ fun AccountSection(
         if (account.revokePending) Status(stringResource(R.string.account_revoke_pending), isError = false)
         if (account.revokeManual) Status(stringResource(R.string.account_revoke_manual), isError = true)
         if (account.host != null) {
-            Connected(account, onDisconnect, onRetryUploads, onStorageModeChange)
+            Connected(account, onDisconnect, onRetryUploads, onStorageModeChange, onStorageModeRetry)
         } else {
             ConnectForm(account, onConnect, onEdit)
         }
@@ -101,6 +106,7 @@ private fun Connected(
     onDisconnect: () -> Unit,
     onRetryUploads: () -> Unit,
     onStorageModeChange: (String) -> Unit,
+    onStorageModeRetry: () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Text(
@@ -113,6 +119,18 @@ private fun Connected(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     StorageModePicker(account.storageMode, account.storageModeUpdating, onStorageModeChange)
+    when (account.storageModeError) {
+        StorageModeError.LOAD_FAILED -> {
+            Status(stringResource(R.string.storage_mode_load_failed), isError = true)
+            OutlinedButton(
+                onClick = onStorageModeRetry,
+                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+            ) { Text(stringResource(R.string.storage_mode_retry)) }
+        }
+        StorageModeError.CHANGE_FAILED ->
+            Status(stringResource(R.string.storage_mode_change_failed), isError = true)
+        null -> Unit
+    }
     if (account.uploadProblems > 0) {
         Status(
             pluralStringResource(R.plurals.account_upload_problems, account.uploadProblems, account.uploadProblems),
