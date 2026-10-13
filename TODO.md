@@ -102,6 +102,13 @@ ADR and update consent, retention, failure recovery, and processing-cost decisio
 ## Android design system
 
 - [x] Material 3 Compose shell
+- [x] Build the phone light/dark Material 3 palette from `BrandTokens`
+- [x] Use serif titles and monospaced labels on phone and Wear OS
+- [x] Match phone and watch launcher icons to the paper / ink / red palette
+- [x] Use a labeled navigation rail and centered content on phone windows at 600 dp and wider
+- [x] Adapt the web app shell and notes library for phone and tablet widths
+- [x] Replace the stock Wear purple with the shared dark brand palette
+- [x] Document palette, typography, breakpoints, and accessibility expectations in `docs/design/DESIGN_SYSTEM.md`
 - [x] Edge-to-edge app shell
 - [x] Responsive status / action layout scaffold
 - [x] Define semantic color tokens for recording, paused, warning, error (fixed, not dynamic: `StatusColors`)
@@ -113,6 +120,7 @@ ADR and update consent, retention, failure recovery, and processing-cost decisio
 - [x] Content descriptions for non-text controls (all controls are text; status dot is decorative next to the headline; headline/detail are a polite live region, stats read as label + value)
 - [ ] TalkBack test critical flows
 - [ ] Support font scaling to at least 200% (main screen scrolls, all text in sp, buttons grow with `heightIn`; verify on device)
+- [ ] Verify phone/tablet layouts, TalkBack order, and 200% font scaling on devices before release
 - [ ] Add screenshot/golden testing only if it provides maintainable value
 
 # Phase 0 — Capture reliability

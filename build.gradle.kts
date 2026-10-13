@@ -11,6 +11,7 @@ tasks.register("qualityCheck") {
     description = "Runs stable unit, coverage, and Android lint gates expected before merge."
     dependsOn(
         ":core:recording:check",
+        ":core:recording:lint",
         ":apps:android:testDebugUnitTest",
         ":apps:wear:testDebugUnitTest",
         ":apps:android:lintDebug",

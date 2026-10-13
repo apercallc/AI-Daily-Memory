@@ -4,19 +4,41 @@ import { h, notice, prettyTime, spinner } from "../dom.js";
 
 export async function accountView({ me, signOut }) {
   const caps = await api("/capabilities", { auth: false }).catch(() => ({ email: false, billing: false }));
-  const parts = [
-    h("h1", null, "Account"),
-    h("p", { class: "lede" }, me.email ? `Signed in as ${me.email}.` : "Signed in."),
+  const account = section("Profile", h("p", { class: "m0" }, me.email || "Signed in"),
+    h("p", { class: "field-hint" }, "Your account connects this web library to the notes you choose to sync from your phone."));
+  return h("div", { class: "settings-page" },
+    h("header", { class: "page-heading" },
+      h("div", null, h("h1", null, "Settings"),
+        h("p", { class: "lede" }, "Manage your account, connected devices and the data stored here."))),
     verifyBanner(me, caps),
-    caps.billing ? await planCard() : null,
-    phoneCard(me),
-    await signInsCard(),
-    await keysCard(),
-    passwordCard(),
-    exportCard(),
-    deleteCard(signOut),
-  ];
-  return h("div", null, parts);
+    h("div", { class: "settings-layout" },
+      h("nav", { class: "settings-nav", "aria-label": "Settings sections" },
+        settingLink("settings-account", "Account"),
+        settingLink("settings-phone", "Phone sync"),
+        settingLink("settings-access", "Devices and API"),
+        settingLink("settings-security", "Password"),
+        settingLink("settings-data", "Your data")),
+      h("div", { class: "settings-content" },
+        settingGroup("settings-account", "Account", account, caps.billing ? await planCard() : null),
+        settingGroup("settings-phone", "Phone sync", phoneCard(me)),
+        settingGroup("settings-access", "Devices and API", await signInsCard(), await keysCard()),
+        settingGroup("settings-security", "Sign-in security", passwordCard()),
+        settingGroup("settings-data", "Your data", exportCard(), deleteCard(signOut)))));
+}
+
+function settingLink(id, label) {
+  return h("a", { href: `#${id}`, onclick: (event) => {
+    event.preventDefault();
+    document.getElementById(id)?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+  } }, label);
+}
+
+function settingGroup(id, title, ...children) {
+  return h("section", { class: "settings-group", id, "aria-labelledby": `${id}-title` },
+    h("h2", { id: `${id}-title` }, title), ...children.filter(Boolean));
 }
 
 function verifyBanner(me, caps) {
@@ -50,7 +72,7 @@ async function planCard() {
 }
 
 function section(title, ...children) {
-  return h("section", { class: "card" }, h("h2", { class: "mt0" }, title), ...children);
+  return h("section", { class: "card setting-card" }, h("h3", { class: "mt0" }, title), ...children);
 }
 
 function phoneCard() {

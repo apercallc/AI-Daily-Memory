@@ -22,9 +22,12 @@ S3-compatible (R2 in production, MinIO locally). All of `S3_BUCKET`, `S3_ACCESS_
 `S3_SECRET_ACCESS_KEY` (plus endpoint/region) must be set or uploads return 503. Configure
 the bucket lifecycle backstop per [OBJECT_STORAGE.md](OBJECT_STORAGE.md).
 
-## Provider enablement (Gate B — deliberate)
+## Legacy server-side processing (Gate B — deliberate)
 
-Default posture: **both providers ship disabled.** With them disabled the API refuses
+The current phone app transcribes on-device and syncs notes; it does not upload audio to this
+service. The API's older clip-upload and server-side provider pipeline remains in the backend,
+but is not part of the current phone workflow. Keep those providers disabled unless deliberately
+re-enabling that legacy flow under its ADR and release gates. With them disabled the API refuses
 uploads (`503 processing_unavailable`) and the worker registers no stage handlers — it
 only runs the retention sweep and logs `worker_no_stages_enabled`. That is correct
 behavior, not an outage.
@@ -53,9 +56,21 @@ All three integrations discard event messages, request details, user context, br
 
 `DELETE /v1/me` removes the user's object-storage prefix, writes a minimal durable tombstone, then deletes the account and its cascading database rows. After the maximum PUT URL TTL plus a one-hour grace period, the worker deletes that user's prefix again, covering an object written after the immediate sweep. Failed late-prefix deletes remain queued for retry. If no separate worker process is deployed, set `RETENTION_SWEEP_INTERVAL_SECONDS` on the API service so it runs the same sweep itself (see `app.main.retention_sweep_loop`) — without one of the two running, this cleanup, and temporary-audio retention generally, never executes in production.
 
-## Sync deletion propagation (ADR-0020)
+## Notes and transcript sync (ADR-0026, ADR-0027)
 
-The phone processes audio on-device and may push structured memory (daily reports, memory items, optionally raw transcript lines) to a user-configured sync target. Deleting a session locally queues its id (`sync_deletion_queue`); the next successful sync POST carries it as `deletedSessions`, and `/v1/sync` removes that session's memory items and strips it from any stored daily report (deleting the report outright if nothing else remains for that day) before the local queue is cleared. A sync payload with items references session ids as UUIDs and item kinds/confidence/commitment-direction matching the backend's CHECK constraints; an out-of-contract item is rejected with a 422 and nothing is partially saved.
+The phone transcribes audio on-device. When linked and sync is enabled, `/v1/sync` stores notes,
+session titles/start times, and structured highlights. Transcript sync is optional and off by
+default. When a sync arrives with `includeTranscripts=false`, the service removes transcript text
+already stored in daily reports and notes while retaining the notes and highlights. Do not treat
+the legacy `storage_mode` field or `PUT /v1/me` as a transcript-sync control.
+
+Deleting a session on the phone queues its id (`sync_deletion_queue`); the next successful sync
+carries it as `deletedSessions`, and `/v1/sync` removes its derived memory and report content.
+Removing a note from the web app immediately deletes its server-side note, highlights, and
+transcript and records a durable deleted-note marker. Future phone syncs skip that session, while
+the phone's local copy remains. A sync payload with items references session ids as UUIDs and
+item kinds/confidence/commitment-direction matching the backend's CHECK constraints; an
+out-of-contract item is rejected with a 422 and nothing is partially saved.
 
 ## Health and sanity checks
 

@@ -29,8 +29,8 @@ operator-issued tokens.
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/me` | `upload:write` | Verify a token; returns `storage_mode` and scopes |
-| PUT | `/v1/me` | `upload:write` | Switch storage mode (`phone_only` / `reports_cloud` / `full_cloud`; affects future uploads only) |
+| GET | `/v1/me` | `upload:write` | Verify a token; returns the legacy `storage_mode` value and scopes |
+| PUT | `/v1/me` | `upload:write` | Update the legacy upload-processing mode. It does not control notes or transcript sync in the current phone app |
 | DELETE | `/v1/me` | `upload:write` | Delete the account: clears the user's object-storage prefix, then cascades the database rows (tokens, device key, uploads, transcripts, memory items, reports). `204` on success |
 | DELETE | `/v1/tokens/current` | `upload:write` | Revoke the calling token (Disconnect). Also revokes its device key and deletes transcripts sealed to it |
 
@@ -117,7 +117,7 @@ sections, each with one evidence entry), so the response shape is the same wheth
 writer was a sync or server-side extraction.
 
 Reports are available to an authenticated owner when they exist, including after explicit sync;
-storage mode alone does not determine report visibility. `memory:read` is also the scope of
+the legacy storage-mode field does not determine report visibility. `memory:read` is also the scope of
 API keys (`kind=api`, read-only by default, `app/auth.py`).
 
 ## Web sessions and account (ADR-0024)
@@ -128,8 +128,8 @@ and a token that expires after 30 days. A phone keeps the device defaults.
 
 | Route | Scope | What it does |
 | --- | --- | --- |
-| `GET /v1/me` | phone or `account:manage` | storage mode, scopes, `email` |
-| `PUT /v1/me` | phone or `account:manage` | change storage mode |
+| `GET /v1/me` | phone or `account:manage` | legacy `storage_mode`, scopes, `email` |
+| `PUT /v1/me` | phone or `account:manage` | change the legacy upload-processing mode; this does not change notes or transcript sync |
 | `POST /v1/me/password` | phone or `account:manage` | change password; signs other browsers out, not phones. 5 per 5 min |
 | `DELETE /v1/me` | phone or `account:manage` | delete the account. A browser must send `{"password": "..."}` |
 | `GET /v1/tokens` | phone or `account:manage` | active sign-ins (phones, browsers, API keys); `current` marks the caller |
@@ -148,14 +148,17 @@ and a token that expires after 30 days. A phone keeps the device defaults.
 
 ## Notes and folders (ADR-0027)
 
-A note is one synced session. Notes are built when a phone syncs; these routes read them and change
-only your own organization. Nothing here deletes a recording: archive hides, deleting a folder unfiles.
+A note is one synced session. Notes are built when a phone syncs. Archiving hides a note, and
+deleting a folder unfiles its notes. Deleting a note removes its server-side note, highlights,
+and transcript, then stores a deletion marker so the phone will not sync it back; the phone's
+local copy remains untouched.
 
 | Route | Scope | What it does |
 | --- | --- | --- |
 | `GET /v1/notes` | `memory:read` | `q` (every word must match a title, item or transcript), `folder` (`none` or a folder id), `starred`, `archived`, `day`, `from`, `to`, `sort` (`newest`, `oldest`, `title`, `longest`), `limit` (max 100), `offset`. Returns `{notes[], total}`; while searching each note has a `snippet` |
 | `GET /v1/notes/{session_id}` | `memory:read` | `{note, items[], lines[] \| null}`; `lines` is `null` without `transcript:read` |
 | `PATCH /v1/notes/{session_id}` | `memory:write` | any of `{"title": "..."}` (blank restores the automatic title), `{"folder_id": id \| null}`, `{"starred": bool}`, `{"archived": bool}` |
+| `DELETE /v1/notes/{session_id}` | `memory:write` | remove this note and all server-side data derived from its session; remember the id so phone sync cannot restore it; `204` |
 | `POST /v1/notes/bulk` | `memory:write` | the same change (not `title`) for `session_ids` (1 to 100) |
 | `GET /v1/folders` | `memory:read` | `{folders[{id, name, notes}], totals{all, starred, unfiled, archived}}` |
 | `POST /v1/folders` | `memory:write` | `{"name": "..."}` (1 to 60 characters, unique ignoring case, at most 100 folders) |

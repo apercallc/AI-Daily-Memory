@@ -14,7 +14,10 @@ import com.apercallc.aidailymemory.recording.wear.WatchNode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.wear.compose.material3.MaterialTheme
+import com.apercallc.aidailymemory.recording.design.BrandTokens
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgement
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
@@ -63,7 +66,50 @@ class WearMainActivity : ComponentActivity(),
         super.onCreate(savedInstanceState)
         restorePendingCommand()
         setContent {
-            MaterialTheme {
+            val palette = BrandTokens.Dark
+            val colorScheme = MaterialTheme.colorScheme.copy(
+                primary = Color(palette.RED),
+                primaryDim = Color(palette.RED_DEEP),
+                primaryContainer = Color(palette.RED_CONTAINER),
+                onPrimary = Color(palette.ON_RED),
+                onPrimaryContainer = Color(palette.ON_RED_CONTAINER),
+                secondary = Color(palette.SLATE),
+                secondaryDim = Color(palette.SLATE),
+                secondaryContainer = Color(palette.SLATE_CONTAINER),
+                onSecondary = Color(palette.ON_SLATE),
+                onSecondaryContainer = Color(palette.ON_SLATE_CONTAINER),
+                tertiary = Color(palette.OK),
+                tertiaryDim = Color(palette.OK),
+                tertiaryContainer = Color(palette.SLATE_CONTAINER),
+                onTertiary = Color(palette.ON_SLATE),
+                onTertiaryContainer = Color(palette.ON_SLATE_CONTAINER),
+                surfaceContainerLow = Color(palette.WATCH_BACKGROUND),
+                surfaceContainer = Color(palette.PAPER),
+                surfaceContainerHigh = Color(palette.CARD),
+                onSurface = Color(palette.INK),
+                onSurfaceVariant = Color(palette.INK_SOFT),
+                outline = Color(palette.OUTLINE),
+                outlineVariant = Color(palette.RULE),
+                background = Color(palette.WATCH_BACKGROUND),
+                onBackground = Color(palette.INK),
+                error = Color(palette.ERROR),
+                errorDim = Color(palette.ERROR),
+                errorContainer = Color(palette.ERROR_CONTAINER),
+                onError = Color(palette.ON_ERROR),
+                onErrorContainer = Color(palette.ON_ERROR_CONTAINER),
+            )
+            val type = MaterialTheme.typography.copy(
+                displayLarge = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Serif),
+                displayMedium = MaterialTheme.typography.displayMedium.copy(fontFamily = FontFamily.Serif),
+                displaySmall = MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Serif),
+                titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif),
+                titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
+                titleSmall = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Serif),
+                labelLarge = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+                labelMedium = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                labelSmall = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            )
+            MaterialTheme(colorScheme = colorScheme, typography = type) {
                 WearHome(
                     state = controlState,
                     onCommand = ::sendCommand,

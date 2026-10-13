@@ -24,8 +24,8 @@ android {
         applicationId = "com.apercallc.aidailymemory"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1_000_003 // Wear range starts at 1_000_000; keep distinct from phone (ADR-0008).
-        versionName = "0.3.0"
+        versionCode = 1_000_004 // Wear range starts at 1_000_000; keep distinct from phone (ADR-0008).
+        versionName = "0.4.0"
     }
 
     buildFeatures {
@@ -67,9 +67,11 @@ android {
 }
 
 // Fail closed instead of producing an APK that looks releasable but cannot update an install.
-val verifyReleaseSigning by tasks.registering {
+val releaseSigningConfigured = releaseKeystoreProperties != null
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    inputs.property("releaseSigningConfigured", releaseSigningConfigured)
     doLast {
-        check(releaseKeystoreProperties != null) {
+        check(inputs.properties["releaseSigningConfigured"] == true) {
             "Release signing properties are missing; configure the protected keystore before building release artifacts."
         }
     }

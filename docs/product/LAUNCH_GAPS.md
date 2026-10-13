@@ -4,7 +4,7 @@ A working review of the whole product (phone, watch, web, API, database, operati
 2026-10-13. Items marked **built** were closed in the same pass; the rest need a decision or
 an outside account that code alone can't supply.
 
-## Blocking: the phone's default server did not serve the API (fixed in code, needs a deploy)
+## Resolved in production: the phone's default server serves the API
 
 `aidailymem.apercallc.com` is the `web` service (static nginx). The API is the `api` service, whose
 custom domain `api-aidailymem.apercallc.com` has no DNS record, so it is reachable only at its
@@ -12,17 +12,16 @@ Railway address. The shipped phone app (0.3.0) defaults to `https://aidailymem.a
 sign-up from the app reached the static site, not the API (every path returns 200 HTML there,
 which is why a health check on that host looked fine).
 
-**Fix, built:** the web service's nginx now proxies `/v1/` to the API, so the web app and every
-released phone build work with no app update. To turn it on in production:
+**Fix, deployed and verified 2026-10-13:** the web service's nginx proxies `/v1/` to the API, so
+the web app and released phone builds can use the same origin without an app update. Live checks:
 
-1. On the `web` service set `API_UPSTREAM=http://api.railway.internal:8080`,
-   `API_HOST=api.railway.internal`, `NGINX_RESOLVER=[fd12::10] ipv6=on` (these are the Dockerfile
-   defaults, so a plain redeploy is enough).
-2. On the `api` service set `TRUST_RAILWAY_X_REAL_IP=true` (the proxy forwards the edge's
-   `X-Real-IP`; without this every person shares the proxy's address in rate limits).
-3. Redeploy `api` first (new migration `0009`, runs with the usual release step), then `web`.
-4. Check `https://aidailymem.apercallc.com/v1/ready` returns `{"status":"ok","database":"ok"}`.
-5. Optional: add the DNS record for `api-aidailymem.apercallc.com`; nothing depends on it.
+- `https://aidailymem.apercallc.com/v1/health` returns 200 with the expected API identity.
+- `https://aidailymem.apercallc.com/v1/ready` returns 200 with `{"status":"ok","database":"ok"}`.
+- The Railway API service domain `/v1/health` also returns 200.
+- The web origin sends CSP, HSTS, `X-Content-Type-Options`, and `X-Frame-Options` headers.
+
+The separate `api-aidailymem.apercallc.com` custom domain still has no DNS record. It is optional:
+the shipped phone and web app use the working same-origin `/v1/` proxy.
 
 ## Built in this pass
 
@@ -60,7 +59,7 @@ released phone build work with no app update. To turn it on in production:
 
 ## Operations gaps
 
-- **Database backups** are intentionally out of scope for now.
+- **Database backups** are not yet configured and verified; backup monitoring and a restore drill are production gates.
 - **Uptime and alerting.** Sentry is wired; no uptime monitor or status page.
 - **Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).
 - **Single API replica.** The per-address limiter is in-process; scaling out needs a shared limiter.

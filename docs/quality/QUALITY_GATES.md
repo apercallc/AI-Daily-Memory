@@ -123,7 +123,12 @@ A feature is not done until:
 
 Recorded so a green `qualityCheck` is not read as release readiness. Each is tracked as a TODO.md item.
 
-- No `androidTest`/instrumented layer exists yet; Compose and service flows are covered by JVM tests only.
-- No physical-device endurance results exist (TODO.md "Endurance / device matrix").
-- Self-service export, API-key management, and server-side entitlements are Phase 8/10 work.
-- No password reset or email verification; no device-token listing or expiry policy.
+- Critical phone and Wear OS flows still need instrumentation and physical-device verification, including same-key pairing, TalkBack order, 200% font scaling, low-storage behavior, and workday endurance.
+- Macrobenchmark results, Baseline Profiles, and measured performance budgets are not available yet.
+- Public API launch work remains open: generated OpenAPI validation in CI, API contract/versioning, subscription entitlement enforcement for API access, abuse monitoring, and third-party-client terms.
+- Billing launch work remains open: published plan limits and pricing, tested subscription lifecycle and cancellation, and jurisdiction/tax review.
+- Production operations still need verified least-privilege database roles, backup/restore drills and monitoring, late-upload cleanup verification, and configured/verified error reporting with IP-address storage disabled.
+- Recording-consent legal review and production object-storage lifecycle/cost review remain required before enabling cloud audio for non-developer users.
+- GitHub CodeQL currently uses default setup, which attempts an Android release build without the private signing key. `.github/workflows/codeql.yml` defines a manual debug-variant build; repository owners must switch code scanning to advanced setup and confirm its first run uploads results before release.
+
+Implemented account foundations include password reset and email verification flows, device-token listing/expiry/revocation, API-key create/list/revoke, and a self-service export endpoint. These do not close the separate public-launch gates above.

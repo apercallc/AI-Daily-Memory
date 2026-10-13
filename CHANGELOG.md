@@ -5,6 +5,8 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-13
+
 ### Changed
 
 - Transcription now runs on the phone with a free model the app downloads once (Vosk small
@@ -15,6 +17,13 @@ All notable changes to AI Daily Memory. Format follows
   asks for the speech model until it is installed.
 - Everything is free. Billing stays in the code, off by default; site, privacy and terms say so.
 - Website, privacy page and terms describe the phone-only processing and notes-only sync.
+- Phone sessions now sync their own titles and start times; a title renamed on the web takes
+  precedence. Turning transcript sync off removes transcript text already stored by the service.
+- Ask also returns notes whose synced transcript mentions the question, so transcript-only notes
+  can be found through Ask.
+- Phone design now uses the shared paper, ink and red palette, serif headings, and monospaced
+  labels. Tablet layouts use a navigation rail and centered content; the web app adapts its
+  navigation and notes library for phone and tablet widths.
 
 ### Added
 
@@ -25,6 +34,8 @@ All notable changes to AI Daily Memory. Format follows
   opens on Notes; the earlier list is "Items". Today lists the day's notes.
 - API: `/v1/notes`, `/v1/notes/{id}`, `/v1/notes/bulk` and `/v1/folders`; folders and note
   organization are included in the export. Migration `0011`.
+- Remove a note from the web app. The service deletes its account copy and remembers the session
+  id so phone sync cannot restore it. Migration `0012`.
 - Web app at `/app/`: create an account or sign in, review each day's memory, search and filter,
   correct a wording or mark an item not relevant, see evidence, ask questions, manage devices and
   API keys, change password, download everything, delete the account (ADR-0024).

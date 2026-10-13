@@ -19,6 +19,7 @@ Report security issues privately to the repository owner/organization maintainer
 - Every user-owned resource must be authorization checked server-side.
 - Retryable writes must be idempotent.
 - Account deletion must include derived memories, embeddings, queued jobs, and retained temporary objects according to the retention policy.
+- Notes and optional transcript sync are user-scoped. Turning transcript sync off removes the previously synced transcript text; deleting a web note stores a server-side marker so the phone cannot restore it on the next sync.
 
 ## Dependency policy
 
@@ -42,7 +43,7 @@ Report security issues privately to the repository owner/organization maintainer
 - Segments live in `noBackupFilesDir`; backup and device transfer exclude all app data.
 - The local capture database (`capture.db`) holds no audio. Its metadata (session and
   segment ids, timestamps, checksums, lifecycle states, marker windows, speech regions,
-  clip upload state, transcript line timings) relies on Android file-based encryption
+  local processing state, transcript line timings) relies on Android file-based encryption
   (credential-encrypted storage). Delivered transcript content is sealed at rest with
   app-level encryption: every line's words and speaker label are encrypted by
   `TranscriptCipher` (AES-256-GCM under a Keystore-wrapped key separate from the audio
@@ -61,3 +62,10 @@ Report security issues privately to the repository owner/organization maintainer
 ## Recording privacy
 
 The application must not be designed to hide recording state. Recording indicators and pause/stop controls are product requirements.
+
+The current phone workflow transcribes audio on-device and does not upload recordings to this
+service. Notes and highlights sync to the user's account when sync is enabled; full transcript
+sync is optional and off by default. The service removes previously synced transcript text when
+the user turns that setting off. Removing a note from the web app deletes its account copy and
+stores a marker that prevents a later phone sync from recreating it. The phone's local note and
+recording data are unaffected by web note removal.

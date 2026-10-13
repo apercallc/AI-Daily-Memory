@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
@@ -13,13 +14,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -48,6 +53,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -123,45 +129,87 @@ fun AppRoot(
     LaunchedEffect(Unit) { updates().checkIfIdle() }
 
     val onTab = screen.tab != null
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        // Each screen handles the status bar and cutouts itself; this one only adds the tab bar.
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            // Hidden while reading a transcript: that is a detail view with its own Back.
-            if (onTab) BottomTabs(selected = screen, onSelect = { screen = it })
-        },
-    ) { padding ->
-        // The tab bar owns the bottom inset; each screen keeps handling the rest itself.
-        val tabBarPadding = PaddingValues(bottom = padding.calculateBottomPadding())
-        Box(Modifier.padding(tabBarPadding).consumeWindowInsets(tabBarPadding)) {
-            Crossfade(targetState = screen, animationSpec = tween(TAB_FADE_MS), label = "screen") { shown ->
-            when (shown) {
-                AppScreen.CAPTURE -> AiDailyMemoryApp(
-                    viewModel = capture,
-                    updates = updates(),
-                    permissions = permissions,
-                    onOpenSettings = { screen = AppScreen.SETTINGS },
-                )
-                AppScreen.SESSIONS -> SessionsRoute(sessions(), onStartRecording = { screen = AppScreen.CAPTURE }) { id, title ->
-                    openSession = id
-                    openTitle = title
-                    screen = AppScreen.TRANSCRIPT
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val useNavigationRail = maxWidth >= 600.dp
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            // Each screen handles status bar and cutouts; compact layout adds the tab bar.
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                // Hidden on tablets and while reading a transcript.
+                if (!useNavigationRail && onTab) BottomTabs(selected = screen, onSelect = { screen = it })
+            },
+        ) { padding ->
+            // The tab bar owns the bottom inset; the selected screen keeps handling all other insets.
+            val tabBarPadding = PaddingValues(bottom = padding.calculateBottomPadding())
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .padding(tabBarPadding)
+                    .consumeWindowInsets(tabBarPadding),
+            ) {
+                if (useNavigationRail) {
+                    TabletNavigationRail(
+                        selected = if (screen == AppScreen.TRANSCRIPT) AppScreen.SESSIONS else screen,
+                        onSelect = { screen = it },
+                    )
                 }
-                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = { screen = AppScreen.SETTINGS })
-                AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
-                AppScreen.TRANSCRIPT -> {
-                    val id = openSession
-                    if (id != null) {
-                        TranscriptRoute(sessions(), id, openTitle, onBack = back)
-                    } else {
-                        // Nothing to show (state lost): fall back to the list, outside composition.
-                        LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Box(
+                        if (useNavigationRail) Modifier.widthIn(max = 960.dp).fillMaxSize()
+                        else Modifier.fillMaxSize(),
+                    ) {
+                        Crossfade(targetState = screen, animationSpec = tween(TAB_FADE_MS), label = "screen") { shown ->
+                            when (shown) {
+                                AppScreen.CAPTURE -> AiDailyMemoryApp(
+                                    viewModel = capture,
+                                    updates = updates(),
+                                    permissions = permissions,
+                                    onOpenSettings = { screen = AppScreen.SETTINGS },
+                                )
+                                AppScreen.SESSIONS -> SessionsRoute(sessions(), onStartRecording = { screen = AppScreen.CAPTURE }) { id, title ->
+                                    openSession = id
+                                    openTitle = title
+                                    screen = AppScreen.TRANSCRIPT
+                                }
+                                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = { screen = AppScreen.SETTINGS })
+                                AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
+                                AppScreen.TRANSCRIPT -> {
+                                    val id = openSession
+                                    if (id != null) {
+                                        TranscriptRoute(sessions(), id, openTitle, onBack = back)
+                                    } else {
+                                        // Nothing to show (state lost): fall back to the list.
+                                        LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            }
         }
+    }
+}
+
+@Composable
+private fun TabletNavigationRail(selected: AppScreen, onSelect: (AppScreen) -> Unit) {
+    NavigationRail(modifier = Modifier.safeDrawingPadding()) {
+        AppScreen.entries.mapNotNull { destination -> destination.tab?.let { destination to it } }
+            .forEach { (destination, tab) ->
+                NavigationRailItem(
+                    selected = destination == selected,
+                    onClick = { onSelect(destination) },
+                    icon = { Icon(painterResource(tab.icon), contentDescription = null) },
+                    label = { Text(stringResource(tab.label)) },
+                    alwaysShowLabel = true,
+                )
+            }
     }
 }
 

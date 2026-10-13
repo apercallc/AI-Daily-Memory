@@ -2,7 +2,7 @@
 
 This is the citable basis for every public privacy statement (landing page, store
 listings, support answers). If a claim isn't backed here, don't make it. Sources:
-SECURITY.md, ADR-0003, ADR-0007, ADR-0013, ADR-0014, ADR-0015, ADR-0017, ADR-0018.
+SECURITY.md, ADR-0003, ADR-0004, ADR-0017, ADR-0018, ADR-0024, ADR-0026, ADR-0027.
 
 ## What we can say today
 
@@ -10,30 +10,27 @@ SECURITY.md, ADR-0003, ADR-0007, ADR-0013, ADR-0014, ADR-0015, ADR-0017, ADR-001
 whenever capture runs. Pause and stop are one tap away from the phone, the watch, or the
 notification. Hiding recording state violates the product's own rules (AGENTS.md rule 1).
 
-**Audio is encrypted on the phone.** Segments use Tink streaming AEAD (AES-256-GCM) under
-an Android Keystore key; backups and device transfer exclude all app data.
+**Audio is processed on the phone.** The phone app transcribes locally and does not upload
+recordings to this service. Audio segments are encrypted with Tink streaming AEAD under an
+Android Keystore key; backups and device transfer exclude app data. If the user enables
+Summaries, the AI provider configured by the user may receive transcript text. If the service
+operator enables provider-backed Ask, the question and relevant retrieved note content may be
+sent to the service's configured provider.
 
-**Nothing is retained server-side by default.** In `phone_only` mode the server does not keep
-memory after processing. Transient cloud processing is still required by design when a provider
-is enabled: speech clips leave the phone, transcripts are sealed back to the phone's key, and
-server-side plaintext is temporary (ADR-0014). Today transcription and extraction are both
-disabled by default, so uploads are refused until an operator enables them after review.
+**Notes sync is controlled by the user.** When the phone is linked and sync is enabled, the
+service stores notes, session titles and start times, and structured highlights. Transcript
+text is not synced by default. The user can turn transcript sync on; turning it off removes
+transcripts already stored by the service while keeping the note and its highlights. The web
+app only searches transcript text when the account has transcript access.
 
-**Cloud processing is temporary.** When enabled, clips upload at night, on Wi-Fi, while
-charging (ADR-0015). Temporary objects are deleted after the verified transcript is stored,
-on dead-letter, and by a retention sweep; the bucket also has a lifecycle backstop.
+**Removing a note removes the account copy.** Removing a note from the web app deletes its
+server-side note, highlights, and transcript and records a deletion marker so the phone will
+not sync that note back. The phone's local copy is not removed by this action. Account deletion
+removes the account's server-side data; self-service export is also available.
 
-**Transcripts are sealed to the phone's key.** In phone modes, transcript lines are
-sealed with HPKE (X25519/HKDF-SHA256/AES-256-GCM) to the uploading device's key; the
-server stores ciphertext it cannot read (ADR-0014).
-
-**Local deletion needs acknowledgement.** Audio becomes deletable only after its
-transcript is stored on the phone; the phone re-uploads from kept audio if a delivery
-expires or fails — no silent loss.
-
-**Evidence is immutable; AI output is correctable.** Transcripts are never rewritten;
-extracted items carry confidence and cite evidence; dismissals exist, edits/supersession
-are in progress.
+**Evidence is immutable; derived output is correctable.** Transcript evidence is not rewritten.
+Users can correct or dismiss derived highlights. Deletion and retention remove evidence and
+the data derived from it.
 
 **Error diagnostics are limited.** The backend, Android/Wear apps, and website report
 exception types, stack locations, release, and environment to separate Sentry projects in
@@ -53,14 +50,14 @@ audio, transcripts, or memory content.
 
 ## What we must NOT claim
 
-- **End-to-end encryption.** Any cloud transcription mode requires a provider to process
-  plaintext audio. We say "temporary and opt-in", never "E2E encrypted".
+- **End-to-end encryption.** Provider-backed summaries may send text to the provider selected
+  by the user. Provider-backed Ask may send the question and relevant retrieved notes to the
+  service's configured provider. Do not describe those requests as E2E encrypted.
 - **Physical flash erasure.** Deletion is logical deletion plus key hygiene; we state the
   limits honestly (SECURITY.md).
-- **AI accuracy.** No published evaluation exists yet (TODO.md "AI evaluation" is
-  unchecked). Extraction ships disabled by default partly for this reason (ADR-0019).
-- **"On-device transcription" / "never leaves your phone"** as a blanket statement —
-  true only for phone-only mode, which is the default, not the only mode.
+- **AI accuracy.** No published evaluation exists yet (TODO.md "AI evaluation" is unchecked).
+- **"Never leaves your phone"** as a blanket statement. Audio remains on-device in the
+  current phone workflow, while optional provider-backed features can transmit text.
 - **Legality of recording.** Consent law varies by jurisdiction (all-party-consent
   states, workplace policy). The all-party-consent legal review is still open
   (ADR-0018). We provide visibility and pause controls; users are responsible for
@@ -68,6 +65,6 @@ audio, transcripts, or memory content.
 
 ## Open items before public release (TODO.md Phase 8)
 
-Published retention/deletion matrix, privacy data-flow diagram, data inventory,
-self-service export, and full account deletion. This document tracks them; the landing
-page (website/) already avoids depending on any of the unchecked items.
+The published retention/deletion matrix, privacy data-flow diagram, and data inventory
+remain release gates. Self-service export and account deletion are available in the web app.
+The landing page (website/) must continue to match these claims.

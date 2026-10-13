@@ -4,6 +4,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -35,9 +36,17 @@ val LocalSpacing = staticCompositionLocalOf { Spacing() }
  */
 val AppTypography: Typography = Typography().run {
     copy(
-        headlineMedium = headlineMedium.copy(fontWeight = FontWeight.SemiBold),
-        titleLarge = titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = titleMedium.copy(fontWeight = FontWeight.Medium),
-        labelLarge = labelLarge.copy(fontWeight = FontWeight.Medium),
+        displayLarge = displayLarge.copy(fontFamily = FontFamily.Serif),
+        displayMedium = displayMedium.copy(fontFamily = FontFamily.Serif),
+        displaySmall = displaySmall.copy(fontFamily = FontFamily.Serif),
+        headlineLarge = headlineLarge.copy(fontFamily = FontFamily.Serif),
+        headlineMedium = headlineMedium.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+        headlineSmall = headlineSmall.copy(fontFamily = FontFamily.Serif),
+        titleLarge = titleLarge.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+        titleMedium = titleMedium.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium),
+        titleSmall = titleSmall.copy(fontFamily = FontFamily.Serif),
+        labelLarge = labelLarge.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
+        labelMedium = labelMedium.copy(fontFamily = FontFamily.Monospace),
+        labelSmall = labelSmall.copy(fontFamily = FontFamily.Monospace),
     )
 }

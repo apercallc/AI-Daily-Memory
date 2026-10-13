@@ -49,6 +49,9 @@ export async function notesView() {
   const more = h("div", { class: "row end mt14" });
 
   const search = h("input", { type: "search", id: "notes-q", value: state.q, placeholder: "Search notes and transcripts", "aria-label": "Search your notes", autocomplete: "off" });
+  const searchClear = h("button", { class: "small search-clear", type: "button", "aria-label": "Clear search", hidden: !state.q,
+    onclick: () => { search.value = ""; state.q = ""; searchClear.hidden = true; remember(); load(true); search.focus(); } }, "Clear");
+  const searchControl = h("div", { class: "search-control" }, search, searchClear);
   const sort = h("select", { id: "notes-sort", "aria-label": "Sort notes" }, SORTS.map(([v, l]) => h("option", { value: v, selected: v === state.sort }, l)));
   const range = h("select", { id: "notes-range", "aria-label": "When" }, RANGES.map(([v, l]) => h("option", { value: v, selected: v === state.range }, l)));
 
@@ -177,7 +180,7 @@ export async function notesView() {
     if (state.q.trim()) {
       return h("div", { class: "card empty" }, h("h3", null, "No notes match"),
         h("p", null, "Try fewer or different words, or widen the dates."),
-        h("button", { onclick: () => { search.value = ""; state.q = ""; state.range = "all"; range.value = "all"; remember(); load(true); } }, "Clear search"));
+        h("button", { onclick: () => { search.value = ""; state.q = ""; state.range = "all"; range.value = "all"; searchClear.hidden = true; remember(); load(true); } }, "Clear search"));
     }
     if (state.view === "all" && state.range === "all") {
       return h("div", { class: "card empty" }, h("h3", null, "Your notes will appear here"),
@@ -277,8 +280,12 @@ export async function notesView() {
   // --- wiring ----------------------------------------------------------------------------------
 
   let timer;
-  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { state.q = search.value; remember(); load(true); }, 250); });
-  search.addEventListener("keydown", (event) => { if (event.key === "Escape" && search.value) { search.value = ""; state.q = ""; remember(); load(true); } });
+  search.addEventListener("input", () => {
+    searchClear.hidden = !search.value;
+    clearTimeout(timer);
+    timer = setTimeout(() => { state.q = search.value; remember(); load(true); }, 250);
+  });
+  search.addEventListener("keydown", (event) => { if (event.key === "Escape" && search.value) { search.value = ""; state.q = ""; searchClear.hidden = true; remember(); load(true); } });
   sort.addEventListener("change", () => { state.sort = sort.value; remember(); load(true); });
   range.addEventListener("change", () => { state.range = range.value; remember(); load(true); });
 
@@ -292,7 +299,7 @@ export async function notesView() {
     side,
     h("section", { class: "notes-main", "aria-labelledby": "notes-title" },
       h("div", { class: "notes-head" }, h("div", null, title, sub), tools),
-      h("div", { class: "toolbar" }, h("div", { class: "grow" }, h("label", { for: "notes-q", class: "sr-only" }, "Search your notes"), search),
+      h("div", { class: "toolbar" }, h("div", { class: "grow" }, h("label", { for: "notes-q", class: "sr-only" }, "Search your notes"), searchControl),
         h("label", { for: "notes-sort", class: "sr-only" }, "Sort"), sort, h("label", { for: "notes-range", class: "sr-only" }, "When"), range),
       bulk, list, more));
 }
