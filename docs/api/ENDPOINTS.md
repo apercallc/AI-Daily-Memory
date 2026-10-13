@@ -30,7 +30,43 @@ operator-issued tokens.
 | --- | --- | --- | --- |
 | GET | `/v1/me` | `upload:write` | Verify a token; returns `storage_mode` and scopes |
 | PUT | `/v1/me` | `upload:write` | Switch storage mode (`phone_only` / `reports_cloud` / `full_cloud`; affects future uploads only) |
+| DELETE | `/v1/me` | `upload:write` | Delete the account: clears the user's object-storage prefix, then cascades the database rows (tokens, device key, uploads, transcripts, memory items, reports). `204` on success |
 | DELETE | `/v1/tokens/current` | `upload:write` | Revoke the calling token (Disconnect). Also revokes its device key and deletes transcripts sealed to it |
+
+`DELETE /v1/me` is irreversible and takes no body. Object storage is cleared before the database
+delete; if clearing is incomplete (or the store is unavailable while uploads exist) the call
+returns `503` and the account stays intact, so the client can retry. A purge record sweeps any
+upload that was in flight when the account was deleted. The calling token is the proof of
+possession and is revoked by the same delete.
+
+## Sync (on-device processed memory, ADR-0020)
+
+| Method | Path | Scope | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/sync` | `upload:write` | Push structured daily memory the phone produced on-device |
+
+The backend never processes audio in this flow; it stores what the phone sends. Idempotent by
+replacement: a report for a `memoryDay` replaces that day's prior memory items and report.
+
+Request body (camelCase fields):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `device` | string | Required |
+| `generatedAtEpochMs` | integer | Required |
+| `reports` | array | Required, may be empty. Each report: `memoryDay` (ISO date), `zoneId`, `headline`, `summary`, `items`, `coverage` (`recordedMs`, `speechMs`, `transcribedMs`, `sessions`), `generatedAtEpochMs`, `extractionModel`, `extractionVersion`; optional `transcriptLines` |
+| `includeTranscripts` | boolean | Default `false`. Transcript lines are stored only when `true` |
+| `deletedSessions` | array of UUID | Max 500. Removes the derived memory (items, report items, transcript lines) of sessions deleted on the phone; repeating an id is a no-op |
+
+Each item has `kind`, `text` (max 2000 characters on input, stored truncated to 280),
+`confidence`, `sessionId` (UUID), and optional `quote`, `owner`, `due`, `direction`,
+`counterpart`, `evidenceEpochMs`. A `commitment` item requires `direction`. A report holds at
+most 2000 items and 20000 transcript lines.
+
+Response `200`: `{"synced": <reports>, "items": <items stored>, "deletedSessions": <count>}`.
+
+Errors: `401`/`403` for a missing, revoked, or under-scoped token; `422` for a body that does not
+match the contract (the envelope reports field locations, never the rejected values).
 
 ## Uploads (speech clips, ADR-0015)
 
