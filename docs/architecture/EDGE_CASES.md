@@ -234,6 +234,15 @@ data rights.
 | Ciphertext moved onto another clip | Fails to open (upload id bound as HPKE info); never acknowledged |
 | Unknown payload version or malformed transcript | Not stored, not acknowledged |
 | Audio deletion | Only after every clip of the segment has its transcript on the phone |
+| Sync endpoint missing while sync is on | Sync reports failure in settings instead of silently succeeding |
+| Report generated while a sync POST is in flight | Sync cursor is the newest `generated_at` sent, so the report goes out next time |
+| Processing enabled with incomplete provider settings | Sessions wait and settings list what is missing; nothing is marked FAILED |
+| Notifications off, or status channel blocked or set to silent | In-app banner while a session is open or interrupted; the alert notification is never the only signal |
+| Watch command retried after the phone process restarted | Recent acknowledgements are persisted, so the original outcome is returned and the command does not run twice |
+| Several phones in range of the watch | The nearby node is chosen over a cloud-relayed one |
+| Watch command never confirmed | Watch offers Retry (same id) or Dismiss (forgotten, later commands get fresh ids) |
+| Update APK from a non-GitHub URL, wrong size, or wrong SHA-256 | Download refused or deleted; installer never sees it |
+| Update check fails (offline, rate limit, bad JSON) | Shown as "couldn't check", never as up to date |
 
 ## Open
 
