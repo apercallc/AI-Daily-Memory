@@ -595,8 +595,12 @@ Goal: prove reliable Android capture before building AI infrastructure.
   - [ ] Export is excluded from third-party/API-key scopes by default (self-service only)
 - [x] Serialize account deletion with upload reservations and enqueue a delayed object-prefix purge
   after issued signed PUT URLs expire plus a grace period (backend implementation + PostgreSQL tests).
-- [ ] Deploy the worker that consumes the deletion outbox and verify late-upload cleanup against
-  production object storage.
+- [x] Run the retention sweep (including the account deletion object purge) from the API process
+  itself via `RETENTION_SWEEP_INTERVAL_SECONDS` when no separate worker is deployed; verify against
+  production object storage before relying on it in place of a dedicated worker.
+- [x] Propagate local session deletion on the phone to the sync target: queue the session id,
+  send it as `deletedSessions` on the next sync, and purge its memory items and report entries
+  server-side (ADR-0020 amendment, backend + Android implementation and tests).
 - [ ] Child/minor policy before broad release
 - [ ] Abuse review for covert recording scenarios
 

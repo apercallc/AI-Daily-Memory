@@ -79,6 +79,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Wall clock moves backwards during the recovery window | Window only gets longer, which is safe | `SegmentLifecycle` | ✅ |
 | Corrupt persisted segment (ACKNOWLEDGED without ack time) | Refused at load (`AudioSegment` invariant) | `AudioSegment.init` | ✅ |
 | User deletes a segment | Allowed in every state except WRITING (a user right) | `SegmentLifecycle` | ✅ |
+| User deletes a session whose derived memory was already pushed to a sync target | Queued locally (`sync_deletion_queue`) and sent as `deletedSessions` on the next sync; the server purges its memory items and strips the session from stored daily reports (deleting the whole day if nothing else remains) | `SessionDataDeletion`, `SyncManager`, backend `/v1/sync` | ✅ |
 | Signed URL expires mid-upload | Request a new URL; the retry is idempotent | Phase 1 | 📐 |
 | Offline for days | Queue bounded by `maxPendingBytes`; capture continues until the hard stop | `StoragePolicy` | ✅ (logic) |
 
@@ -104,6 +105,8 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | API docs exposure | Off outside development and test | `create_app` | ✅ |
 | Cross-user access | Authorization in the query service; cross-user tests for every resource | ADR-0009 | 📐 |
 | Hot user or abusive API key | Per-user and per-key rate limits | Phase 5/10 | 📐 |
+| Account-deletion object purge / temporary-audio retention never run in production | API process can run the sweep itself (`RETENTION_SWEEP_INTERVAL_SECONDS`), so cleanup still happens without a separately deployed worker | `app.main.retention_sweep_loop` | ✅ |
+| Sync item with an out-of-contract kind/confidence/direction, or a commitment missing its direction | 422 with field locations; nothing partially saved | `app/api/sync.py` (`SyncItemIn`, DB CHECK constraints mirrored) | ✅ |
 
 ## 5. Processing, memory, and recall (later phases)
 

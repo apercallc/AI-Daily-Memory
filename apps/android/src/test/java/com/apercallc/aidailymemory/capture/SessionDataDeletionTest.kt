@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.SessionInfoEntity
+import com.apercallc.aidailymemory.data.SyncDeletionQueueEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -72,6 +73,40 @@ class SessionDataDeletionTest {
 
         assertEquals(SessionDataDeletionResult.Deleted, deletion.delete("delete"))
         assertEquals(listOf("keep"), db.sessions().observeSince("2026-10-01").first().map { it.sessionId })
+    }
+
+    @Test
+    fun `a successful local deletion queues the server-side purge`() = runTest {
+        db.sessions().register(sessionInfo("delete"))
+        val deletion = SessionDataDeletion(
+            sessions = db.sessions(),
+            deleteAudio = { UserAudioDeletionResult.Deleted(1) },
+            hasServerSideData = { false },
+            isActive = { false },
+            onDeleted = { sessionId ->
+                db.syncDeletions().enqueue(SyncDeletionQueueEntity(sessionId, 1_000))
+            },
+        )
+
+        assertEquals(SessionDataDeletionResult.Deleted, deletion.delete("delete"))
+        assertEquals(listOf("delete"), db.syncDeletions().pendingSessionIds())
+    }
+
+    @Test
+    fun `a refused deletion never queues a server-side purge`() = runTest {
+        db.sessions().register(sessionInfo("uploaded"))
+        val deletion = SessionDataDeletion(
+            sessions = db.sessions(),
+            deleteAudio = { UserAudioDeletionResult.Deleted(1) },
+            hasServerSideData = { true },
+            isActive = { false },
+            onDeleted = { sessionId ->
+                db.syncDeletions().enqueue(SyncDeletionQueueEntity(sessionId, 1_000))
+            },
+        )
+
+        assertEquals(SessionDataDeletionResult.RemoteCopyExists, deletion.delete("uploaded"))
+        assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
     }
 
     @Test

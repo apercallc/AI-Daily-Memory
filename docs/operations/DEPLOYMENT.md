@@ -51,7 +51,11 @@ All three integrations discard event messages, request details, user context, br
 
 ## Account deletion and outstanding storage race
 
-`DELETE /v1/me` removes the user's object-storage prefix, writes a minimal durable tombstone, then deletes the account and its cascading database rows. After the maximum PUT URL TTL plus a one-hour grace period, the worker deletes that user's prefix again, covering an object written after the immediate sweep. Failed late-prefix deletes remain queued for retry. The production worker service is not currently deployed, so this cleanup is implemented and tested but not operational in production until that service is deployed.
+`DELETE /v1/me` removes the user's object-storage prefix, writes a minimal durable tombstone, then deletes the account and its cascading database rows. After the maximum PUT URL TTL plus a one-hour grace period, the worker deletes that user's prefix again, covering an object written after the immediate sweep. Failed late-prefix deletes remain queued for retry. If no separate worker process is deployed, set `RETENTION_SWEEP_INTERVAL_SECONDS` on the API service so it runs the same sweep itself (see `app.main.retention_sweep_loop`) — without one of the two running, this cleanup, and temporary-audio retention generally, never executes in production.
+
+## Sync deletion propagation (ADR-0020)
+
+The phone processes audio on-device and may push structured memory (daily reports, memory items, optionally raw transcript lines) to a user-configured sync target. Deleting a session locally queues its id (`sync_deletion_queue`); the next successful sync POST carries it as `deletedSessions`, and `/v1/sync` removes that session's memory items and strips it from any stored daily report (deleting the report outright if nothing else remains for that day) before the local queue is cleared. A sync payload with items references session ids as UUIDs and item kinds/confidence/commitment-direction matching the backend's CHECK constraints; an out-of-contract item is rejected with a 422 and nothing is partially saved.
 
 ## Health and sanity checks
 

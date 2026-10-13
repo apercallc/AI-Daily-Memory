@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     max_upload_duration_ms: int = Field(default=30 * 60_000, gt=0)
     daily_upload_bytes_quota: int = Field(default=512 * 1_048_576, gt=0)
 
+    # Retention sweep (ADR-0003): set to run the sweep inside the API process when no
+    # separate worker is deployed. None (unset) keeps sweeping out of this process.
+    retention_sweep_interval_seconds: float | None = Field(default=None, ge=60.0, le=86_400.0)
+
     # Gate B (ADR-0018): the integration exists, but stays "disabled" until an operator turns
     # it on deliberately — the cost model, provider-terms, and consent reviews TODO.md lists
     # are a human decision this setting does not make for them.

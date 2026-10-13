@@ -30,8 +30,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyReportEntity::class,
         LocalTranscriptLineEntity::class,
         ProcessingStateEntity::class,
+        SyncDeletionQueueEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -46,6 +47,7 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun dailyReports(): DailyReportDao
     abstract fun localTranscripts(): LocalTranscriptDao
     abstract fun processingState(): ProcessingStateDao
+    abstract fun syncDeletions(): SyncDeletionDao
 
     companion object {
         const val NAME = "capture.db"
@@ -53,6 +55,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         /** Every migration, in order. Tests open old databases with exactly this list. */
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+            MIGRATION_6_7,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -216,6 +219,21 @@ abstract class CaptureDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_processing_state_state` ON `processing_state` (`state`)",
+                )
+            }
+        }
+
+        /**
+         * Adds the sync deletion queue (ADR-0020 deletion propagation): session ids deleted
+         * locally that must be purged from the sync target on the next successful sync.
+         * New table only; nothing existing changes.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sync_deletion_queue` (" +
+                        "`session_id` TEXT NOT NULL, `queued_at_epoch_ms` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`session_id`))",
                 )
             }
         }

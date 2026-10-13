@@ -141,3 +141,22 @@ interface ProcessingStateDao {
     @Query("UPDATE processing_state SET state = 'PENDING', last_error = NULL, updated_at_epoch_ms = :nowEpochMs WHERE state = 'FAILED'")
     suspend fun retryFailed(nowEpochMs: Long): Int
 }
+
+/**
+ * Pending server-side deletions for the sync target (ADR-0020). Enqueued on local session
+ * deletion, drained only after a successful sync POST.
+ */
+@Dao
+interface SyncDeletionDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enqueue(entry: SyncDeletionQueueEntity)
+
+    @Query("SELECT session_id FROM sync_deletion_queue ORDER BY queued_at_epoch_ms")
+    suspend fun pendingSessionIds(): List<String>
+
+    @Query("DELETE FROM sync_deletion_queue WHERE session_id IN (:sessionIds)")
+    suspend fun clear(sessionIds: List<String>)
+
+    @Query("SELECT COUNT(*) FROM sync_deletion_queue")
+    fun observeCount(): Flow<Int>
+}

@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,8 +18,39 @@ from app.db import Database
 from app.errors import ErrorResponse, install_error_handlers
 from app.middleware import RequestContextMiddleware
 from app.observability import configure_logging
+from app.retention import sweep
 from app.sentry import initialize_sentry
 from app.storage import ObjectStore, object_store_from
+
+logger = logging.getLogger("app.sweep")
+
+
+async def retention_sweep_loop(
+    database: Database,
+    store: ObjectStore,
+    *,
+    interval_seconds: float,
+    url_ttl_seconds: int,
+    stop: asyncio.Event,
+) -> None:
+    """Runs the retention sweep (ADR-0003/0014) inside the API process.
+
+    Used when no separate worker is deployed: account-deletion tombstones and temporary
+    audio would otherwise never be purged. The sweep is idempotent and safe alongside a
+    worker or a second API instance — objects are deleted before their rows change state,
+    and account purge rows are claimed with FOR UPDATE SKIP LOCKED.
+    """
+    logger.info("retention_sweep_started", extra={"interval_seconds": interval_seconds})
+    while not stop.is_set():
+        try:
+            await sweep(database.sessions, store, url_ttl_seconds=url_ttl_seconds)
+        except Exception:
+            # A failed sweep must never take the API down; the next interval retries it.
+            logger.exception("retention_sweep_failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
+        except TimeoutError:
+            continue
 
 
 def create_app(
@@ -42,15 +75,37 @@ def create_app(
             db = owned = Database(settings.database_url.get_secret_value())
         application.state.database = db
         application.state.object_store = object_store or object_store_from(settings)
+        sweep_interval = settings.retention_sweep_interval_seconds
+        sweep_task: asyncio.Task[None] | None = None
+        sweep_stop: asyncio.Event | None = None
+        if (
+            sweep_interval is not None
+            and db is not None
+            and application.state.object_store is not None
+        ):
+            sweep_stop = asyncio.Event()
+            sweep_task = asyncio.create_task(
+                retention_sweep_loop(
+                    db,
+                    application.state.object_store,
+                    interval_seconds=sweep_interval,
+                    url_ttl_seconds=settings.upload_url_ttl_seconds,
+                    stop=sweep_stop,
+                )
+            )
         try:
             yield
         finally:
+            if sweep_stop is not None:
+                sweep_stop.set()
+            if sweep_task is not None:
+                await sweep_task
             if owned is not None:
                 await owned.dispose()
 
     application = FastAPI(
         title="AI Daily Memory API",
-        version="0.1.0",
+        version="0.1.1",
         docs_url="/docs" if settings.expose_api_docs else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.expose_api_docs else None,

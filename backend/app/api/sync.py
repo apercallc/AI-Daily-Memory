@@ -12,17 +12,24 @@ Idempotent by replacement: syncing the same day's data replaces prior items for 
 sessions, matching the phone's own idempotent-by-replacement extraction (ADR-0019).
 """
 
+import uuid
 from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.db import get_session
-from app.db.models import DailyReportRow, MemoryItem
+from app.db.models import (
+    CommitmentDirection,
+    Confidence,
+    DailyReportRow,
+    MemoryItem,
+    MemoryItemKind,
+)
 from app.errors import ErrorResponse
 
 router = APIRouter(tags=["sync"])
@@ -33,16 +40,28 @@ _ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s
 
 
 class SyncItemIn(BaseModel):
-    kind: str
-    text: str
-    confidence: str
+    """One memory item, mirroring the phone's contract (core `SyncItem`) and the DB CHECK
+    constraints, so an out-of-contract item is a 422 with a field location — never a 500."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    kind: MemoryItemKind
+    text: str = Field(max_length=2_000)
+    confidence: Confidence
     quote: str | None = None
     owner: str | None = None
-    due: str | None = None
-    direction: str | None = None
+    due: date | None = None
+    direction: CommitmentDirection | None = None
     counterpart: str | None = None
-    session_id: str
-    evidence_epoch_ms: int | None = None
+    session_id: uuid.UUID = Field(alias="sessionId")
+    evidence_epoch_ms: int | None = Field(default=None, alias="evidenceEpochMs")
+
+    @model_validator(mode="after")
+    def _commitment_has_direction(self) -> "SyncItemIn":
+        # Same rule as the `commitment_has_direction` CHECK on memory_items.
+        if self.kind == "commitment" and self.direction is None:
+            raise ValueError("direction is required for commitment items")
+        return self
 
 
 class SyncCoverageIn(BaseModel):
@@ -68,7 +87,7 @@ class SyncReportIn(BaseModel):
     zone_id: str = Field(alias="zoneId")
     headline: str
     summary: str
-    items: list[SyncItemIn]
+    items: list[SyncItemIn] = Field(max_length=2_000)
     transcript_lines: list[SyncTranscriptLineIn] | None = Field(
         default=None,
         alias="transcriptLines",
@@ -87,6 +106,11 @@ class SyncPayloadIn(BaseModel):
     generated_at_epoch_ms: int = Field(alias="generatedAtEpochMs")
     reports: list[SyncReportIn]
     include_transcripts: bool = Field(alias="includeTranscripts", default=False)
+    deleted_sessions: list[uuid.UUID] = Field(
+        default_factory=list,
+        alias="deletedSessions",
+        max_length=500,
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -97,9 +121,16 @@ async def sync_memory(
     session: Session,
     writer: Writer,
 ) -> dict[str, object]:
-    """Accepts on-device processed memory from the phone. Idempotent by replacement."""
+    """Accepts on-device processed memory from the phone. Idempotent by replacement.
+
+    `deletedSessions` propagates the phone's local deletions (ADR-0020): the derived memory
+    of those sessions is removed here too, so deleting a session on the phone does not leave
+    a server-side copy behind. Repeating the same id is a no-op.
+    """
+    await _purge_deleted_sessions(session, writer.user_id, payload.deleted_sessions)
     if not payload.reports:
-        return {"synced": 0, "items": 0}
+        await session.commit()
+        return {"synced": 0, "items": 0, "deletedSessions": len(payload.deleted_sessions)}
 
     total_items = 0
     for report in payload.reports:
@@ -126,7 +157,7 @@ async def sync_memory(
                     owner=item.owner,
                     counterpart=item.counterpart,
                     direction=item.direction,
-                    due=date.fromisoformat(item.due) if item.due else None,
+                    due=item.due,
                     extraction_model=report.extraction_model,
                     extraction_version=report.extraction_version,
                 ),
@@ -145,7 +176,11 @@ async def sync_memory(
             "zoneId": report.zone_id,
             "headline": report.headline,
             "summary": report.summary,
-            "items": [item.model_dump(by_alias=True) for item in report.items],
+            "items": [
+                # mode="json": UUIDs and dates stay JSON scalars inside the stored report.
+                item.model_dump(by_alias=True, mode="json")
+                for item in report.items
+            ],
             "coverage": report.coverage.model_dump(by_alias=True),
             "extractionModel": report.extraction_model,
             "extractionVersion": report.extraction_version,
@@ -169,4 +204,64 @@ async def sync_memory(
             )
 
     await session.commit()
-    return {"synced": len(payload.reports), "items": total_items}
+    return {
+        "synced": len(payload.reports),
+        "items": total_items,
+        "deletedSessions": len(payload.deleted_sessions),
+    }
+
+
+async def _purge_deleted_sessions(
+    session: AsyncSession, user_id: uuid.UUID, session_ids: list[uuid.UUID]
+) -> None:
+    """Removes this user's derived memory for sessions deleted on the phone.
+
+    Memory item rows are deleted directly. Daily reports keep other sessions' data and drop
+    the deleted sessions' items and transcript lines from the stored JSON; a day whose derived
+    data belonged entirely to deleted sessions is removed outright — user deletion cascades
+    to everything derived from it (ADR-0004 amendment).
+    """
+    if not session_ids:
+        return
+    ids = set(session_ids)
+    # The report JSON stores session ids as canonical strings.
+    id_strings = {str(session_id) for session_id in ids}
+    await session.execute(
+        delete(MemoryItem).where(
+            MemoryItem.user_id == user_id,
+            MemoryItem.session_id.in_(ids),
+        )
+    )
+    reports = (
+        await session.scalars(select(DailyReportRow).where(DailyReportRow.user_id == user_id))
+    ).all()
+    for row in reports:
+        report = row.report
+        raw_items = report.get("items")
+        items = raw_items if isinstance(raw_items, list) else []
+        kept_items = [
+            i for i in items if not isinstance(i, dict) or i.get("sessionId") not in id_strings
+        ]
+        raw_lines = report.get("transcriptLines")
+        lines = raw_lines if isinstance(raw_lines, list) else None
+        kept_lines = None
+        if lines is not None:
+            kept_lines = [
+                line
+                for line in lines
+                if not isinstance(line, dict) or line.get("sessionId") not in id_strings
+            ]
+        touched = len(kept_items) < len(items) or (
+            kept_lines is not None and lines is not None and len(kept_lines) < len(lines)
+        )
+        if not touched:
+            continue
+        if kept_items or kept_lines:
+            updated = dict(report)
+            updated["items"] = kept_items
+            if kept_lines is not None:
+                updated["transcriptLines"] = kept_lines
+            # Reassignment (not in-place mutation) so the JSONB change is always detected.
+            row.report = updated
+        else:
+            await session.delete(row)

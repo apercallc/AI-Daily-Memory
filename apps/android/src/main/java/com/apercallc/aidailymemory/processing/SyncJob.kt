@@ -107,18 +107,25 @@ class SyncJobService : JobService() {
  * The last successful sync timestamp is tracked in [ProcessingSettings]; reports generated after
  * it are sent. On success the timestamp advances; on failure it stays and the next schedule
  * retries the same reports.
+ *
+ * Locally deleted sessions are queued (see `sync_deletion_queue`) and sent as
+ * [SyncPayload.deletedSessions]; the queue clears only after the target accepted the payload.
  */
 class SyncManager(
     private val database: CaptureDatabase,
     private val settings: ProcessingSettings,
     private val deviceId: String,
     private val json: Json = Json { encodeDefaults = false },
+    /**
+     * Transport seam for tests. Null in production, where [post] opens the real connection.
+     */
+    private val poster: (suspend (url: String, token: String?, body: String) -> Unit)? = null,
 ) {
 
     /**
-     * Syncs all daily reports generated since the last successful sync. Returns true if the
-     * payload was sent (or there was nothing to send); false if sync is disabled or the endpoint
-     * rejected the payload (the next schedule retries).
+     * Syncs all daily reports generated since the last successful sync and drains the deletion
+     * queue. Returns true if everything was sent (or there was nothing to send); false if sync
+     * is misconfigured or the endpoint rejected the payload (the next schedule retries).
      */
     suspend fun syncPending(): Boolean {
         if (!settings.syncEnabled.value) return true
@@ -128,14 +135,19 @@ class SyncManager(
 
         val since = settings.lastSyncEpochMs ?: 0L
         val reports = database.dailyReports().since(since)
-        if (reports.isEmpty()) return true
+        val deletions = database.syncDeletions().pendingSessionIds()
+        if (reports.isEmpty() && deletions.isEmpty()) return true
 
-        val payload = buildPayload(reports, includeTranscripts)
+        val payload = buildPayload(reports, includeTranscripts, deletions)
+        val body = json.encodeToString(SyncPayload.serializer(), payload)
         return try {
-            post(url, token, json.encodeToString(SyncPayload.serializer(), payload))
-            settings.lastSyncEpochMs = System.currentTimeMillis()
+            if (poster != null) poster.invoke(url, token, body) else post(url, token, body)
+            // The timestamp marks which reports were pushed; a deletions-only payload must
+            // not advance it or reports generated in the same window would be skipped.
+            if (reports.isNotEmpty()) settings.lastSyncEpochMs = System.currentTimeMillis()
+            if (deletions.isNotEmpty()) database.syncDeletions().clear(deletions)
             settings.setLastSyncFailed(false)
-            Log.i(TAG, "sync_succeeded reports=${reports.size}")
+            Log.i(TAG, "sync_succeeded reports=${reports.size} deletions=${deletions.size}")
             true
         } catch (e: CancellationException) {
             throw e
@@ -149,6 +161,7 @@ class SyncManager(
     private suspend fun buildPayload(
         reports: List<DailyReportEntity>,
         includeTranscripts: Boolean,
+        deletedSessions: List<String>,
     ): SyncPayload {
         val syncReports = reports.map { report ->
             val items = database.memoryItems().observeForDay(report.memoryDay).first()
@@ -180,6 +193,7 @@ class SyncManager(
             generatedAtEpochMs = System.currentTimeMillis(),
             reports = syncReports,
             includeTranscripts = includeTranscripts,
+            deletedSessions = deletedSessions,
         )
     }
 

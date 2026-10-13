@@ -99,6 +99,20 @@ data class LocalTranscriptLineEntity(
 )
 
 /**
+ * A session deleted locally but not yet purged from the sync target (ADR-0020). Entries are
+ * added when a session with possibly-synced derived memory is deleted on the phone, sent as
+ * [com.apercallc.aidailymemory.recording.processing.SyncPayload.deletedSessions] on the next
+ * sync, and removed only after the sync target accepted the payload.
+ *
+ * Deletions made while sync is disabled are not retroactively queued (known limitation).
+ */
+@Entity(tableName = "sync_deletion_queue")
+data class SyncDeletionQueueEntity(
+    @PrimaryKey @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "queued_at_epoch_ms") val queuedAtEpochMs: Long,
+)
+
+/**
  * Processing state for a session (ADR-0020). Tracks whether the session's clips have been
  * transcribed, extracted, and reported on-device. One row per session.
  */

@@ -16,6 +16,12 @@ data class SyncPayload(
     val generatedAtEpochMs: Long,
     val reports: List<SyncReport>,
     val includeTranscripts: Boolean,
+    /**
+     * Sessions deleted locally whose server-side derived memory must be purged (ADR-0020:
+     * deletion propagates). Empty by default so the field is omitted from the JSON unless
+     * there is something to delete.
+     */
+    val deletedSessions: List<String> = emptyList(),
 )
 
 /**

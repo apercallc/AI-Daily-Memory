@@ -32,8 +32,8 @@ android {
         applicationId = "com.apercallc.aidailymemory"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1 // Phone range: 1..999_999; Wear starts at 1_000_000 (ADR-0008).
-        versionName = "0.1.0"
+        versionCode = 2 // Phone range: 1..999_999; Wear starts at 1_000_000 (ADR-0008).
+        versionName = "0.1.1"
     }
 
     compileOptions {

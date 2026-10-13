@@ -46,6 +46,7 @@ import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.update.UpdateChecker
 import com.apercallc.aidailymemory.update.UpdateClient
 import com.apercallc.aidailymemory.data.CaptureDatabase
+import com.apercallc.aidailymemory.data.SyncDeletionQueueEntity
 import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
@@ -332,6 +333,15 @@ class AppContainer(context: Context) {
                 state.sessionId?.value == sessionId &&
                     state.status != RecordingStatus.IDLE &&
                     state.status != RecordingStatus.COMPLETED
+            },
+            // A session whose derived memory may already be on the sync target is queued for
+            // server-side purge; the queue drains on the next successful sync (ADR-0020).
+            onDeleted = { sessionId ->
+                if (processingSettings.syncEnabled.value && !processingSettings.syncUrl.isNullOrBlank()) {
+                    database.syncDeletions()
+                        .enqueue(SyncDeletionQueueEntity(sessionId, System.currentTimeMillis()))
+                    syncScheduler.schedule()
+                }
             },
         )
     }
