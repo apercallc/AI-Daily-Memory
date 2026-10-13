@@ -20,8 +20,9 @@ Unknown, revoked, and expired tokens all get the same `401`.
 | POST | `/v1/signup` | none | Email + password → device token (shown exactly once) |
 | POST | `/v1/login` | none | Email + password → device token |
 
-Argon2id hashing; repeated wrong passwords lock the credential for 15 minutes
-(`account_locked`). The operator CLI (`python -m app.admin`) remains available for
+Argon2id hashing; 5 consecutive wrong passwords from one client address lock that address
+(not the account) for 15 minutes (`account_locked`), and 50 failures across all addresses
+within an hour lock the whole credential for 15 minutes. The operator CLI (`python -m app.admin`) remains available for
 operator-issued tokens.
 
 ## Account (device tokens)

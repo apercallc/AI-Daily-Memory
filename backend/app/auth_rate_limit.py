@@ -78,6 +78,19 @@ class AuthRateLimiter:
         return None
 
 
+def client_address(request: Request) -> str:
+    """The client address the rate limiter keys on (the proxy's X-Real-IP only when trusted)."""
+    client = request.client
+    address = client.host if client is not None else "unknown"
+    settings: Settings = request.app.state.settings
+    if settings.trust_railway_x_real_ip:
+        real_ip_headers = request.headers.getlist("x-real-ip")
+        if len(real_ip_headers) == 1:
+            with suppress(ValueError):
+                address = str(ip_address(real_ip_headers[0]))
+    return address
+
+
 def auth_rate_limit(
     action: str,
     *,
@@ -87,14 +100,7 @@ def auth_rate_limit(
     """FastAPI dependency for a public authentication route."""
 
     async def enforce(request: Request) -> None:
-        client = request.client
-        address = client.host if client is not None else "unknown"
-        settings: Settings = request.app.state.settings
-        if settings.trust_railway_x_real_ip:
-            real_ip_headers = request.headers.getlist("x-real-ip")
-            if len(real_ip_headers) == 1:
-                with suppress(ValueError):
-                    address = str(ip_address(real_ip_headers[0]))
+        address = client_address(request)
         limiter: AuthRateLimiter = request.app.state.auth_rate_limiter
         retry_after = await limiter.retry_after(
             f"{action}:{address}",

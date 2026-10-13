@@ -13,13 +13,14 @@ same bearer-token flow as any other device (`app/auth.py`).
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_rate_limit import auth_rate_limit
-from app.credentials import LoginError, SignupError, log_in, sign_up
+from app.auth_rate_limit import auth_rate_limit, client_address
+from app.config import Settings
+from app.credentials import LoginError, SignupError, hash_source, log_in, sign_up
 from app.db import get_session
 from app.errors import ErrorResponse, error_response
 
@@ -84,14 +85,23 @@ async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken | J
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("login", limit=10, window_seconds=60))],
 )
-async def login(body: LogInRequest, session: Session) -> IssuedDeviceToken | JSONResponse:
+async def login(
+    body: LogInRequest, session: Session, request: Request
+) -> IssuedDeviceToken | JSONResponse:
+    settings: Settings = request.app.state.settings
+    key_secret = settings.login_source_key or settings.database_url
+    key = key_secret.get_secret_value().encode() if key_secret is not None else b""
     try:
         logged_in = await log_in(
-            session, email=body.email, password=body.password, device_name=body.device_name
+            session,
+            email=body.email,
+            password=body.password,
+            device_name=body.device_name,
+            source=hash_source(client_address(request), key),
         )
     except LoginError as e:
-        # Commit even on failure: a wrong-password attempt still bumps failed_attempts (and
-        # may set locked_until), and that must survive past this request to matter.
+        # Commit even on failure: a wrong-password attempt still bumps the per-source failure row
+        # (and may set a lock), and that must survive past this request to matter.
         await session.commit()
         error_code = "invalid_credentials" if e.code == "account_locked" else e.code
         status = _LOGIN_STATUS.get(error_code, 401)

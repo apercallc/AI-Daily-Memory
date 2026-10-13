@@ -57,6 +57,12 @@ def test_migrations_downgrade_to_empty_and_upgrade_again(database_url: str) -> N
 def test_every_user_owned_table_cascades_from_users(migrated: Engine) -> None:
     inspector = inspect(migrated)
     for table in Base.metadata.sorted_tables:
+        if table.name == "login_failures":
+            # Owned through its credential, which itself cascades from users.
+            fks = inspector.get_foreign_keys(table.name)
+            assert [fk["referred_table"] for fk in fks] == ["credentials"]
+            assert fks[0]["options"].get("ondelete") == "CASCADE"
+            continue
         if table.name in {"users", "pending_account_object_deletions"}:
             # This outbox must outlive the user row so delayed storage cleanup can finish.
             continue

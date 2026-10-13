@@ -115,6 +115,23 @@ class Credential(Base):
     locked_until: Mapped[datetime | None]
 
 
+class LoginFailure(Base):
+    """Failed-login state per (credential, source) so one source's guesses lock only that
+    source (app.credentials). `source_hash` is a keyed hash of the client address, never the
+    address. Rows die with their credential and are pruned once idle for a day."""
+
+    __tablename__ = "login_failures"
+    __table_args__ = (Index("ix_login_failures_updated_at", "updated_at"),)
+
+    credential_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("credentials.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    locked_until: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = _created()
+
+
 class AccessToken(Base):
     """Device tokens and user API keys (AGENTS rule 4): only a SHA-256 hash is stored."""
 

@@ -176,3 +176,19 @@ def test_an_extra_field_is_rejected(client: TestClient) -> None:
         },
     )
     assert response.status_code == 422
+
+
+def test_an_attacker_address_cannot_lock_the_owner_out(db: Engine, database_url: str) -> None:
+    app = create_app(
+        settings_for(database_url, trust_railway_x_real_ip=True), processing_enabled=False
+    )
+    body = {"email": "owner@example.com", "password": "x" * 12, "device_name": "P"}
+    attacker = {"X-Real-IP": "203.0.113.9"}
+    owner = {"X-Real-IP": "198.51.100.7"}
+    with TestClient(app) as client:
+        assert client.post("/v1/signup", json=body, headers=owner).status_code == 201
+        for _ in range(6):
+            client.post("/v1/login", json={**body, "password": "wrong-password"}, headers=attacker)
+
+        assert client.post("/v1/login", json=body, headers=attacker).status_code == 401
+        assert client.post("/v1/login", json=body, headers=owner).status_code == 200

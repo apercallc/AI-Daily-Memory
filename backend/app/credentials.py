@@ -4,12 +4,27 @@ admin CLI still exists for operator provisioning and tests.
 
 Passwords are hashed with argon2id (OWASP's current recommendation) via `argon2-cffi`, never
 compared or logged in the clear. A wrong email and a wrong password return the same error, so
-neither response reveals which one it was (AGENTS.md: least privilege, no ad-hoc leaks). Five
-wrong passwords in a row lock the credential for 15 minutes; the lock clears on the next
-correct password.
+neither response reveals which one it was (AGENTS.md: least privilege, no ad-hoc leaks).
+
+Lockout is per (credential, source), where source is a keyed hash of the client address (never
+the address itself; see `hash_source`). Five consecutive wrong passwords from one source lock
+that source for 15 minutes; a correct password from it clears its counter. A locked source is
+rejected even with the right password, but everyone else can still sign in, so a third party
+who knows a victim's email can no longer lock the victim out. A credential-wide backstop covers
+distributed guessing: 50 failures across all sources within one hour lock the credential for
+everyone for 15 minutes.
+
+Residual trade-off: the sources are only as distinct as the addresses the rate limiter can see
+(behind a proxy without TRUST_RAILWAY_X_REAL_IP they all collapse into one), and an attacker
+with many addresses can still trip the 50-failure backstop and briefly lock the victim out.
+That costs the attacker dozens of addresses per 15 minutes instead of one request stream, and
+the argon2 verify cost plus the route's per-address rate limit still apply. Failure rows are
+pruned after 24 hours of inactivity.
 """
 
 import asyncio
+import hashlib
+import hmac
 import re
 import uuid
 from contextlib import suppress
@@ -18,12 +33,12 @@ from datetime import UTC, datetime, timedelta
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import IssuedToken, issue_token
-from app.db.models import Credential, User
+from app.db.models import Credential, LoginFailure, User
 
 # Deliberately permissive (RFC 5322 is not worth re-implementing here): reject the obviously
 # malformed, let the real check be "does a confirmation/login round trip work".
@@ -33,6 +48,9 @@ _MIN_PASSWORD_LENGTH = 12
 _MAX_PASSWORD_LENGTH = 256  # argon2 hashes the whole input; cap it against abuse, not strength.
 _MAX_FAILED_ATTEMPTS = 5
 _LOCKOUT = timedelta(minutes=15)
+_BACKSTOP_FAILURES = 50
+_BACKSTOP_WINDOW = timedelta(hours=1)
+_FAILURE_RETENTION = timedelta(hours=24)
 
 _hasher = PasswordHasher()
 
@@ -103,7 +121,56 @@ class LoggedIn:
     token: IssuedToken
 
 
-async def log_in(session: AsyncSession, *, email: str, password: str, device_name: str) -> LoggedIn:
+def hash_source(address: str, key: bytes) -> str:
+    """Opaque, stable per-deploy identifier for a client address (HMAC-SHA256, hex)."""
+    return hmac.new(key, address.encode(), hashlib.sha256).hexdigest()
+
+
+async def _verify_discarding_outcome(password_hash: str, password: str) -> None:
+    # Same hashing cost as an unlocked attempt, so response time doesn't reveal the lock.
+    with suppress(VerificationError, InvalidHashError):
+        await asyncio.to_thread(_hasher.verify, password_hash, password)
+
+
+async def _record_failure(
+    session: AsyncSession,
+    credential: Credential,
+    failure: LoginFailure | None,
+    source: str,
+    now: datetime,
+) -> None:
+    await session.execute(
+        delete(LoginFailure).where(LoginFailure.updated_at < now - _FAILURE_RETENTION)
+    )
+    if failure is None:
+        failure = LoginFailure(credential_id=credential.id, source_hash=source, failed_attempts=0)
+        session.add(failure)
+    elif failure.locked_until is not None:
+        # The lock has expired (a live one is rejected earlier): start a fresh streak.
+        failure.failed_attempts = 0
+        failure.locked_until = None
+    failure.failed_attempts += 1
+    failure.updated_at = now
+    if failure.failed_attempts >= _MAX_FAILED_ATTEMPTS:
+        failure.locked_until = now + _LOCKOUT
+    await session.flush()
+    recent = await session.scalar(
+        select(func.coalesce(func.sum(LoginFailure.failed_attempts), 0)).where(
+            LoginFailure.credential_id == credential.id,
+            LoginFailure.updated_at > now - _BACKSTOP_WINDOW,
+        )
+    )
+    if (recent or 0) >= _BACKSTOP_FAILURES:
+        credential.locked_until = now + _LOCKOUT
+        await session.execute(
+            delete(LoginFailure).where(LoginFailure.credential_id == credential.id)
+        )
+
+
+async def log_in(
+    session: AsyncSession, *, email: str, password: str, device_name: str, source: str
+) -> LoggedIn:
+    """`source` is the opaque `hash_source` value for the caller's address."""
     normalized = normalize_email(email)
     credential = await session.scalar(
         select(Credential).where(Credential.email == normalized).with_for_update()
@@ -114,21 +181,22 @@ async def log_in(session: AsyncSession, *, email: str, password: str, device_nam
         # the email is registered. Off the event loop like the real check below.
         await asyncio.to_thread(_hasher.hash, password)
         raise LoginError("invalid_credentials")
-    if credential.locked_until is not None and credential.locked_until > now:
-        # Same hashing cost as an unlocked attempt, so response time doesn't reveal the lock.
-        # The outcome is discarded: a locked account rejects even the right password.
-        with suppress(VerificationError, InvalidHashError):
-            await asyncio.to_thread(_hasher.verify, credential.password_hash, password)
+    failure = await session.get(LoginFailure, (credential.id, source))
+    credential_locked = credential.locked_until is not None and credential.locked_until > now
+    source_locked = (
+        failure is not None and failure.locked_until is not None and failure.locked_until > now
+    )
+    if credential_locked or source_locked:
+        # The outcome is discarded: a locked account or source rejects even the right password.
+        await _verify_discarding_outcome(credential.password_hash, password)
         raise LoginError("account_locked")
     try:
         await asyncio.to_thread(_hasher.verify, credential.password_hash, password)
     except (VerificationError, InvalidHashError) as e:
-        credential.failed_attempts += 1
-        if credential.failed_attempts >= _MAX_FAILED_ATTEMPTS:
-            credential.locked_until = now + _LOCKOUT
-            credential.failed_attempts = 0
+        await _record_failure(session, credential, failure, source, now)
         raise LoginError("invalid_credentials") from e
-    credential.failed_attempts = 0
+    if failure is not None:
+        await session.delete(failure)
     credential.locked_until = None
     token = await issue_token(session, credential.user_id, kind="device", name=device_name)
     return LoggedIn(credential.user_id, token)

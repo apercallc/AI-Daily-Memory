@@ -2,8 +2,9 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
+from app.credentials import _BACKSTOP_FAILURES as BACKSTOP_FAILURES
 from app.credentials import _MAX_FAILED_ATTEMPTS as MAX_FAILED_ATTEMPTS
 from app.credentials import LoggedIn, LoginError, SignedUp, SignupError, log_in, sign_up
 from app.db import Database
@@ -30,6 +31,7 @@ async def _sign_up(database: Database, **kwargs: str) -> SignedUp:
 
 
 async def _log_in(database: Database, **kwargs: str) -> LoggedIn:
+    kwargs.setdefault("source", "source-a")
     """Mirrors app/api/signup.py: a failed attempt still commits (it bumps the lockout state)."""
     async with database.sessions() as session:
         try:
@@ -214,3 +216,91 @@ async def test_a_locked_account_still_pays_the_hashing_cost(
     # The right password is rejected, but only after the same verify work as an open account.
     assert locked.value.code == "account_locked"
     assert verified == ["x" * 12]
+
+
+async def _fail(database: Database, email: str, source: str) -> str:
+    try:
+        await _log_in(
+            database,
+            email=email,
+            password="wrong-pw12",  # noqa: S106 - fake credential for the test
+            device_name="b",
+            source=source,
+        )
+    except LoginError as error:
+        return error.code
+    return "unexpected_success"
+
+
+async def test_an_attacker_source_is_locked_but_the_legitimate_source_still_logs_in(
+    database: Database,
+) -> None:
+    email = "victim@example.com"
+    await _sign_up(database, email=email, password="x" * 12, device_name="a")
+
+    codes = [await _fail(database, email, "attacker") for _ in range(MAX_FAILED_ATTEMPTS)]
+    assert codes == ["invalid_credentials"] * MAX_FAILED_ATTEMPTS
+
+    # Locked even with the right password...
+    with pytest.raises(LoginError) as locked:
+        await _log_in(database, email=email, password="x" * 12, device_name="b", source="attacker")
+    assert locked.value.code == "account_locked"
+    # ...while the real owner, from another source, is unaffected.
+    logged_in = await _log_in(
+        database, email=email, password="x" * 12, device_name="b", source="owner"
+    )
+    assert logged_in.token.token.startswith("adm_")
+
+
+async def test_a_source_lock_expires(database: Database, db: Engine) -> None:
+    email = "expiry@example.com"
+    await _sign_up(database, email=email, password="x" * 12, device_name="a")
+    for _ in range(MAX_FAILED_ATTEMPTS):
+        await _fail(database, email, "s")
+    with db.begin() as c:
+        c.execute(text("UPDATE login_failures SET locked_until = now() - interval '1 minute'"))
+
+    await _log_in(database, email=email, password="x" * 12, device_name="b", source="s")
+
+
+async def test_distributed_failures_trip_a_credential_wide_backstop(database: Database) -> None:
+    email = "botnet@example.com"
+    await _sign_up(database, email=email, password="x" * 12, device_name="a")
+
+    # Two failures each from many sources: no single source ever locks.
+    for i in range(BACKSTOP_FAILURES // 2):
+        for _ in range(2):
+            assert await _fail(database, email, f"bot-{i}") == "invalid_credentials"
+
+    with pytest.raises(LoginError) as locked:
+        await _log_in(database, email=email, password="x" * 12, device_name="b", source="owner")
+    assert locked.value.code == "account_locked"
+
+
+async def test_success_clears_only_that_sources_counter(database: Database, db: Engine) -> None:
+    email = "clear@example.com"
+    await _sign_up(database, email=email, password="x" * 12, device_name="a")
+    for _ in range(MAX_FAILED_ATTEMPTS - 1):
+        await _fail(database, email, "owner")
+        await _fail(database, email, "attacker")
+
+    await _log_in(database, email=email, password="x" * 12, device_name="b", source="owner")
+
+    with db.connect() as c:
+        rows: dict[str, int] = dict(
+            c.execute(text("SELECT source_hash, failed_attempts FROM login_failures")).all()
+        )
+    assert rows == {"attacker": MAX_FAILED_ATTEMPTS - 1}
+
+
+async def test_idle_failure_rows_are_pruned_on_write(database: Database, db: Engine) -> None:
+    email = "prune@example.com"
+    await _sign_up(database, email=email, password="x" * 12, device_name="a")
+    await _fail(database, email, "old")
+    with db.begin() as c:
+        c.execute(text("UPDATE login_failures SET updated_at = now() - interval '25 hours'"))
+
+    await _fail(database, email, "new")
+
+    with db.connect() as c:
+        assert c.scalars(text("SELECT source_hash FROM login_failures")).all() == ["new"]

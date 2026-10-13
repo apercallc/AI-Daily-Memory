@@ -7,6 +7,7 @@ from sqlalchemy import Engine, text
 
 USER_TABLES = (
     "credentials",
+    "login_failures",
     "access_tokens",
     "audio_uploads",
     "processing_jobs",
@@ -134,21 +135,41 @@ def seed_user_data(
             {"id": uuid.uuid4(), "u": user_id, "d": now.date(), "r": "{}"},
         )
         if with_credential:
+            credential_id = uuid.uuid4()
             c.execute(
                 text(
                     "INSERT INTO credentials (id, user_id, email, password_hash) "
                     "VALUES (:id, :u, :e, 'hash')"
                 ),
-                {"id": uuid.uuid4(), "u": user_id, "e": f"{user_id}@example.test"},
+                {"id": credential_id, "u": user_id, "e": f"{user_id}@example.test"},
+            )
+            c.execute(
+                text(
+                    "INSERT INTO login_failures (credential_id, source_hash, failed_attempts) "
+                    "VALUES (:c, 'source', 2)"
+                ),
+                {"c": credential_id},
             )
     return ids
+
+
+# login_failures hangs off credentials rather than carrying its own user_id.
+_OWNER_FILTER = {
+    "login_failures": "credential_id IN (SELECT id FROM credentials WHERE user_id = :u)",
+}
 
 
 def row_counts(db: Engine, user_id: uuid.UUID) -> dict[str, int]:
     with db.connect() as c:
         return {
             table: int(
-                c.scalar(text(f"SELECT count(*) FROM {table} WHERE user_id = :u"), {"u": user_id})  # noqa: S608
+                c.scalar(
+                    text(
+                        f"SELECT count(*) FROM {table} "  # noqa: S608
+                        f"WHERE {_OWNER_FILTER.get(table, 'user_id = :u')}"
+                    ),
+                    {"u": user_id},
+                )
                 or 0
             )
             for table in USER_TABLES

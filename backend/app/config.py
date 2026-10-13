@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # postgresql+psycopg://user:password@host:5432/db. Unset means no database (health only).
     database_url: SecretStr | None = None
 
+    # Key for the HMAC that turns a client address into the opaque per-source login-lockout key
+    # (app.credentials). Unset falls back to the database URL secret, which every deploy already
+    # has; set it to rotate independently. Rotating only resets in-flight lockout counters.
+    login_source_key: SecretStr | None = None
+
     # S3-compatible object storage for temporary audio (R2 in production, MinIO locally).
     s3_endpoint_url: str | None = None
     s3_region: str = "auto"
