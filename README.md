@@ -23,7 +23,17 @@ Requirements: JDK 17, Android SDK 37, Python 3.13, and `uv`.
 ./gradlew :apps:android:assembleDebug :apps:wear:assembleDebug
 ```
 
-Backend tests require a disposable PostgreSQL database:
+Backend tests require a disposable PostgreSQL database. If `TEST_DATABASE_URL` is unset, the
+database tests fail immediately with `TEST_DATABASE_URL is not set; database tests need
+PostgreSQL` (they are not skipped). Local recipe with Docker, matching CI (`postgres:16`):
+
+```bash
+docker run -d --name aidm-test-pg -e POSTGRES_USER=aidm -e POSTGRES_PASSWORD=aidm-local-only \
+  -e POSTGRES_DB=aidm_test -p 5432:5432 postgres:16
+export TEST_DATABASE_URL=postgresql+psycopg://aidm:aidm-local-only@localhost:5432/aidm_test
+```
+
+Then run the checks:
 
 ```bash
 cd backend

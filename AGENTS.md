@@ -24,7 +24,7 @@ Because we record real conversations, two product-level rules outrank everything
    derived from it (ADR-0004 amendment).
 
 The commercial direction (TODO.md Phase 10): release publicly, charge a monthly
-subscription, let users connect their own clients via API/MCP, and support
+subscription, let users connect their own clients via the public REST API (ADR-0021: no MCP server), and support
 self-service data export. Three more rules follow from that:
 
 3. **Entitlements are server-authoritative.** No client — app, CLI, or third-party
@@ -69,7 +69,8 @@ self-service data export. Three more rules follow from that:
   audio, evidence-backed memory, single query service, client IDs/time model,
   append-safe encrypted segments, watch protocol + shared applicationId, backend as sole
   DB client, mic service lifecycle, markers, daily rhythm, audio retention, where memory
-  lives, speech gating, owner voice — ADR-0001…0016) requires a new ADR first, not a
+  lives, speech gating, owner voice, no speech retention, transcription provider, structured
+  extraction, on-device processing, REST-only integration — ADR-0001…0021) requires a new ADR first, not a
   silent change.
 
 ## Build and verify

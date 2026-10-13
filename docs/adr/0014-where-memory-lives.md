@@ -3,6 +3,8 @@
 - Status: Accepted — amends ADR-0005 (single query service) and ADR-0003 (temporary audio)
 - Date: 2026-09-25
 
+> **Superseded in part by [ADR-0021](0021-public-rest-api-only.md):** references to MCP below are historical. The public REST API is the only external integration surface; there is no MCP server.
+
 ## Context
 
 The user wants reports stored on the phone by default, optionally saved to Google Drive, and

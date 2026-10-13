@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+> **Superseded in part by [ADR-0021](0021-public-rest-api-only.md):** references to MCP below are historical. The public REST API is the only external integration surface; there is no MCP server.
+
 ## Context
 
 AI Daily Memory needs to prove reliable all-day capture and useful recall before investing in platform breadth or distributed infrastructure.

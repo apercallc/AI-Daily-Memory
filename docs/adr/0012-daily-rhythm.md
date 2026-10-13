@@ -3,6 +3,8 @@
 - Status: Accepted (report generation itself arrives with Phases 1–2)
 - Date: 2026-09-25
 
+> **Superseded in part by [ADR-0021](0021-public-rest-api-only.md):** references to MCP below are historical. The public REST API is the only external integration surface; there is no MCP server.
+
 ## Context
 
 The intended use is: start recording in the morning, carry the phone all day, and review a
