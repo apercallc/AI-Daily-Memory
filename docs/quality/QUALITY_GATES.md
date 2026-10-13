@@ -118,3 +118,12 @@ A feature is not done until:
 - performance impact measured for hot paths
 - docs/ADR updated when required
 - CI is green
+
+## Known gaps (need product or device work)
+
+Recorded so a green `qualityCheck` is not read as release readiness. Each is tracked as a TODO.md item.
+
+- No `androidTest`/instrumented layer exists yet; Compose and service flows are covered by JVM tests only.
+- No physical-device endurance results exist (TODO.md "Endurance / device matrix").
+- Self-service export, API-key management, and server-side entitlements are Phase 8/10 work.
+- No password reset or email verification; no device-token listing or expiry policy.

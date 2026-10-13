@@ -692,6 +692,9 @@ hardened phases, it does not replace them.
 ## Public API access (user-owned clients)
 
 - [ ] API keys shipped with the public API (scopes, hashing, rotation, rate limits)
+- [ ] API-key management surface: create, list, and revoke keys (backend issues them only via the operator CLI today)
+- [ ] Device-token lifecycle: listing a user's tokens, expiry policy, and remote revocation of a lost device
+- [ ] Password reset and email verification for self-service accounts (signup/login exist; neither does)
 - [ ] Public API docs with auth, rate limits, and error semantics
 - [ ] Versioned API contract; deprecation policy for breaking changes
 - [ ] API access gated by subscription entitlement
