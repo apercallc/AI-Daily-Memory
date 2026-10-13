@@ -13,6 +13,7 @@ import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.upload.NextUpload
 import com.apercallc.aidailymemory.recording.upload.UploadPolicy
 import com.apercallc.aidailymemory.recording.upload.UploadStop
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,19 +76,43 @@ class UploadScheduler(context: Context) {
     }
 }
 
+/** What to tell the JobScheduler and which follow-up job to schedule after an upload run. */
+internal data class JobFinish(val reschedule: Boolean, val followUp: FollowUp) {
+    enum class FollowUp { NONE, UPLOAD_NOW, UPLOAD_LATER, SIGN_OUT }
+
+    companion object {
+        fun of(next: NextUpload): JobFinish = when (next) {
+            NextUpload.NOW -> JobFinish(false, FollowUp.UPLOAD_NOW)
+            NextUpload.BACKOFF -> JobFinish(true, FollowUp.NONE)
+            NextUpload.LATER -> JobFinish(false, FollowUp.UPLOAD_LATER)
+            NextUpload.SIGN_OUT -> JobFinish(false, FollowUp.SIGN_OUT)
+            NextUpload.NONE -> JobFinish(false, FollowUp.NONE)
+        }
+    }
+}
+
 class UploadJobService : JobService() {
-    private var running: Job? = null
+    /** One handle per job id: the upload and revoke jobs run concurrently and stop separately. */
+    private val running = ConcurrentHashMap<Int, Job>()
 
     override fun onStartJob(params: JobParameters): Boolean {
         val container = (application as AiDailyMemoryApplication).container
         if (params.jobId == UploadScheduler.REVOKE_JOB_ID) {
-            running = container.appScope.launch(Dispatchers.IO) {
-                container.links.ensureLoaded()
-                jobFinished(params, !container.accountLinker.retryPendingRevoke())
+            running[params.jobId] = container.appScope.launch(Dispatchers.IO) {
+                val retry = try {
+                    container.links.ensureLoaded()
+                    !container.accountLinker.retryPendingRevoke()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logFailure(TAG, "revoke_run_failed", e)
+                    true
+                }
+                jobFinished(params, retry)
             }
             return true
         }
-        running = container.appScope.launch(Dispatchers.IO) {
+        running[params.jobId] = container.appScope.launch(Dispatchers.IO) {
             val next = try {
                 container.links.ensureLoaded()
                 container.accountLinker.retryPendingRevoke()
@@ -107,21 +132,13 @@ class UploadJobService : JobService() {
                 logFailure(TAG, "upload_run_failed", e)
                 NextUpload.BACKOFF
             }
-            when (next) {
-                NextUpload.NOW -> {
-                    jobFinished(params, false)
-                    container.uploadScheduler.schedule()
-                }
-                NextUpload.BACKOFF -> jobFinished(params, true)
-                NextUpload.LATER -> {
-                    jobFinished(params, false)
-                    container.uploadScheduler.scheduleLater()
-                }
-                NextUpload.SIGN_OUT -> {
-                    container.clipUploader.lastLink?.let(container::onLinkRejected)
-                    jobFinished(params, false)
-                }
-                NextUpload.NONE -> jobFinished(params, false)
+            val finish = JobFinish.of(next)
+            jobFinished(params, finish.reschedule)
+            when (finish.followUp) {
+                JobFinish.FollowUp.UPLOAD_NOW -> container.uploadScheduler.schedule()
+                JobFinish.FollowUp.UPLOAD_LATER -> container.uploadScheduler.scheduleLater()
+                JobFinish.FollowUp.SIGN_OUT -> container.clipUploader.lastLink?.let(container::onLinkRejected)
+                JobFinish.FollowUp.NONE -> Unit
             }
         }
         return true
@@ -143,7 +160,7 @@ class UploadJobService : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        running?.cancel()
+        running.remove(params.jobId)?.cancel()
         // Unplugged or off Wi-Fi: retry in the next eligible window.
         return true
     }
