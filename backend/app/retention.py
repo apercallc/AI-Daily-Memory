@@ -31,6 +31,8 @@ MAX_HOLD: Final = timedelta(days=7)
 # Finished upload rows say when the user spoke; keep them only as long as duplicate
 # detection needs them, then remove even that metadata (ADR-0014).
 FINISHED_METADATA: Final = timedelta(days=30)
+# One sweep drains at most this many batches per table, so it always ends.
+_MAX_BATCHES: Final = 20
 
 
 @dataclass(frozen=True)
@@ -124,8 +126,8 @@ async def sweep(
         dead=counts["transcription_failed"],
         expired=counts["retention_expired"],
         errors=errors + account_purge_errors,
-        deliveries_expired=await _expire_deliveries(sessions, clock),
-        metadata_purged=await _purge_finished(sessions, clock),
+        deliveries_expired=await _expire_deliveries(sessions, clock, limit=limit),
+        metadata_purged=await _purge_finished(sessions, clock, limit=limit),
         account_prefixes_purged=account_prefixes_purged,
     )
     if rows or result.deliveries_expired or result.account_prefixes_purged:
@@ -179,41 +181,72 @@ async def _purge_deleted_account_prefixes(
 async def _expire_deliveries(
     sessions: async_sessionmaker[AsyncSession],
     clock: datetime | ColumnElement[datetime],
+    *,
+    limit: int,
 ) -> int:
     """Sealed transcripts the phone never collected within the hold are deleted, and their
-    clips marked failed so the phone (which still has the audio) uploads them again."""
-    async with sessions() as session:
-        uploads = (
-            await session.scalars(
-                delete(SealedDelivery)
+    clips marked failed so the phone (which still has the audio) uploads them again.
+
+    Deleted in batches of `limit` so a large backlog never becomes one huge statement."""
+    total = 0
+    for _ in range(_MAX_BATCHES):
+        async with sessions() as session:
+            batch = (
+                select(SealedDelivery.id)
                 .where(SealedDelivery.expires_at <= clock)
-                .returning(SealedDelivery.upload_id),
+                .order_by(SealedDelivery.expires_at)
+                .limit(limit)
             )
-        ).all()
-        if uploads:
-            await session.execute(
-                update(AudioUpload)
-                .where(AudioUpload.id.in_(uploads), AudioUpload.state == "transcribed")
-                .values(state="failed", failure_code="delivery_expired"),
-            )
-        await session.commit()
-    return len(uploads)
+            uploads = (
+                await session.scalars(
+                    delete(SealedDelivery)
+                    .where(SealedDelivery.id.in_(batch))
+                    .returning(SealedDelivery.upload_id),
+                )
+            ).all()
+            if uploads:
+                await session.execute(
+                    update(AudioUpload)
+                    .where(AudioUpload.id.in_(uploads), AudioUpload.state == "transcribed")
+                    .values(state="failed", failure_code="delivery_expired"),
+                )
+            await session.commit()
+        total += len(uploads)
+        if len(uploads) < limit:
+            break
+    return total
 
 
 async def _purge_finished(
     sessions: async_sessionmaker[AsyncSession],
     clock: datetime | ColumnElement[datetime],
+    *,
+    limit: int,
 ) -> int:
-    async with sessions() as session:
-        purged = (
-            await session.scalars(
-                delete(AudioUpload)
+    """Deletes finished upload metadata older than FINISHED_METADATA, `limit` rows at a time.
+
+    Only `delivered` and `failed` rows (ADR-0014). A full-cloud clip stays `transcribed`
+    because the server keeps its transcript as the user's memory; deleting the row would
+    cascade to that evidence, so its lifetime is a product decision, not a sweep rule."""
+    total = 0
+    for _ in range(_MAX_BATCHES):
+        async with sessions() as session:
+            batch = (
+                select(AudioUpload.id)
                 .where(
                     AudioUpload.state.in_(("delivered", "failed")),
                     AudioUpload.created_at < clock - FINISHED_METADATA,
                 )
-                .returning(AudioUpload.id),
+                .order_by(AudioUpload.created_at)
+                .limit(limit)
             )
-        ).all()
-        await session.commit()
-    return len(purged)
+            purged = (
+                await session.scalars(
+                    delete(AudioUpload).where(AudioUpload.id.in_(batch)).returning(AudioUpload.id),
+                )
+            ).all()
+            await session.commit()
+        total += len(purged)
+        if len(purged) < limit:
+            break
+    return total

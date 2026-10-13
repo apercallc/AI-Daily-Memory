@@ -473,3 +473,90 @@ def test_routes_needing_the_database_say_so_when_it_is_missing(store: FakeObject
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "service_unavailable"
+
+
+def age_upload(db: Engine, upload_id: str, *, hours: float) -> None:
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE audio_uploads SET created_at = now() - make_interval(secs => :s) "
+                "WHERE id = :id"
+            ),
+            {"s": hours * 3600, "id": upload_id},
+        )
+
+
+def test_a_stale_pending_clip_is_not_given_a_url_that_outlives_the_sweep(
+    client: TestClient, account: Account, db: Engine
+) -> None:
+    body = clip()
+    assert client.post("/v1/uploads", json=body, headers=account.headers).status_code == 201
+    age_upload(db, body["upload_id"], hours=2)
+
+    status = client.get(f"/v1/uploads/{body['upload_id']}", headers=account.headers)
+
+    assert status.status_code == 200
+    assert status.json()["state"] == "pending"
+    assert status.json()["upload"] is None
+
+
+def test_retrying_create_for_a_stale_pending_clip_starts_a_fresh_window(
+    client: TestClient, account: Account, db: Engine
+) -> None:
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    age_upload(db, body["upload_id"], hours=2)
+
+    again = client.post("/v1/uploads", json=body, headers=account.headers)
+
+    assert again.status_code == 201
+    assert again.json()["upload"] is not None
+    with db.connect() as connection:
+        age = connection.scalar(
+            text("SELECT extract(epoch FROM now() - created_at) FROM audio_uploads")
+        )
+    assert age is not None
+    assert float(age) < 3600
+
+
+def test_replaced_clip_object_survives_when_the_replacement_is_rejected(
+    client: TestClient, account: Account, db: Engine, store: FakeObjectStore
+) -> None:
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    old_key = f"users/{account.user_id}/audio/{body['upload_id']}.aac"
+    store.put(old_key, AUDIO)
+    # The old row now fills the daily quota, so the replacement (same clip, new id) is
+    # refused and rolled back after the old row was staged for deletion.
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO audio_uploads (id, user_id, session_id, segment_id, offset_ms, "
+                "duration_ms, byte_size, sha256, codec, sample_rate_hz, channel_count, "
+                "captured_at, state, object_key) SELECT gen_random_uuid(), user_id, session_id, "
+                "gen_random_uuid(), 0, 1000, 4990, sha256, codec, sample_rate_hz, channel_count, "
+                "captured_at, 'received', 'users/x/audio/filler.aac' FROM audio_uploads"
+            )
+        )
+    same_clip_new_id = {**body, "upload_id": str(uuid.uuid4())}
+    response = client.post("/v1/uploads", json=same_clip_new_id, headers=account.headers)
+
+    assert response.status_code == 429
+    assert old_key in store.objects
+    assert old_key not in store.deleted
+
+
+def test_replaced_pending_clip_object_is_deleted_after_commit(
+    client: TestClient, account: Account, store: FakeObjectStore
+) -> None:
+    body = clip()
+    client.post("/v1/uploads", json=body, headers=account.headers)
+    old_key = f"users/{account.user_id}/audio/{body['upload_id']}.aac"
+    store.put(old_key, AUDIO)
+
+    response = client.post(
+        "/v1/uploads", json={**body, "upload_id": str(uuid.uuid4())}, headers=account.headers
+    )
+
+    assert response.status_code == 201
+    assert old_key in store.deleted

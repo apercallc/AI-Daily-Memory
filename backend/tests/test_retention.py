@@ -220,3 +220,54 @@ async def test_nothing_to_sweep_is_quiet(database: Database) -> None:
     result = await sweep(database.sessions, FakeObjectStore(), url_ttl_seconds=TTL, now=NOW)
 
     assert result == SweepResult(0, 0, 0, 0)
+
+
+async def test_finished_metadata_and_expired_deliveries_are_purged_in_batches(
+    database: Database, db: Engine
+) -> None:
+    store = FakeObjectStore()
+    old = NOW - timedelta(days=31)
+    ids = [upload(db, store, state="delivered", created_at=old)[0] for _ in range(5)]
+    assert len(ids) == 5
+
+    result = await sweep(database.sessions, store, url_ttl_seconds=TTL, now=NOW, limit=2)
+
+    assert result.metadata_purged == 5  # three batches of at most 2
+    with db.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM audio_uploads")) == 0
+
+
+async def test_expired_deliveries_drain_in_batches_and_fail_their_clips(
+    database: Database, db: Engine
+) -> None:
+    store = FakeObjectStore()
+    for _ in range(3):
+        upload_id, _ = upload(db, store, state="transcribed", created_at=NOW - timedelta(days=8))
+        with db.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO device_keys (id, user_id, token_id, public_key) SELECT "
+                    "gen_random_uuid(), u.user_id, t.id, :k FROM audio_uploads u JOIN "
+                    "access_tokens t ON t.user_id = u.user_id WHERE u.id = :up"
+                ),
+                {"k": b"k" * 32, "up": upload_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO sealed_deliveries (id, user_id, upload_id, device_key_id, "
+                    "ciphertext, expires_at) SELECT gen_random_uuid(), u.user_id, u.id, "
+                    "k.id, :ct, :exp FROM audio_uploads u JOIN device_keys k "
+                    "ON k.user_id = u.user_id WHERE u.id = :up"
+                ),
+                {"ct": b"c", "exp": NOW - timedelta(days=1), "up": upload_id},
+            )
+
+    result = await sweep(database.sessions, store, url_ttl_seconds=TTL, now=NOW, limit=2)
+
+    assert result.deliveries_expired == 3
+    with db.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM sealed_deliveries")) == 0
+        failed = connection.scalar(
+            text("SELECT count(*) FROM audio_uploads WHERE failure_code = 'delivery_expired'")
+        )
+    assert failed == 3

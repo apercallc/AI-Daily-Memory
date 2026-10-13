@@ -19,7 +19,7 @@ from app.errors import ErrorResponse, install_error_handlers
 from app.middleware import RequestContextMiddleware
 from app.observability import configure_logging
 from app.retention import sweep
-from app.sentry import initialize_sentry
+from app.sentry import capture_unhandled_error, initialize_sentry
 from app.storage import ObjectStore, object_store_from
 
 logger = logging.getLogger("app.sweep")
@@ -44,9 +44,10 @@ async def retention_sweep_loop(
     while not stop.is_set():
         try:
             await sweep(database.sessions, store, url_ttl_seconds=url_ttl_seconds)
-        except Exception:
+        except Exception as exc:
             # A failed sweep must never take the API down; the next interval retries it.
             logger.exception("retention_sweep_failed")
+            capture_unhandled_error(exc)
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
         except TimeoutError:

@@ -29,6 +29,7 @@ from app.db import get_session
 from app.db.models import AudioUpload, UploadState, User
 from app.errors import ErrorResponse, error_response
 from app.jobs import enqueue
+from app.retention import PENDING_GRACE
 from app.storage import ObjectStore, audio_key
 
 logger = logging.getLogger("app.uploads")
@@ -109,9 +110,16 @@ def _same_clip(row: AudioUpload, body: UploadCreate) -> bool:
     )
 
 
+def _stale_pending(row: AudioUpload) -> bool:
+    """A pending row old enough that a URL signed now would outlive the retention sweep's
+    cutoff (`created_at + url TTL + PENDING_GRACE`): the sweep could delete the object and
+    mark the row failed, and the late PUT would then leave unreferenced audio behind."""
+    return row.state == "pending" and datetime.now(UTC) - row.created_at > PENDING_GRACE
+
+
 def _status(row: AudioUpload, store: ObjectStore, settings: Settings) -> UploadStatus:
     target = None
-    if row.state == "pending":
+    if row.state == "pending" and not _stale_pending(row):
         signed = store.presign_put(
             row.object_key,
             byte_size=row.byte_size,
@@ -185,8 +193,17 @@ async def _create(
         # Another user's id and a changed payload look the same from outside.
         if existing.user_id != principal.user_id or not _same_clip(existing, body):
             return _conflict(body.upload_id)
-        response.status_code = 200
-        return _status(existing, store, settings)
+        if not _stale_pending(existing):
+            response.status_code = 200
+            return _status(existing, store, settings)
+        # Abandoned long enough that the sweep owns it; start over under the same id (the
+        # object key is the same, so there is nothing to delete).
+        await session.execute(delete(AudioUpload).where(AudioUpload.id == existing.id))
+        session.expunge(existing)
+
+    # Objects to remove once the replacement is committed. Deleting earlier would destroy the
+    # old clip's object even when the checks below roll the replacement back.
+    doomed: list[str] = []
 
     # The same clip under a new id: the phone lost the id it used before.
     earlier = await session.scalar(
@@ -204,7 +221,7 @@ async def _create(
             response.status_code = 200
             return UploadStatus(upload_id=earlier.id, state=_state(earlier))
         # Never verified, or processing failed for good: replace it with the current id.
-        await store.delete(earlier.object_key)
+        doomed.append(earlier.object_key)
         await session.execute(delete(AudioUpload).where(AudioUpload.id == earlier.id))
 
     # Phone storage modes need somewhere to seal the transcript (ADR-0014): this device's key.
@@ -250,6 +267,13 @@ async def _create(
     )
     session.add(row)
     await session.commit()
+    for key in doomed:
+        try:
+            await store.delete(key)
+        except Exception:
+            # The row is already gone; the bucket lifecycle rule and the account-prefix purge
+            # are the backstops for an object this delete missed. Never fail the upload on it.
+            logger.exception("replaced_upload_object_delete_failed")
     return _status(row, store, settings)
 
 

@@ -67,6 +67,31 @@ async def test_sweep_loop_survives_a_failing_sweep(monkeypatch: pytest.MonkeyPat
     assert calls == [900, 900]
 
 
+async def test_sweep_loop_reports_a_failing_sweep_to_sentry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[BaseException] = []
+    stop = asyncio.Event()
+
+    async def failing_sweep(
+        sessions: object, store: object, *, url_ttl_seconds: int, now: object = None
+    ) -> None:
+        stop.set()
+        raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(main_module, "sweep", failing_sweep)
+    monkeypatch.setattr(main_module, "capture_unhandled_error", captured.append)
+    await retention_sweep_loop(
+        cast(Database, SimpleNamespace(sessions=None)),
+        cast(ObjectStore, object()),
+        interval_seconds=60.0,
+        url_ttl_seconds=900,
+        stop=stop,
+    )
+
+    assert [str(e) for e in captured] == ["store unavailable"]
+
+
 def wait_for_sweep(calls: list[int], seconds: float = 5.0) -> None:
     deadline = time.monotonic() + seconds
     while not calls and time.monotonic() < deadline:
