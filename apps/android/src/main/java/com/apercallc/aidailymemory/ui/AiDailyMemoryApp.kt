@@ -10,7 +10,10 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibility
+import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibilityPolicy
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -113,6 +116,7 @@ fun AiDailyMemoryApp(
     val snackbar = remember { SnackbarHostState() }
     var dialog by remember { mutableStateOf<StartDialog?>(null) }
     var batteryRestricted by remember { mutableStateOf(false) }
+    var indicator by remember { mutableStateOf(IndicatorVisibility.VISIBLE) }
     val scope = rememberCoroutineScope()
     fun notify(@StringRes message: Int) {
         scope.launch { snackbar.showSnackbar(resources.getString(message)) }
@@ -132,6 +136,8 @@ fun AiDailyMemoryApp(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val power = context.getSystemService(PowerManager::class.java)
         batteryRestricted = !power.isIgnoringBatteryOptimizations(context.packageName)
+        indicator = (context.applicationContext as AiDailyMemoryApplication).container.notifications
+            .indicatorVisibility()
     }
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { message -> snackbar.showSnackbar(resources.getString(message)) }
@@ -171,6 +177,13 @@ fun AiDailyMemoryApp(
         model = state.model,
         overview = state.overview,
         batteryRestricted = batteryRestricted,
+        indicator = indicator,
+        onNotificationSettings = {
+            open(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            )
+        },
         snackbar = snackbar,
         onPrimaryAction = { action ->
             when (action) {
@@ -319,6 +332,8 @@ fun CaptureScreen(
     onMark: (MarkerKind) -> Unit,
     onBatterySettings: () -> Unit,
     modifier: Modifier = Modifier,
+    indicator: IndicatorVisibility = IndicatorVisibility.VISIBLE,
+    onNotificationSettings: () -> Unit = {},
     onOpenSessions: () -> Unit = {},
     onOpenMemory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -347,6 +362,10 @@ fun CaptureScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (IndicatorVisibilityPolicy.showBanner(indicator, model)) {
+                IndicatorWarningCard(indicator, onNotificationSettings)
+            }
 
             CaptureStatusCard(model = model, overview = overview)
 
@@ -556,6 +575,37 @@ internal fun durationText(ms: Long): String {
             minutes / MINUTES_PER_HOUR,
             minutes % MINUTES_PER_HOUR,
         )
+    }
+}
+
+@Composable
+private fun IndicatorWarningCard(indicator: IndicatorVisibility, onSettings: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    val body = when (indicator) {
+        IndicatorVisibility.NOTIFICATIONS_OFF -> R.string.indicator_off_body
+        IndicatorVisibility.CHANNEL_BLOCKED -> R.string.indicator_blocked_body
+        else -> R.string.indicator_lowered_body
+    }
+    Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.indicator_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(text = stringResource(body))
+            TextButton(
+                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                onClick = onSettings,
+            ) { Text(stringResource(R.string.indicator_open_settings)) }
+        }
     }
 }
 

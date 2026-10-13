@@ -82,6 +82,11 @@
     <string name="permission_settings_title">Permission needed</string>
     <string name="permission_settings_body">Android won\'t ask again. Open Settings, choose Permissions, and allow it there.</string>
 
+    <string name="indicator_title">Recording indicator may be hidden</string>
+    <string name="indicator_off_body">Notifications are turned off for this app, so the recording indicator and the \"tap to resume\" alert will not appear. Turn them on to see when recording is active.</string>
+    <string name="indicator_blocked_body">The recording status notification is blocked. Allow it so you can always see when recording is active.</string>
+    <string name="indicator_lowered_body">The recording status notification was set to silent, which can hide it from the status bar. Set it back to the default level so the indicator stays visible.</string>
+    <string name="indicator_open_settings">Notification settings</string>
     <string name="battery_title">Battery restrictions</string>
     <string name="battery_body">Some phones stop apps running in the background. Recording runs as a foreground service, which is usually allowed. If you ever see \"Recording interrupted\", allowing unrestricted battery use can help.</string>
 

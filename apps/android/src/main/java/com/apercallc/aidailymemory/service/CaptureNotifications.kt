@@ -15,6 +15,8 @@ import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
+import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibility
+import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibilityPolicy
 import com.apercallc.aidailymemory.recording.presentation.PrimaryAction
 import com.apercallc.aidailymemory.ui.CaptureStrings
 
@@ -98,7 +100,7 @@ class CaptureNotifications(private val context: Context) {
             .setAutoCancel(true)
             .setContentIntent(openApp())
             .build()
-        manager.notify(ID_REMINDER, notification)
+        manager.notify(ID_RESUMED, notification)
     }
 
     /**
@@ -110,6 +112,15 @@ class CaptureNotifications(private val context: Context) {
         val channel = manager.getNotificationChannel(CHANNEL_STATUS) ?: return true
         return channel.importance != NotificationManager.IMPORTANCE_NONE
     }
+
+    /**
+     * What the user's notification settings do to the recording indicator, for the in-app
+     * warning. The alert and status notifications cannot report their own absence.
+     */
+    fun indicatorVisibility(): IndicatorVisibility = IndicatorVisibilityPolicy.evaluate(
+        appNotificationsEnabled = manager.areNotificationsEnabled(),
+        channelImportance = manager.getNotificationChannel(CHANNEL_STATUS)?.importance,
+    )
 
     fun status(model: CaptureStatusModel): Notification =
         builder(CHANNEL_STATUS, model)
@@ -240,5 +251,6 @@ class CaptureNotifications(private val context: Context) {
         const val ID_STATUS = 1
         const val ID_ALERT = 2
         const val ID_REMINDER = 3
+        const val ID_RESUMED = 4
     }
 }
