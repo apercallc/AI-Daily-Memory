@@ -33,9 +33,11 @@ data class ProcessingUi(
     val transcriptionProvider: String = "disabled",
     val transcriptionApiKey: String = "",
     val transcriptionApiUrl: String = "",
+    val transcriptionApiUrlInvalid: Boolean = false,
     val extractionProvider: String = "disabled",
     val extractionApiKey: String = "",
     val extractionApiUrl: String = "",
+    val extractionApiUrlInvalid: Boolean = false,
     val extractionModel: String = "",
     val deleteAudioAfterTranscription: Boolean = true,
 )
@@ -44,6 +46,7 @@ data class ProcessingUi(
 data class SyncUi(
     val enabled: Boolean = false,
     val url: String = "",
+    val urlInvalid: Boolean = false,
     val token: String = "",
     val includeTranscripts: Boolean = false,
     val lastSyncEpochMs: Long? = null,
@@ -129,6 +132,12 @@ fun ProcessingSettingsSection(
                                 value = processing.transcriptionApiUrl,
                                 onValueChange = actions.onTranscriptionApiUrlChange,
                                 label = { Text(stringResource(R.string.processing_api_url)) },
+                                isError = processing.transcriptionApiUrlInvalid,
+                                supportingText = if (processing.transcriptionApiUrlInvalid) {
+                                    { Text(stringResource(R.string.url_must_be_https)) }
+                                } else {
+                                    null
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                             )
@@ -170,6 +179,12 @@ fun ProcessingSettingsSection(
                                 value = processing.extractionApiUrl,
                                 onValueChange = actions.onExtractionApiUrlChange,
                                 label = { Text(stringResource(R.string.processing_api_url)) },
+                                isError = processing.extractionApiUrlInvalid,
+                                supportingText = if (processing.extractionApiUrlInvalid) {
+                                    { Text(stringResource(R.string.url_must_be_https)) }
+                                } else {
+                                    null
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                             )
@@ -261,6 +276,12 @@ fun SyncSettingsSection(
                         value = sync.url,
                         onValueChange = actions.onUrlChange,
                         label = { Text(stringResource(R.string.sync_url)) },
+                        isError = sync.urlInvalid,
+                        supportingText = if (sync.urlInvalid) {
+                            { Text(stringResource(R.string.url_must_be_https)) }
+                        } else {
+                            null
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )

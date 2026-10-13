@@ -12,7 +12,10 @@ import java.net.URL
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -42,7 +45,7 @@ class ApiKeyExtractionProvider(
         return ExtractionResult(items)
     }
 
-    private fun buildPrompt(lines: List<NumberedLine>): String {
+    internal fun buildPrompt(lines: List<NumberedLine>): String {
         val numbered = lines.joinToString("\n") { (i, speaker, text) ->
             val sp = speaker?.let { "[$it] " } ?: ""
             "$i: $sp$text"
@@ -77,8 +80,7 @@ class ApiKeyExtractionProvider(
             doOutput = true
         }
         try {
-            val body = """{"model":"$model","messages":[{"role":"user","content":${escapeJson(prompt)}}],"temperature":0.1}"""
-            conn.outputStream.use { it.write(body.toByteArray()) }
+            conn.outputStream.use { it.write(requestBody(prompt).toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             if (code in 500..599) throw ProcessingException("provider_server_error", retryable = true)
             if (code in 400..499) throw ProcessingException("provider_client_error", retryable = false)
@@ -95,7 +97,7 @@ class ApiKeyExtractionProvider(
         }
     }
 
-    private fun parseResponse(response: String): List<ExtractedItem> {
+    internal fun parseResponse(response: String): List<ExtractedItem> {
         val json = Json { ignoreUnknownKeys = true }
         val root = json.parseToJsonElement(response).jsonObject
         val content = root["choices"]?.jsonArray?.firstOrNull()
@@ -140,8 +142,22 @@ class ApiKeyExtractionProvider(
         return text.substring(start, end + 1)
     }
 
-    private fun escapeJson(s: String): String =
-        "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
+    /** Built with a JSON writer so a model name or transcript can never break out of the string. */
+    internal fun requestBody(prompt: String): String = buildJsonObject {
+        put("model", model)
+        put(
+            "messages",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("role", "user")
+                        put("content", prompt)
+                    },
+                )
+            },
+        )
+        put("temperature", 0.1)
+    }.toString()
 
     companion object {
         private const val TIMEOUT_MS = 60_000

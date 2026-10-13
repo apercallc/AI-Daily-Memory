@@ -274,6 +274,7 @@
     <string name="sync_explainer">Push daily summaries and memory items to your own server for cross-device querying. Never sends audio.</string>
     <string name="sync_enabled">Enable sync</string>
     <string name="sync_failed">Sync failed. New reports are waiting to upload; check the endpoint and try again.</string>
+    <string name="url_must_be_https">Enter a full https:// address with a valid host. Plain http is not allowed.</string>
     <string name="sync_url">Sync endpoint URL</string>
     <string name="sync_token">Auth token</string>
     <string name="sync_include_transcripts">Also sync full transcripts</string>

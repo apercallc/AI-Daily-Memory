@@ -41,6 +41,7 @@ import com.apercallc.aidailymemory.platform.PartialWakeLock
 import com.apercallc.aidailymemory.schedule.AndroidRhythmAlarms
 import com.apercallc.aidailymemory.schedule.RhythmRunner
 import com.apercallc.aidailymemory.schedule.SessionRegistry
+import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.update.UpdateChecker
@@ -382,7 +383,7 @@ class AppContainer(context: Context) {
         get() {
             val tp = when (processingSettings.transcriptionProvider.value) {
                 ProcessingSettings.PROVIDER_USER_API -> {
-                    val url = processingSettings.transcriptionApiUrl
+                    val url = (EndpointUrl.parse(processingSettings.transcriptionApiUrl.orEmpty()) as? EndpointUrl.Valid)?.value
                     val key = processingSettings.transcriptionApiKey
                     if (!url.isNullOrBlank() && !key.isNullOrBlank()) {
                         ApiKeyTranscriptionProvider(url, key, "user-model")
@@ -394,7 +395,7 @@ class AppContainer(context: Context) {
             }
             val ep = when (processingSettings.extractionProvider.value) {
                 ProcessingSettings.PROVIDER_USER_API -> {
-                    val url = processingSettings.extractionApiUrl
+                    val url = (EndpointUrl.parse(processingSettings.extractionApiUrl.orEmpty()) as? EndpointUrl.Valid)?.value
                     val key = processingSettings.extractionApiKey
                     val model = processingSettings.extractionModel
                     if (!url.isNullOrBlank() && !key.isNullOrBlank() && !model.isNullOrBlank()) {

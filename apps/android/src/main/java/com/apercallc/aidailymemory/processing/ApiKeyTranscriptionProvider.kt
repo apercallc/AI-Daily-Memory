@@ -62,7 +62,7 @@ class ApiKeyTranscriptionProvider(
         }
     }
 
-    private fun parseResponse(response: String): TranscriptResult {
+    internal fun parseResponse(response: String): TranscriptResult {
         val json = Json { ignoreUnknownKeys = true }
         val root = json.parseToJsonElement(response).jsonObject
         val language = root["language"]?.jsonPrimitive?.contentOrNull

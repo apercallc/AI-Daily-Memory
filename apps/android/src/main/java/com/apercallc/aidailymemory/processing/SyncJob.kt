@@ -13,6 +13,7 @@ import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.recording.processing.SyncCoverage
 import com.apercallc.aidailymemory.recording.processing.SyncItem
 import com.apercallc.aidailymemory.recording.processing.SyncPayload
@@ -129,7 +130,7 @@ class SyncManager(
      */
     suspend fun syncPending(): Boolean {
         if (!settings.syncEnabled.value) return true
-        val url = settings.syncUrl
+        val url = (EndpointUrl.parse(settings.syncUrl.orEmpty()) as? EndpointUrl.Valid)?.value
         if (url == null) {
             // Enabled without an endpoint is a misconfiguration the user must see, not a success.
             Log.w(TAG, "sync_url_missing")

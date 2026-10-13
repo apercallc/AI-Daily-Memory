@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
@@ -24,8 +25,15 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private data class UrlDrafts(
+    val transcription: String? = null,
+    val extraction: String? = null,
+    val sync: String? = null,
+)
 
 /** The next thing the schedule will do, for the "Next: …" line. */
 data class NextChange(val action: RhythmAction, val at: ZonedDateTime, val quietLabel: String?)
@@ -114,20 +122,26 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val pSettings = container.processingSettings
 
+    /** Text the user typed that is not a valid endpoint yet; shown as typed, never stored. */
+    private val urlDrafts = MutableStateFlow(UrlDrafts())
+
     val processing: StateFlow<ProcessingUi> = combine(
         pSettings.processingEnabled,
         pSettings.transcriptionProvider,
         pSettings.deleteAudioAfterTranscription,
         pSettings.configRevision,
-    ) { enabled, tp, deleteAudio, _ ->
+        urlDrafts,
+    ) { enabled, tp, deleteAudio, _, drafts ->
         ProcessingUi(
             enabled = enabled,
             transcriptionProvider = tp,
             transcriptionApiKey = pSettings.transcriptionApiKey ?: "",
-            transcriptionApiUrl = pSettings.transcriptionApiUrl ?: "",
+            transcriptionApiUrl = drafts.transcription ?: pSettings.transcriptionApiUrl ?: "",
+            transcriptionApiUrlInvalid = drafts.transcription != null,
             extractionProvider = pSettings.extractionProvider.value,
             extractionApiKey = pSettings.extractionApiKey ?: "",
-            extractionApiUrl = pSettings.extractionApiUrl ?: "",
+            extractionApiUrl = drafts.extraction ?: pSettings.extractionApiUrl ?: "",
+            extractionApiUrlInvalid = drafts.extraction != null,
             extractionModel = pSettings.extractionModel ?: "",
             deleteAudioAfterTranscription = deleteAudio,
         )
@@ -138,10 +152,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.syncIncludeTranscripts,
         pSettings.lastSyncFailed,
         pSettings.configRevision,
-    ) { enabled, includeTranscripts, lastSyncFailed, _ ->
+        urlDrafts,
+    ) { enabled, includeTranscripts, lastSyncFailed, _, drafts ->
         SyncUi(
             enabled = enabled,
-            url = pSettings.syncUrl ?: "",
+            url = drafts.sync ?: pSettings.syncUrl ?: "",
+            urlInvalid = drafts.sync != null,
             token = pSettings.syncToken ?: "",
             includeTranscripts = includeTranscripts,
             lastSyncEpochMs = pSettings.lastSyncEpochMs,
@@ -163,8 +179,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
         onTranscriptionApiUrlChange = { value ->
-            pSettings.transcriptionApiUrl = value
-            onProcessingSettingsChanged()
+            applyUrl(value, { d, v -> d.copy(transcription = v) }) { pSettings.transcriptionApiUrl = it }
         },
         onExtractionProviderChange = { provider ->
             pSettings.setExtractionProvider(provider)
@@ -175,8 +190,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
         onExtractionApiUrlChange = { value ->
-            pSettings.extractionApiUrl = value
-            onProcessingSettingsChanged()
+            applyUrl(value, { d, v -> d.copy(extraction = v) }) { pSettings.extractionApiUrl = it }
         },
         onExtractionModelChange = { value ->
             pSettings.extractionModel = value
@@ -191,8 +205,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
         onUrlChange = { value ->
-            pSettings.syncUrl = value
-            onProcessingSettingsChanged()
+            applyUrl(value, { d, v -> d.copy(sync = v) }) { pSettings.syncUrl = it }
         },
         onTokenChange = { value ->
             pSettings.syncToken = value
@@ -203,6 +216,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
         },
     )
+
+    /**
+     * Stores [input] only when it is blank (clears) or a valid https endpoint; otherwise the raw
+     * text stays as a draft so the field can show an error and the saved value is untouched.
+     */
+    private fun applyUrl(
+        input: String,
+        withDraft: (UrlDrafts, String?) -> UrlDrafts,
+        store: (String?) -> Unit,
+    ) {
+        when (val parsed = EndpointUrl.parse(input)) {
+            is EndpointUrl.Valid -> {
+                urlDrafts.update { withDraft(it, null) }
+                store(parsed.value)
+                onProcessingSettingsChanged()
+            }
+            EndpointUrl.Blank -> {
+                urlDrafts.update { withDraft(it, null) }
+                store(null)
+                onProcessingSettingsChanged()
+            }
+            EndpointUrl.Invalid -> urlDrafts.update { withDraft(it, input) }
+        }
+    }
 
     /** Schedules or cancels background work as processing and sync settings change. */
     fun onProcessingSettingsChanged() {
