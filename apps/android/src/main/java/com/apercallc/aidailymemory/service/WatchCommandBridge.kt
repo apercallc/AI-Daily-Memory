@@ -5,6 +5,7 @@ import com.apercallc.aidailymemory.recording.SessionId
 import com.apercallc.aidailymemory.recording.Transition
 import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
+import com.apercallc.aidailymemory.recording.wear.AcknowledgementCodec
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgement
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgements
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
@@ -21,13 +22,18 @@ class WatchCommandBridge(
     private val awaitReady: suspend () -> Unit = {},
     private val acknowledgements: CommandAcknowledgements<CommandAcknowledgement> =
         CommandAcknowledgements(128),
+    /**
+     * Called with the encoded recent acknowledgements after each new one, so a restarted phone
+     * still answers a retried command with its original outcome instead of running it twice.
+     */
+    private val persist: (String) -> Unit = {},
 ) {
     private val commandLock = Mutex()
 
     suspend fun execute(commandId: String, command: WatchCommand): CommandAcknowledgement =
         commandLock.withLock {
             awaitReady()
-            require(commandId.isNotBlank())
+            require(AcknowledgementCodec.isEncodable(commandId))
             val cached = acknowledgements.get(commandId)
             if (cached != null) {
                 cached
@@ -44,6 +50,7 @@ class WatchCommandBridge(
                     WatchCommand.QuickNote -> fromMarker(commandId, placeMarker(MarkerKind.QUICK_NOTE))
                 }
                 acknowledgements.remember(commandId, acknowledgement)
+                persist(AcknowledgementCodec.encode(acknowledgements.snapshot().map { it.second }))
                 acknowledgement
             }
         }
@@ -68,3 +75,9 @@ class WatchCommandBridge(
         is Transition.Rejected -> CommandOutcome.Rejected
     }
 }
+
+/** Rebuilds the bounded cache from what an earlier process persisted. */
+fun restoreAcknowledgements(stored: String?, capacity: Int = 128): CommandAcknowledgements<CommandAcknowledgement> =
+    CommandAcknowledgements<CommandAcknowledgement>(capacity).also { cache ->
+        AcknowledgementCodec.decode(stored).forEach { cache.remember(it.commandId, it) }
+    }

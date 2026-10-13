@@ -33,6 +33,14 @@
     <string name="command_ignored">No change made on the phone.</string>
     <string name="command_rejected">Action unavailable. Check the phone.</string>
     <string name="command_unconfirmed">The phone hasn\'t confirmed this action. Check the phone or try again.</string>
+    <string name="error_phone_not_connected">Phone not connected. Open the phone app and check Bluetooth.</string>
+    <string name="error_connection_check_failed">Couldn\'t check the phone connection. Try again.</string>
+    <string name="error_snapshot_read_failed">Couldn\'t read the phone\'s latest state.</string>
+    <string name="error_snapshot_unconfirmed">Phone state isn\'t confirmed yet. Retry.</string>
+    <string name="error_command_not_sent">Phone not connected. No command was sent.</string>
+    <string name="error_command_remains_unconfirmed">Phone not connected. The command remains unconfirmed.</string>
+    <string name="error_phone_rejected">Phone rejected the command.</string>
+    <string name="action_dismiss">Dismiss</string>
     <string name="action_retry">Try again</string>
     <string name="phone_controls_waiting">Controls will be available when the phone confirms its status.</string>
     <string name="action_check_phone">Check phone</string>

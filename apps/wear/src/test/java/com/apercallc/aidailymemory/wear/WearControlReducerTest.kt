@@ -62,29 +62,48 @@ class WearControlReducerTest {
             pendingCommand = WatchCommand.Highlight,
         )
 
-        val reduced = WearControlReducer.commandUnconfirmed(current, "cmd-1", "No phone confirmation")
+        val reduced = WearControlReducer.commandUnconfirmed(current, "cmd-1", WearError.COMMAND_UNCONFIRMED)
 
         assertEquals(current.snapshot, reduced.snapshot)
         assertEquals("cmd-1", reduced.pendingCommandId)
         assertEquals(WatchCommand.Highlight, reduced.pendingCommand)
-        assertEquals("No phone confirmation", reduced.error)
+        assertEquals(WearError.COMMAND_UNCONFIRMED, reduced.error)
     }
 
     @Test
-    fun `available controls follow only phone-confirmed state`() {
-        assertEquals(
-            listOf(WatchCommand.Start),
-            WearControlReducer.availableCommands(snapshot(1, "IDLE")),
+    fun `dismissing an unconfirmed command forgets it and clears the error`() {
+        val current = WearControlState(
+            phoneConnected = true,
+            snapshot = snapshot(4, "RECORDING"),
+            pendingCommandId = "cmd-1",
+            pendingCommand = WatchCommand.Stop,
+            error = WearError.COMMAND_UNCONFIRMED,
         )
-        assertEquals(
-            listOf(WatchCommand.Pause, WatchCommand.Stop, WatchCommand.Highlight, WatchCommand.QuickNote),
-            WearControlReducer.availableCommands(snapshot(2, "RECORDING")),
+
+        val reduced = WearControlReducer.commandDismissed(current)
+
+        assertNull(reduced.pendingCommandId)
+        assertNull(reduced.pendingCommand)
+        assertNull(reduced.error)
+        assertEquals(current.snapshot, reduced.snapshot)
+    }
+
+    @Test
+    fun `a rejected acknowledgement reports the typed error`() {
+        val current = WearControlState(
+            phoneConnected = true,
+            snapshot = snapshot(4, "RECORDING"),
+            pendingCommandId = "cmd-1",
+            pendingCommand = WatchCommand.Pause,
         )
-        assertEquals(
-            listOf(WatchCommand.Resume, WatchCommand.Stop),
-            WearControlReducer.availableCommands(snapshot(3, "PAUSED")),
+
+        val reduced = WearControlReducer.acknowledgement(
+            current,
+            CommandAcknowledgement("cmd-1", CommandOutcome.Rejected, 4),
+            snapshot(4, "RECORDING"),
         )
-        assertEquals(emptyList(), WearControlReducer.availableCommands(snapshot(4, "STOPPING")))
+
+        assertEquals(WearError.PHONE_REJECTED, reduced.error)
     }
 
     @Test

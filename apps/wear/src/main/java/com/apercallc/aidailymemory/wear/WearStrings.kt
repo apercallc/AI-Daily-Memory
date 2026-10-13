@@ -50,4 +50,16 @@ internal object WearStrings {
         CommandOutcome.Ignored -> R.string.command_ignored
         CommandOutcome.Rejected -> R.string.command_rejected
     }
+
+    @StringRes
+    fun error(error: WearError): Int = when (error) {
+        WearError.PHONE_NOT_CONNECTED -> R.string.error_phone_not_connected
+        WearError.CONNECTION_CHECK_FAILED -> R.string.error_connection_check_failed
+        WearError.SNAPSHOT_READ_FAILED -> R.string.error_snapshot_read_failed
+        WearError.SNAPSHOT_UNCONFIRMED -> R.string.error_snapshot_unconfirmed
+        WearError.COMMAND_NOT_SENT -> R.string.error_command_not_sent
+        WearError.COMMAND_REMAINS_UNCONFIRMED -> R.string.error_command_remains_unconfirmed
+        WearError.COMMAND_UNCONFIRMED -> R.string.command_unconfirmed
+        WearError.PHONE_REJECTED -> R.string.error_phone_rejected
+    }
 }

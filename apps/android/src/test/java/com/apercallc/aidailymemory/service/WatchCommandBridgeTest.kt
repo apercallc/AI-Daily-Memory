@@ -20,6 +20,30 @@ import org.junit.Test
 
 class WatchCommandBridgeTest {
     @Test
+    fun `a restarted phone answers a retried command from the persisted acknowledgement`() = runTest {
+        var stored: String? = null
+        var dispatches = 0
+        fun newBridge() = WatchCommandBridge(
+            revision = { 7L },
+            dispatch = {
+                dispatches++
+                Transition.Applied(RecordingState.Initial, RecordingState.Initial.copy(revision = 7), it)
+            },
+            placeMarker = { MarkerDecision.NotCapturing },
+            newSessionId = { SessionId("session") },
+            acknowledgements = restoreAcknowledgements(stored),
+            persist = { stored = it },
+        )
+
+        val first = newBridge().execute("cmd-1", WatchCommand.Pause)
+        // Process restart: a fresh bridge rebuilt from what was persisted.
+        val retried = newBridge().execute("cmd-1", WatchCommand.Pause)
+
+        assertEquals(first, retried)
+        assertEquals(1, dispatches)
+    }
+
+    @Test
     fun `waits for the phone journal to restore before dispatching`() = runTest {
         var restored = false
         val bridge = WatchCommandBridge(

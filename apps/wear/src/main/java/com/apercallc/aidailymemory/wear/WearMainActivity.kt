@@ -7,20 +7,28 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.edit
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.TransformationSpec
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
+import com.apercallc.aidailymemory.recording.health.HealthLevel
+import com.apercallc.aidailymemory.recording.wear.PhoneNodeChoice
+import com.apercallc.aidailymemory.recording.wear.WatchControls
+import com.apercallc.aidailymemory.recording.wear.WatchNode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -69,7 +77,7 @@ class WearMainActivity : ComponentActivity(),
             controlState = WearControlReducer.commandUnconfirmed(
                 controlState,
                 commandId,
-                reason = getString(R.string.command_unconfirmed),
+                reason = WearError.COMMAND_UNCONFIRMED,
             )
         }
     }
@@ -84,6 +92,7 @@ class WearMainActivity : ComponentActivity(),
                     onCommand = ::sendCommand,
                     onRefresh = ::refreshConnection,
                     onRetry = ::retryPendingCommand,
+                    onDismiss = ::dismissPendingCommand,
                 )
             }
         }
@@ -140,12 +149,10 @@ class WearMainActivity : ComponentActivity(),
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
                 val previousNodeId = phoneNodeId
-                phoneNodeId = nodes.firstOrNull()?.id
+                phoneNodeId = PhoneNodeChoice.pick(nodes.map { WatchNode(it.id, it.isNearby) })?.id
                 controlState = WearControlReducer.connection(controlState, phoneNodeId != null)
                 if (phoneNodeId == null) {
-                    controlState = controlState.copy(
-                        error = "Phone not connected. Open the phone app and check Bluetooth.",
-                    )
+                    controlState = controlState.copy(error = WearError.PHONE_NOT_CONNECTED)
                 } else if (forceSnapshot || previousNodeId != phoneNodeId) {
                     loadExistingSnapshot()
                     requestSnapshot()
@@ -154,7 +161,7 @@ class WearMainActivity : ComponentActivity(),
             .addOnFailureListener {
                 phoneNodeId = null
                 controlState = WearControlReducer.connection(controlState, false).copy(
-                    error = "Couldn't check the phone connection. Try again.",
+                    error = WearError.CONNECTION_CHECK_FAILED,
                 )
             }
     }
@@ -174,7 +181,7 @@ class WearMainActivity : ComponentActivity(),
                 }
             }
             .addOnFailureListener {
-                controlState = controlState.copy(error = "Couldn't read the phone's latest state.")
+                controlState = controlState.copy(error = WearError.SNAPSHOT_READ_FAILED)
             }
     }
 
@@ -182,7 +189,7 @@ class WearMainActivity : ComponentActivity(),
         val nodeId = phoneNodeId ?: return
         Wearable.getMessageClient(this).sendMessage(nodeId, SNAPSHOT_REQUEST_PATH, ByteArray(0))
             .addOnFailureListener {
-                controlState = controlState.copy(error = "Phone state isn't confirmed yet. Retry.")
+                controlState = controlState.copy(error = WearError.SNAPSHOT_UNCONFIRMED)
             }
     }
 
@@ -191,7 +198,7 @@ class WearMainActivity : ComponentActivity(),
         if (nodeId == null) {
             controlState = controlState.copy(
                 phoneConnected = false,
-                error = "Phone not connected. No command was sent.",
+                error = WearError.COMMAND_NOT_SENT,
             )
             return
         }
@@ -211,7 +218,7 @@ class WearMainActivity : ComponentActivity(),
         val nodeId = phoneNodeId ?: run {
             controlState = controlState.copy(
                 phoneConnected = false,
-                error = "Phone not connected. The command remains unconfirmed.",
+                error = WearError.COMMAND_REMAINS_UNCONFIRMED,
             )
             return
         }
@@ -219,6 +226,12 @@ class WearMainActivity : ComponentActivity(),
         handler.removeCallbacks(timeout)
         handler.postDelayed(timeout, COMMAND_TIMEOUT_MS)
         transmitCommand(commandId, command, nodeId)
+    }
+
+    private fun dismissPendingCommand() {
+        handler.removeCallbacks(timeout)
+        controlState = WearControlReducer.commandDismissed(controlState)
+        clearPendingCommand()
     }
 
     private fun transmitCommand(commandId: String, command: WatchCommand, nodeId: String) {
@@ -232,7 +245,7 @@ class WearMainActivity : ComponentActivity(),
                 controlState = WearControlReducer.commandUnconfirmed(
                     controlState,
                     commandId,
-                    getString(R.string.command_unconfirmed),
+                    WearError.COMMAND_UNCONFIRMED,
                 )
             }
     }
@@ -300,7 +313,7 @@ class WearMainActivity : ComponentActivity(),
         val serviceAction = pendingPreferences.getString(PENDING_ACTION_KEY, null) ?: return
         val command = WatchCommand.entries.firstOrNull { it.serviceAction == serviceAction } ?: return
         controlState = WearControlReducer.commandPending(WearControlState(), commandId, command).copy(
-            error = getString(R.string.command_unconfirmed),
+            error = WearError.COMMAND_UNCONFIRMED,
         )
     }
 
@@ -350,79 +363,129 @@ private fun WearHome(
     onCommand: (WatchCommand) -> Unit,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val snapshot = state.snapshot
     val enabled = state.phoneConnected && snapshot != null && state.pendingCommandId == null
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            stringResource(R.string.app_title),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { heading() },
-        )
-        Text(stringResource(R.string.phone_controller))
-        Text(
-            stringResource(WearStrings.headline(state)),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        // Cached details are not current status when the phone is disconnected.
-        if (state.phoneConnected) {
-            snapshot?.problem?.let { Text(stringResource(WearStrings.problem(it))) }
-            when (snapshot?.captureHealth) {
-                "CRITICAL" -> Text(stringResource(R.string.health_critical))
-                "WARNING" -> Text(stringResource(R.string.health_warning))
-            }
-        }
-        if (state.pendingCommandId != null && state.error == null) {
-            Text(
-                stringResource(R.string.command_waiting),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-        }
-        state.lastAcknowledgement?.let { ack ->
-            Text(
-                stringResource(WearStrings.acknowledgement(ack.outcome)),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-        }
-        state.error?.let {
-            Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        }
-        if (state.pendingCommandId != null && state.error != null) {
-            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.action_retry))
-            }
-        }
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    // AppScaffold hosts the time text; ScreenScaffold ties it and the scroll indicator to the
+    // list, and the list scrolls with the rotary input by default.
+    AppScaffold {
+        ScreenScaffold(scrollState = listState) { contentPadding ->
+            TransformingLazyColumn(
+                state = listState,
+                contentPadding = contentPadding,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item {
+                    Text(
+                        stringResource(R.string.app_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .semantics { heading() },
+                    )
+                }
+                item {
+                    Text(
+                        stringResource(R.string.phone_controller),
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                    )
+                }
+                item {
+                    Text(
+                        stringResource(WearStrings.headline(state)),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                // Cached details are not current status when the phone is disconnected.
+                if (state.phoneConnected) {
+                    snapshot?.problem?.let { problem ->
+                        item { Text(stringResource(WearStrings.problem(problem))) }
+                    }
+                    when (snapshot?.captureHealth) {
+                        HealthLevel.CRITICAL.name -> item { Text(stringResource(R.string.health_critical)) }
+                        HealthLevel.WARNING.name -> item { Text(stringResource(R.string.health_warning)) }
+                    }
+                }
+                if (state.pendingCommandId != null && state.error == null) {
+                    item {
+                        Text(
+                            stringResource(R.string.command_waiting),
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                }
+                state.lastAcknowledgement?.let { ack ->
+                    item {
+                        Text(
+                            stringResource(WearStrings.acknowledgement(ack.outcome)),
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                }
+                state.error?.let { error ->
+                    item {
+                        Text(
+                            stringResource(WearStrings.error(error)),
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                }
+                if (state.pendingCommandId != null && state.error != null) {
+                    item {
+                        WearButton(R.string.action_retry, enabled = true, onClick = onRetry, spec = transformationSpec)
+                    }
+                    // A way out: without it an unconfirmed command blocks every other control.
+                    item {
+                        WearButton(R.string.action_dismiss, enabled = true, onClick = onDismiss, spec = transformationSpec)
+                    }
+                }
 
-        if (WearControlReducer.needsPhoneCheck(state)) {
-            if (state.phoneConnected) {
-                // Connected, but the phone's acknowledged state has not arrived; a retry
-                // re-requests the snapshot instead of leaving the watch a dead end.
-                Text(stringResource(R.string.phone_controls_waiting))
-            }
-            Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.action_check_phone))
-            }
-        } else {
-            // needsPhoneCheck false means the watch holds a phone-acknowledged snapshot.
-            val confirmed = checkNotNull(snapshot)
-            WearControlReducer.availableCommands(confirmed).forEach { command ->
-                Button(
-                    onClick = { onCommand(command) },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(command.label))
+                if (WearControlReducer.needsPhoneCheck(state)) {
+                    if (state.phoneConnected) {
+                        // Connected, but the phone's acknowledged state has not arrived; a retry
+                        // re-requests the snapshot instead of leaving the watch a dead end.
+                        item { Text(stringResource(R.string.phone_controls_waiting)) }
+                    }
+                    item {
+                        WearButton(R.string.action_check_phone, enabled = true, onClick = onRefresh, spec = transformationSpec)
+                    }
+                } else {
+                    // needsPhoneCheck false means the watch holds a phone-acknowledged snapshot.
+                    val confirmed = checkNotNull(snapshot)
+                    val commands = WatchControls.availableCommands(confirmed)
+                    items(commands.size) { index ->
+                        val command = commands[index]
+                        WearButton(command.label, enabled = enabled, onClick = { onCommand(command) }, spec = transformationSpec)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TransformingLazyColumnItemScope.WearButton(
+    @StringRes label: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    spec: TransformationSpec,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .transformedHeight(this, spec),
+        transformation = SurfaceTransformation(spec),
+    ) {
+        Text(stringResource(label))
     }
 }
 

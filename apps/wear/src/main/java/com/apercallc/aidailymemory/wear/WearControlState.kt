@@ -6,6 +6,18 @@ import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
 import com.apercallc.aidailymemory.recording.wear.SnapshotRevisionPolicy
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 
+/** Why the watch cannot show or confirm something. Mapped to strings at render time. */
+enum class WearError {
+    PHONE_NOT_CONNECTED,
+    CONNECTION_CHECK_FAILED,
+    SNAPSHOT_READ_FAILED,
+    SNAPSHOT_UNCONFIRMED,
+    COMMAND_NOT_SENT,
+    COMMAND_REMAINS_UNCONFIRMED,
+    COMMAND_UNCONFIRMED,
+    PHONE_REJECTED,
+}
+
 /** Watch state contains only snapshots and outcomes confirmed by the phone. */
 data class WearControlState(
     val phoneConnected: Boolean = false,
@@ -13,26 +25,10 @@ data class WearControlState(
     val pendingCommandId: String? = null,
     val pendingCommand: WatchCommand? = null,
     val lastAcknowledgement: CommandAcknowledgement? = null,
-    val error: String? = null,
+    val error: WearError? = null,
 )
 
 object WearControlReducer {
-    fun availableCommands(snapshot: PhoneRecordingSnapshot): List<WatchCommand> {
-        val stateCommands = when (snapshot.status) {
-            "IDLE", "COMPLETED" -> listOf(WatchCommand.Start)
-            "RECORDING" -> listOf(WatchCommand.Pause, WatchCommand.Stop)
-            "RESUMING", "RECOVERING" -> listOf(WatchCommand.Pause, WatchCommand.Stop)
-            "STARTING" -> listOf(WatchCommand.Stop)
-            "PAUSED", "INTERRUPTED" -> listOf(WatchCommand.Resume, WatchCommand.Stop)
-            "STOPPING" -> emptyList()
-            else -> emptyList()
-        }
-        if (snapshot.status != "RECORDING" || snapshot.captureHealth == "CRITICAL") {
-            return stateCommands
-        }
-        return stateCommands + listOf(WatchCommand.Highlight, WatchCommand.QuickNote)
-    }
-
     fun connection(state: WearControlState, connected: Boolean): WearControlState =
         state.copy(phoneConnected = connected, error = if (connected) null else state.error)
 
@@ -82,7 +78,7 @@ object WearControlReducer {
             pendingCommand = null,
             lastAcknowledgement = acknowledgement,
             error = if (acknowledgement.outcome == CommandOutcome.Rejected) {
-                "Phone rejected the command"
+                WearError.PHONE_REJECTED
             } else {
                 null
             },
@@ -92,10 +88,18 @@ object WearControlReducer {
     fun commandUnconfirmed(
         state: WearControlState,
         commandId: String,
-        reason: String,
+        reason: WearError,
     ): WearControlState = if (state.pendingCommandId == commandId) {
         state.copy(error = reason)
     } else {
         state
     }
+
+    /**
+     * The user gives up on an unconfirmed command. The command is forgotten on the watch only;
+     * if the phone did receive it, the next snapshot shows the result. A later command gets a
+     * fresh id, so the abandoned one can never be resent by mistake.
+     */
+    fun commandDismissed(state: WearControlState): WearControlState =
+        state.copy(pendingCommandId = null, pendingCommand = null, error = null)
 }

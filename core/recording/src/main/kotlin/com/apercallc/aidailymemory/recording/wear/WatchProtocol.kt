@@ -23,6 +23,10 @@ class CommandAcknowledgements<T>(private val capacity: Int) {
     @Synchronized
     fun get(commandId: String): T? = entries[commandId]
 
+    /** Oldest first, for persisting. */
+    @Synchronized
+    fun snapshot(): List<Pair<String, T>> = entries.entries.map { it.key to it.value }
+
     @Synchronized
     fun remember(commandId: String, outcome: T) {
         entries[commandId] = outcome

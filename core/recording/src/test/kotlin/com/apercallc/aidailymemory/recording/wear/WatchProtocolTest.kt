@@ -1,10 +1,8 @@
-package com.apercallc.aidailymemory.wear.data
+package com.apercallc.aidailymemory.recording.wear
 
-import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgements
-import com.apercallc.aidailymemory.recording.wear.SnapshotRevisionPolicy
-import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -46,5 +44,18 @@ class WatchProtocolTest {
         assertTrue(WatchCommand.QuickNote.isMarker)
         assertFalse(WatchCommand.Start.isMarker)
         assertFalse(WatchCommand.Pause.isMarker)
+    }
+
+    @Test
+    fun snapshotRejectsNegativeRevisions() {
+        assertFailsWith<IllegalArgumentException> {
+            PhoneRecordingSnapshot(
+                revision = -1,
+                status = "IDLE",
+                sessionStartedAt = null,
+                problem = null,
+                captureHealth = "OK",
+            )
+        }
     }
 }

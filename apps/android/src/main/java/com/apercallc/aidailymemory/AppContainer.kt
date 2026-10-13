@@ -81,6 +81,7 @@ import com.apercallc.aidailymemory.recording.segment.SegmentLifecycle
 import com.apercallc.aidailymemory.recording.storage.StoragePolicy
 import com.apercallc.aidailymemory.service.CaptureNotifications
 import com.apercallc.aidailymemory.service.WatchCommandBridge
+import com.apercallc.aidailymemory.service.restoreAcknowledgements
 import com.apercallc.aidailymemory.service.WatchDataLayerTransport
 import com.apercallc.aidailymemory.service.WatchRevisionWatermark
 import com.apercallc.aidailymemory.service.WatchSnapshotFactory
@@ -309,6 +310,10 @@ class AppContainer(context: Context) {
         MarkerRecorder(controller, database.markers(), MarkerPolicy.Default, clock, ids)
     }
 
+    private val watchAckPreferences by lazy {
+        app.getSharedPreferences(WATCH_ACK_PREFERENCES, Context.MODE_PRIVATE)
+    }
+
     val watchCommandBridge: WatchCommandBridge by lazy {
         WatchCommandBridge(
             revision = { controller.state.value.revision },
@@ -316,6 +321,10 @@ class AppContainer(context: Context) {
             placeMarker = ::placeMarker,
             newSessionId = { SessionId(ids.next().toString()) },
             awaitReady = { controller.awaitRestored() },
+            acknowledgements = restoreAcknowledgements(
+                watchAckPreferences.getString(WATCH_ACKS_KEY, null),
+            ),
+            persist = { encoded -> watchAckPreferences.edit { putString(WATCH_ACKS_KEY, encoded) } },
         )
     }
 
@@ -671,6 +680,8 @@ class AppContainer(context: Context) {
         const val STOP_DECISION_PREFERENCES = "stop_decisions"
         const val STOP_DECISION_SESSION_KEY = "handled_session_id"
         const val WATCH_WATERMARK_PREFERENCES = "watch_revision_watermark"
+        const val WATCH_ACK_PREFERENCES = "watch_command_acks"
+        const val WATCH_ACKS_KEY = "recent"
 
         /** Acknowledged audio stays on the phone this long before retention may delete it. */
         const val RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000L

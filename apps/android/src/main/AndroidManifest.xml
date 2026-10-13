@@ -48,6 +48,10 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Sentry is initialised manually in SentryConfiguration (DSN from resources, PII off).
+             The SDK's own auto-init provider has no manifest DSN and would crash app start. -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
+
         <!-- Sync job (ADR-0020): optionally pushes memory to the user's API endpoint on Wi-Fi + charging. -->
         <service
             android:name=".processing.SyncJobService"
