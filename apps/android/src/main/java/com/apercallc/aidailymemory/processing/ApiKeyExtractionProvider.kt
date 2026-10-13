@@ -5,6 +5,8 @@ import com.apercallc.aidailymemory.recording.processing.ExtractedItem
 import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
+import com.apercallc.aidailymemory.recording.processing.ProviderStatus
+import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -12,6 +14,7 @@ import java.net.URL
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -42,6 +45,7 @@ class ApiKeyExtractionProvider(
         val prompt = buildPrompt(lines)
         val response = callApi(prompt)
         val items = parseResponse(response)
+        if (droppedItems > 0) Log.w(TAG, "extraction_items_dropped count=$droppedItems")
         return ExtractionResult(items)
     }
 
@@ -83,9 +87,7 @@ class ApiKeyExtractionProvider(
         try {
             conn.outputStream.use { it.write(requestBody(prompt).toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
-            if (code in 500..599) throw ProcessingException("provider_server_error", retryable = true)
-            if (code in 400..499) throw ProcessingException("provider_client_error", retryable = false)
-            if (code != 200) throw ProcessingException("provider_unexpected", retryable = false)
+            ProviderStatus.failureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
             return BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
         } catch (e: java.net.SocketTimeoutException) {
             throw ProcessingException("provider_timeout", retryable = true, cause = e)
@@ -98,7 +100,12 @@ class ApiKeyExtractionProvider(
         }
     }
 
+    /** Items the last response held that were left out because they were malformed. */
+    @Volatile internal var droppedItems: Int = 0
+        private set
+
     internal fun parseResponse(response: String): List<ExtractedItem> {
+        droppedItems = 0
         val json = Json { ignoreUnknownKeys = true }
         val root = json.parseToJsonElement(response).jsonObject
         val content = root["choices"]?.jsonArray?.firstOrNull()
@@ -113,13 +120,13 @@ class ApiKeyExtractionProvider(
             throw ProcessingException("invalid_extraction_result", retryable = false, cause = e)
         }
 
-        return items.mapNotNull { element ->
-            val obj = element.jsonObject
+        val parsed = items.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
             val kind = obj["kind"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val confidence = obj["confidence"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val evidence = obj["evidence_segment_indices"]?.jsonArray
-                ?.mapNotNull { it.jsonPrimitive.intOrNull } ?: emptyList()
+                ?.mapNotNull { (it as? JsonPrimitive)?.intOrNull } ?: emptyList()
             ExtractedItem(
                 kind = kind,
                 text = text,
@@ -132,6 +139,14 @@ class ApiKeyExtractionProvider(
                 counterpart = obj["counterpart"]?.jsonPrimitive?.contentOrNull,
             )
         }
+        val dropped = items.size - parsed.size
+        if (dropped > 0) {
+            // A malformed item from the model is left out, but counted: silence here would make a
+            // day look emptier than it is. The caller logs the count.
+            droppedItems = dropped
+            if (parsed.isEmpty()) throw ProcessingException("invalid_extraction_result", retryable = false)
+        }
+        return parsed
     }
 
     private fun extractJsonArray(text: String): String {
@@ -161,6 +176,7 @@ class ApiKeyExtractionProvider(
     }.toString()
 
     companion object {
+        private const val TAG = "ApiKeyExtraction"
         private const val TIMEOUT_MS = 60_000
     }
 }

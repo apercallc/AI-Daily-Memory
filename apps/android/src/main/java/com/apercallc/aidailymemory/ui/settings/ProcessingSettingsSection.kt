@@ -2,10 +2,10 @@ package com.apercallc.aidailymemory.ui.settings
 
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
-import com.apercallc.aidailymemory.settings.ProcessingSettings
 import androidx.compose.foundation.layout.heightIn
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
-import com.apercallc.aidailymemory.recording.server.ServerMode
+import com.apercallc.aidailymemory.ondevice.ModelFailure
+import com.apercallc.aidailymemory.ondevice.ModelState
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ColumnScope
@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -47,11 +48,9 @@ import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 /** State for the processing settings section. */
 data class ProcessingUi(
     val enabled: Boolean = true,
-    val transcriptionProvider: String = ProcessingSettings.PROVIDER_DISABLED,
     val transcriptionApiKey: String = "",
     val transcriptionApiUrl: String = "",
     val transcriptionApiUrlInvalid: Boolean = false,
-    val extractionProvider: String = ProcessingSettings.PROVIDER_DISABLED,
     val extractionApiKey: String = "",
     val extractionApiUrl: String = "",
     val extractionApiUrlInvalid: Boolean = false,
@@ -61,12 +60,18 @@ data class ProcessingUi(
     val transcriptionModel: String = "",
     val extractionPresetId: String = ProviderPresets.CUSTOM_ID,
     val deleteAudioAfterTranscription: Boolean = true,
-    /** Own-provider settings still missing; only meaningful while [ownProvider] is on. */
+    /** What is still missing before processing can run; empty when fully configured. */
     val configGaps: List<ConfigGap> = emptyList(),
-    /** The optional own-provider path (advanced) is switched on. */
-    val ownProvider: Boolean = false,
-    /** Offline unless an account is connected; processing happens on the hosted server only then. */
-    val mode: ServerMode = ServerMode.OFFLINE,
+    /** Transcription goes to the person's own service instead of the phone's free model. */
+    val transcriptionOwnKey: Boolean = false,
+    /** Summaries and extracted decisions are on (they need the person's own key). */
+    val summaries: Boolean = false,
+    /** Download state of the free on-phone speech model. */
+    val modelState: ModelState = ModelState.NotInstalled,
+    /** Download size of the speech model, in whole megabytes. */
+    val modelSizeMb: Int = 40,
+    /** Sessions whose processing gave up; their audio and transcripts are kept and can be retried. */
+    val failedSessions: Int = 0,
 )
 
 /** State for the daily-report sync section. */
@@ -81,21 +86,22 @@ data class SyncUi(
 /** Events from the processing settings section. */
 data class ProcessingActions(
     val onEnableChange: (Boolean) -> Unit = {},
-    val onTranscriptionProviderChange: (String) -> Unit = {},
+    val onTranscriptionOwnKeyChange: (Boolean) -> Unit = {},
+    val onSummariesChange: (Boolean) -> Unit = {},
+    val onDownloadModel: () -> Unit = {},
+    val onRemoveModel: () -> Unit = {},
     val onTranscriptionApiKeyChange: (String) -> Unit = {},
     val onTranscriptionApiUrlChange: (String) -> Unit = {},
-    val onExtractionProviderChange: (String) -> Unit = {},
     val onExtractionApiKeyChange: (String) -> Unit = {},
     val onExtractionApiUrlChange: (String) -> Unit = {},
     val onExtractionModelChange: (String) -> Unit = {},
     val onDeleteAudioChange: (Boolean) -> Unit = {},
-    val onOwnProviderChange: (Boolean) -> Unit = {},
+    val onRetryFailed: () -> Unit = {},
     val onTranscriptionPresetChange: (String) -> Unit = {},
     val onTranscriptionModelChange: (String) -> Unit = {},
     val onExtractionPresetChange: (String) -> Unit = {},
     /** Opens a web page (where to get an API key). */
     val onOpenLink: (String) -> Unit = {},
-    val onTest: () -> Unit = {},
     val onSaveProvider: () -> Unit = {},
 )
 
@@ -141,21 +147,22 @@ fun ProcessingSettingsSection(
             return@Column
         }
 
-        Text(
-            text = stringResource(
-                if (processing.mode == ServerMode.CONNECTED) {
-                    R.string.processing_mode_connected
-                } else {
-                    R.string.processing_mode_offline
-                },
-            ),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        OutlinedButton(
-            onClick = actions.onTest,
-            modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-        ) { Text(stringResource(R.string.test_connection)) }
+        if (processing.failedSessions > 0) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.processing_failed_sessions,
+                    processing.failedSessions,
+                    processing.failedSessions,
+                ),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            OutlinedButton(
+                onClick = actions.onRetryFailed,
+                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+            ) { Text(stringResource(R.string.processing_retry_failed)) }
+        }
         SettingsCard {
             ToggleRow(
                 label = stringResource(R.string.processing_delete_audio),
@@ -165,16 +172,88 @@ fun ProcessingSettingsSection(
             )
         }
 
-        // Advanced: bring your own AI provider. Off unless asked for; the hosted server needs no keys.
-        SettingsCard {
+        // Transcription: the phone's free model, or the person's own service.
+        ProviderCard(title = R.string.processing_transcription) {
+            if (!processing.transcriptionOwnKey) {
+                SpeechModelRow(processing, actions)
+            }
             ToggleRow(
-                label = stringResource(R.string.processing_own_provider),
-                sublabel = stringResource(R.string.processing_own_provider_body),
-                checked = processing.ownProvider,
-                onCheckedChange = actions.onOwnProviderChange,
+                label = stringResource(R.string.processing_transcription_own),
+                sublabel = stringResource(R.string.processing_transcription_own_body),
+                checked = processing.transcriptionOwnKey,
+                onCheckedChange = actions.onTranscriptionOwnKeyChange,
             )
+            if (processing.transcriptionOwnKey) {
+                val preset = ProviderPresets.transcription.firstOrNull { it.id == processing.transcriptionPresetId }
+                ProviderFields(
+                    presets = ProviderPresets.transcription,
+                    presetId = processing.transcriptionPresetId,
+                    onPresetChange = actions.onTranscriptionPresetChange,
+                ) {
+                    if (preset != null) {
+                        DropdownField(
+                            label = stringResource(R.string.processing_model),
+                            options = preset.models.map { it to it },
+                            selectedId = processing.transcriptionModel,
+                            onSelect = actions.onTranscriptionModelChange,
+                        )
+                        GetKeyLink(preset, actions.onOpenLink)
+                    } else {
+                        ApiUrlField(
+                            value = processing.transcriptionApiUrl,
+                            invalid = processing.transcriptionApiUrlInvalid,
+                            hint = R.string.processing_transcription_url_hint,
+                            onChange = actions.onTranscriptionApiUrlChange,
+                        )
+                    }
+                    ApiKeyField(processing.transcriptionApiKey, actions.onTranscriptionApiKeyChange)
+                }
+            }
         }
-        if (processing.ownProvider) {
+
+        // Summaries: off by default. There is no free summary engine, so they need a key.
+        ProviderCard(title = R.string.processing_extraction) {
+            ToggleRow(
+                label = stringResource(R.string.processing_summaries),
+                sublabel = stringResource(R.string.processing_summaries_body),
+                checked = processing.summaries,
+                onCheckedChange = actions.onSummariesChange,
+            )
+            if (processing.summaries) {
+                val preset = ProviderPresets.summary.firstOrNull { it.id == processing.extractionPresetId }
+                ProviderFields(
+                    presets = ProviderPresets.summary,
+                    presetId = processing.extractionPresetId,
+                    onPresetChange = actions.onExtractionPresetChange,
+                ) {
+                    if (preset != null) {
+                        ModelChoice(preset, processing.extractionModel, actions.onExtractionModelChange)
+                        GetKeyLink(preset, actions.onOpenLink)
+                    } else {
+                        ApiUrlField(
+                            value = processing.extractionApiUrl,
+                            invalid = processing.extractionApiUrlInvalid,
+                            hint = R.string.processing_extraction_url_hint,
+                            onChange = actions.onExtractionApiUrlChange,
+                        )
+                        OutlinedTextField(
+                            value = processing.extractionModel,
+                            onValueChange = actions.onExtractionModelChange,
+                            label = { Text(stringResource(R.string.processing_model)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                    ApiKeyField(processing.extractionApiKey, actions.onExtractionApiKeyChange)
+                }
+            }
+        }
+        if (processing.transcriptionOwnKey || processing.summaries) {
+            Text(
+                text = stringResource(R.string.processing_own_key_privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (processing.configGaps.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.processing_incomplete),
@@ -183,66 +262,82 @@ fun ProcessingSettingsSection(
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
-            val transcriptionPreset = ProviderPresets.transcription.firstOrNull { it.id == processing.transcriptionPresetId }
-            ProviderCard(title = R.string.processing_transcription) {
-                DropdownField(
-                    label = stringResource(R.string.processing_provider),
-                    options = ProviderPresets.transcription.map { it.id to it.label } +
-                        (ProviderPresets.CUSTOM_ID to stringResource(R.string.processing_custom)),
-                    selectedId = processing.transcriptionPresetId,
-                    onSelect = actions.onTranscriptionPresetChange,
-                )
-                if (transcriptionPreset != null) {
-                    DropdownField(
-                        label = stringResource(R.string.processing_model),
-                        options = transcriptionPreset.models.map { it to it },
-                        selectedId = processing.transcriptionModel,
-                        onSelect = actions.onTranscriptionModelChange,
-                    )
-                    GetKeyLink(transcriptionPreset, actions.onOpenLink)
-                } else {
-                    ApiUrlField(
-                        value = processing.transcriptionApiUrl,
-                        invalid = processing.transcriptionApiUrlInvalid,
-                        hint = R.string.processing_transcription_url_hint,
-                        onChange = actions.onTranscriptionApiUrlChange,
-                    )
-                }
-                ApiKeyField(processing.transcriptionApiKey, actions.onTranscriptionApiKeyChange)
-            }
-            val extractionPreset = ProviderPresets.summary.firstOrNull { it.id == processing.extractionPresetId }
-            ProviderCard(title = R.string.processing_extraction) {
-                DropdownField(
-                    label = stringResource(R.string.processing_provider),
-                    options = ProviderPresets.summary.map { it.id to it.label } +
-                        (ProviderPresets.CUSTOM_ID to stringResource(R.string.processing_custom)),
-                    selectedId = processing.extractionPresetId,
-                    onSelect = actions.onExtractionPresetChange,
-                )
-                if (extractionPreset != null) {
-                    ModelChoice(extractionPreset, processing.extractionModel, actions.onExtractionModelChange)
-                    GetKeyLink(extractionPreset, actions.onOpenLink)
-                } else {
-                    ApiUrlField(
-                        value = processing.extractionApiUrl,
-                        invalid = processing.extractionApiUrlInvalid,
-                        hint = R.string.processing_extraction_url_hint,
-                        onChange = actions.onExtractionApiUrlChange,
-                    )
-                    OutlinedTextField(
-                        value = processing.extractionModel,
-                        onValueChange = actions.onExtractionModelChange,
-                        label = { Text(stringResource(R.string.processing_model)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-                ApiKeyField(processing.extractionApiKey, actions.onExtractionApiKeyChange)
-            }
             Button(
                 onClick = actions.onSaveProvider,
                 modifier = Modifier.heightIn(min = spacing.minTouchTarget),
             ) { Text(stringResource(R.string.processing_save)) }
+        }
+    }
+}
+
+/** Provider list followed by whatever fields that provider needs. */
+@Composable
+private fun ProviderFields(
+    presets: List<ProviderPreset>,
+    presetId: String,
+    onPresetChange: (String) -> Unit,
+    fields: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(AiDailyMemoryTheme.spacing.sm)) {
+        DropdownField(
+            label = stringResource(R.string.processing_provider),
+            options = presets.map { it.id to it.label } +
+                (ProviderPresets.CUSTOM_ID to stringResource(R.string.processing_custom)),
+            selectedId = presetId,
+            onSelect = onPresetChange,
+        )
+        fields()
+    }
+}
+
+/** The free speech model: what it is, its download state, and the button for the next step. */
+@Composable
+private fun SpeechModelRow(processing: ProcessingUi, actions: ProcessingActions) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        Text(
+            text = stringResource(R.string.processing_model_free, processing.modelSizeMb),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val state = processing.modelState
+        when (state) {
+            ModelState.Installed -> {
+                Text(
+                    text = stringResource(R.string.processing_model_ready),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                TextButton(
+                    onClick = actions.onRemoveModel,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.processing_model_remove)) }
+            }
+            is ModelState.Downloading -> Text(
+                text = stringResource(R.string.processing_model_downloading, state.percent),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            ModelState.NotInstalled, is ModelState.Failed -> {
+                if (state is ModelState.Failed) {
+                    Text(
+                        text = stringResource(
+                            when (state.reason) {
+                                ModelFailure.OFFLINE -> R.string.processing_model_failed_offline
+                                ModelFailure.SERVER -> R.string.processing_model_failed_server
+                                ModelFailure.CORRUPT -> R.string.processing_model_failed_corrupt
+                                ModelFailure.STORAGE -> R.string.processing_model_failed_storage
+                            },
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                Button(
+                    onClick = actions.onDownloadModel,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.processing_model_download, processing.modelSizeMb)) }
+            }
         }
     }
 }

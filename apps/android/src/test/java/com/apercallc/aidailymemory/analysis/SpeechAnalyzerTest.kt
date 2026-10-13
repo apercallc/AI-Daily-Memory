@@ -217,6 +217,26 @@ class SpeechAnalyzerTest {
     }
 
     @Test
+    fun `an unexpected fault in one segment does not block the segments after it`() = runTest {
+        val bad = sealed()
+        val good = sealed()
+        val real = decoder
+        decoder = PcmDecoder { adts, rate, channels, sink ->
+            if (adts.isNotEmpty() && calls++ == 0) {
+                throw ArrayIndexOutOfBoundsException("odd audio")
+            } else {
+                real.decode(adts, rate, channels, sink)
+            }
+        }
+
+        val run = analyzer().analyzePending()
+
+        assertEquals(AnalysisRun(analyzed = 1, failed = 1, remaining = 0), run)
+        assertEquals(SpeechOutcome.UNDECODABLE.name, db.speech().analysis(bad.segmentId)?.outcome)
+        assertEquals(SpeechOutcome.OK.name, db.speech().analysis(good.segmentId)?.outcome)
+    }
+
+    @Test
     fun `a new analyzer version replaces the old result and its regions`() = runTest {
         val segment = sealed()
         analyzer().analyzePending()

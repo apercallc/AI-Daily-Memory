@@ -87,6 +87,11 @@ class SpeechAnalyzer(
         } catch (e: IOException) {
             logFailure(TAG, "speech_decode_failed", e, warning = true)
             SpeechOutcome.UNDECODABLE to null
+        } catch (e: RuntimeException) {
+            // A codec or detector fault on odd audio must cost this one segment, not every segment
+            // after it: marked undecodable, logged, and the batch moves on.
+            logFailure(TAG, "speech_analysis_segment_failed", e)
+            SpeechOutcome.UNDECODABLE to null
         }
     }
 

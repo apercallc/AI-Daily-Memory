@@ -46,7 +46,7 @@ class ReportBuilderTest {
     fun `no items gives the neutral headline and an empty summary`() {
         val report = build(emptyList())
 
-        assertEquals("Memory Day", report.headline)
+        assertEquals("Transcript only", report.headline)
         assertEquals("", report.summary)
         assertTrue(report.items.isEmpty())
     }

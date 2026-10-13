@@ -65,10 +65,20 @@ class ApiKeyProvidersTest {
         val items = extraction().parseResponse(chat(content))
 
         assertEquals(1, items.size)
+        assertEquals(1, extraction().also { it.parseResponse(chat(content)) }.droppedItems)
         assertEquals("action", items[0].kind)
         assertEquals(listOf(0, 2), items[0].evidenceSegmentIndices)
         assertEquals("Sam", items[0].owner)
         assertNull(items[0].quote)
+    }
+
+    @Test
+    fun `an extraction where every item is malformed fails instead of looking empty`() {
+        val e = assertFailsWith<ProcessingException> {
+            extraction().parseResponse(chat("""[{"kind":"idea"},7,"x"]"""))
+        }
+        assertEquals("invalid_extraction_result", e.code)
+        assertFalse(e.retryable)
     }
 
     @Test

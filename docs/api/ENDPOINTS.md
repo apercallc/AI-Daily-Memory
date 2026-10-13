@@ -120,9 +120,83 @@ Reports are available to an authenticated owner when they exist, including after
 storage mode alone does not determine report visibility. `memory:read` is also the scope of
 API keys (`kind=api`, read-only by default, `app/auth.py`).
 
+## Web sessions and account (ADR-0024)
+
+`POST /v1/signup` and `POST /v1/login` take an optional `"client": "web"`. A web session gets the
+scopes `memory:read`, `memory:write`, `transcript:read`, `account:manage` (never `upload:write`)
+and a token that expires after 30 days. A phone keeps the device defaults.
+
+| Route | Scope | What it does |
+| --- | --- | --- |
+| `GET /v1/me` | phone or `account:manage` | storage mode, scopes, `email` |
+| `PUT /v1/me` | phone or `account:manage` | change storage mode |
+| `POST /v1/me/password` | phone or `account:manage` | change password; signs other browsers out, not phones. 5 per 5 min |
+| `DELETE /v1/me` | phone or `account:manage` | delete the account. A browser must send `{"password": "..."}` |
+| `GET /v1/tokens` | phone or `account:manage` | active sign-ins (phones, browsers, API keys); `current` marks the caller |
+| `DELETE /v1/tokens/{id}` | phone or `account:manage` | revoke one (a lost phone, an old browser, a key) |
+| `GET /v1/api-keys`, `POST /v1/api-keys` | phone or `account:manage` | list / create read-only keys (max 10). The secret is shown once |
+| `GET /v1/export` | phone or `account:manage` | one JSON file with everything held about you. 3 per hour |
+
+## Memory (browse and correct)
+
+| Route | Scope | What it does |
+| --- | --- | --- |
+| `GET /v1/memory/days` | `memory:read` | days with memory, newest first |
+| `GET /v1/memory/items` | `memory:read` | filter by `day`, `from`, `to`, `kind`, `q`, `include_dismissed`; `limit` (max 100), `offset` |
+| `PATCH /v1/memory/items/{id}` | `memory:write` | `{"dismissed": bool}`, `{"text": "..."}` (your wording, stored beside the original), `{"clear_text": true}` |
+| `GET /v1/memory/items/{id}/evidence` | `transcript:read` | the cited transcript lines the server holds |
+
+## Notes and folders (ADR-0027)
+
+A note is one synced session. Notes are built when a phone syncs; these routes read them and change
+only your own organization. Nothing here deletes a recording: archive hides, deleting a folder unfiles.
+
+| Route | Scope | What it does |
+| --- | --- | --- |
+| `GET /v1/notes` | `memory:read` | `q` (every word must match a title, item or transcript), `folder` (`none` or a folder id), `starred`, `archived`, `day`, `from`, `to`, `sort` (`newest`, `oldest`, `title`, `longest`), `limit` (max 100), `offset`. Returns `{notes[], total}`; while searching each note has a `snippet` |
+| `GET /v1/notes/{session_id}` | `memory:read` | `{note, items[], lines[] \| null}`; `lines` is `null` without `transcript:read` |
+| `PATCH /v1/notes/{session_id}` | `memory:write` | any of `{"title": "..."}` (blank restores the automatic title), `{"folder_id": id \| null}`, `{"starred": bool}`, `{"archived": bool}` |
+| `POST /v1/notes/bulk` | `memory:write` | the same change (not `title`) for `session_ids` (1 to 100) |
+| `GET /v1/folders` | `memory:read` | `{folders[{id, name, notes}], totals{all, starred, unfiled, archived}}` |
+| `POST /v1/folders` | `memory:write` | `{"name": "..."}` (1 to 60 characters, unique ignoring case, at most 100 folders) |
+| `PATCH /v1/folders/{id}` | `memory:write` | `{"name": "..."}` |
+| `DELETE /v1/folders/{id}` | `memory:write` | its notes become unfiled |
+
+Without `transcript:read`, spoken words are neither returned nor searched: a title or preview made
+from them is replaced by "Recording" and left out of search.
+
+## Ask (recall)
+
+`POST /v1/ask` with `{"question": "...", "today": "YYYY-MM-DD"}` (scope `memory:read`) returns
+`{answer, abstained, source, range_label, items[]}`. Retrieval is a bounded, user-scoped query
+(dates in the question, its keywords, the kind of item it hints at), and the answer is built only
+from what that returns; it abstains when nothing matches. `source` is `evidence_only` (the items
+are listed, no third party sees them) unless the operator enabled `ASK_PROVIDER=claude`, then
+`model`. Metered per person per UTC day (`DAILY_ASK_LIMIT`, default 50); over the limit gives 429
+`quota_exceeded` with `Retry-After`.
+
+## Email, plans and capabilities (ADR-0025)
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/capabilities` | `{email, billing, ask_model}`: which optional features this server has |
+| `POST /v1/password/forgot` | `{email}`; always 202; 503 `email_unavailable` without a mail provider. 5 per hour |
+| `POST /v1/password/reset` | `{token, new_password}`; ends browser sessions and API keys. 400 `invalid_link` |
+| `POST /v1/me/verify`, `POST /v1/verify` | send the confirmation email / confirm with `{token}` |
+| `GET /v1/billing` | plan, renewal, limits, Ask use today |
+| `POST /v1/billing/checkout`, `POST /v1/billing/portal` | Stripe URLs (503 `billing_unavailable` when off) |
+| `POST /v1/billing/webhook` | Stripe only; signature-checked |
+
+## Health
+
+`GET /v1/health` is liveness. `GET /v1/ready` also checks the database (503 `unavailable` when it
+cannot answer).
+
+## Failure responses worth handling
+
+`503 database_unavailable` and `503 storage_unavailable` carry `Retry-After`: retry, don't treat
+as a bug. `429 quota_exceeded` is the daily Ask limit; other 429s are per-address rate limits.
+
 ## Coming later
 
-Recall (`ask_memory`, `search_memory`, ...) for API clients arrives with Phase 4's
-query engine, through the Memory Query Service only, and only for server-held data
-(explicitly synced reports or full-cloud storage). API-key management UI and per-key rate
-limits are Phase 5/10 items.
+Entity-aware recall (people, aliases, merge) and a recall benchmark (TODO Phase 4).

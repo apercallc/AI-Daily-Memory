@@ -4,15 +4,15 @@ AI Daily Memory is an Android and Wear OS project for capturing a day locally an
 
 ## Current status
 
-- Android capture, session controls, encrypted local segments, recovery, and on-device processing are implemented.
+- Android capture, session controls, encrypted local segments, recovery, and on-phone transcription (free downloadable model, English) are implemented. Summaries are optional and use the person's own API key (ADR-0026).
 - Wear OS provides remote controls and reflects phone-confirmed state.
-- The backend provides account sign-in, scoped tokens, uploads, transcript delivery, sync, and daily reports.
-- Cloud transcription and structured extraction are disabled by default. Uploads are refused until those providers are deliberately enabled after privacy, consent, cost, and provider-term reviews.
+- The backend stores synced notes and serves the web app and REST API: account sign-in, scoped tokens, sync, reports, memory browse and Ask. It does no transcription or summarizing.
+- Audio is never uploaded. Server-side transcription and extraction stay disabled, so new uploads are refused. The service is free; billing code exists but is off.
 - Release readiness still requires physical phone/watch accessibility and endurance testing. This repository is not a production release declaration.
 
 ## Privacy
 
-Capture is visible and can be paused or stopped. Audio is kept on the phone first. Cloud processing and storage require a user-selected mode; raw cloud audio is temporary. Error monitoring is configured to discard messages, request data, user context, and breadcrumbs before sending exception diagnostics to Sentry. See [Privacy](docs/product/PRIVACY.md) and [Security](SECURITY.md).
+Capture is visible and can be paused or stopped. Audio stays on the phone and is deleted once transcribed. Syncing notes to an account is optional and never includes audio; a person's own transcription key is the one case where audio goes to a provider, directly from the phone. Error monitoring is configured to discard messages, request data, user context, and breadcrumbs before sending exception diagnostics to Sentry. See [Privacy](docs/product/PRIVACY.md) and [Security](SECURITY.md).
 
 ## Build and test
 

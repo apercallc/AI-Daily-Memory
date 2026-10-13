@@ -9,6 +9,7 @@ import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.capture.SessionDataDeletionResult
 import com.apercallc.aidailymemory.data.TranscriptText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import com.apercallc.aidailymemory.platform.logFailure
@@ -105,7 +106,14 @@ class SessionsViewModel(
     /** A session's delivered transcript, oldest line first, opened off the main thread. */
     fun transcript(sessionId: String): Flow<List<TranscriptText>> =
         container.database.transcripts().observeSession(sessionId)
-            .map { lines -> lines.mapNotNull(container.transcriptCipher::open) }
+            .map { lines ->
+                lines.map { container.transcriptCipher.open(it) ?: container.transcriptCipher.unreadable(it) }
+            }
+            .catch { e ->
+                // A database error must not end the collector (and the screen) silently.
+                logFailure(TAG, "transcript_load_failed", e)
+                emit(emptyList())
+            }
             .flowOn(Dispatchers.IO)
 
     private fun memoryToday(): LocalDate =

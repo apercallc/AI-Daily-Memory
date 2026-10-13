@@ -12,6 +12,7 @@ from typing import Literal, get_args
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -84,6 +85,12 @@ class User(Base):
     # Where memory lives (ADR-0014); phone-only is the default the app preselects.
     storage_mode: Mapped[str] = mapped_column(String(16), server_default="phone_only")
     created_at: Mapped[datetime] = _created()
+    # Entitlements are server-authoritative (AGENTS.md rule 3): only the billing webhook, never a
+    # client, moves these.
+    plan: Mapped[str] = mapped_column(String(16), server_default="free")
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    plan_renews_at: Mapped[datetime | None]
+    plan_cancels_at_period_end: Mapped[bool] = mapped_column(server_default="false")
 
 
 class DeletedAccountObjectPurge(Base):
@@ -113,6 +120,7 @@ class Credential(Base):
     created_at: Mapped[datetime] = _created()
     failed_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     locked_until: Mapped[datetime | None]
+    email_verified_at: Mapped[datetime | None]
 
 
 class LoginFailure(Base):
@@ -384,3 +392,120 @@ class DailyReportRow(Base):
     report: Mapped[dict[str, object]] = mapped_column(JSONB)
     extraction_version: Mapped[int] = mapped_column(Integer)
     generated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class MemoryItemCorrection(Base):
+    """The user's own wording for a memory item (TODO.md "Human correction"). Stored beside the
+    item, never over it: the extracted text and the evidence stay exactly as produced, and
+    removing the correction restores them."""
+
+    __tablename__ = "memory_item_corrections"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    memory_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"),
+        unique=True,
+    )
+    text: Mapped[str] = mapped_column(String(280))
+    created_at: Mapped[datetime] = _created()
+
+
+class UsageCounter(Base):
+    """Per-user, per-day counts of metered actions (Phase 10 "Metering recorded per user with
+    auditable counters"). Server-side only: a client can never raise or reset its own limit."""
+
+    __tablename__ = "usage_counters"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
+class EmailToken(Base):
+    """A single-use link token for password reset or email verification. Only the hash is
+    stored, like access tokens; it expires and is consumed on use."""
+
+    __tablename__ = "email_tokens"
+    __table_args__ = (CheckConstraint(_in("purpose", ("reset", "verify")), name="purpose"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    purpose: Mapped[str] = mapped_column(String(8))
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), unique=True)
+    expires_at: Mapped[datetime]
+    used_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = _created()
+
+
+class NoteFolder(Base):
+    """A folder the person made to sort their notes. A note is in at most one folder; deleting a
+    folder returns its notes to "unfiled" and deletes nothing else."""
+
+    __tablename__ = "note_folders"
+    __table_args__ = (
+        CheckConstraint("char_length(name) BETWEEN 1 AND 60", name="name_length"),
+        # One name per person regardless of case, so "Work" and "work" can't both exist.
+        Index("uq_note_folders_user_id_lower_name", "user_id", text("lower(name)"), unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    name: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[datetime] = _created()
+
+
+class Note(Base):
+    """One recorded session as a person sees it in the web app: a titled, searchable note.
+
+    The derived columns are rebuilt every time a session syncs; `custom_title`, `folder_id`,
+    `starred` and `archived_at` are the person's own organization and are never touched by sync.
+    Items live in `memory_items` (so edits and dismissals show up at once); the transcript text
+    here exists only for search and previews, and is filled only when transcript sync is on.
+    `title_from_transcript` / `lead` come from spoken words, so they are withheld from API keys
+    that lack the transcript scope."""
+
+    __tablename__ = "notes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "session_id"),
+        Index("ix_notes_user_id_memory_day", "user_id", "memory_day"),
+        Index("ix_notes_user_id_folder_id", "user_id", "folder_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    session_id: Mapped[uuid.UUID]
+    memory_day: Mapped[date]
+    started_at: Mapped[datetime | None]
+    auto_title: Mapped[str] = mapped_column(String(120))
+    title_from_transcript: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    custom_title: Mapped[str | None] = mapped_column(String(120))
+    # The title the person gave the session on their phone; their web rename wins over it.
+    phone_title: Mapped[str | None] = mapped_column(String(120))
+    item_preview: Mapped[str] = mapped_column(String(240), server_default="")
+    lead: Mapped[str] = mapped_column(String(240), server_default="")
+    transcript_text: Mapped[str] = mapped_column(Text, server_default="")
+    line_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    word_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("note_folders.id", ondelete="SET NULL"),
+    )
+    starred: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    archived_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = _created()
+
+
+class DeletedNote(Base):
+    """A session the person removed from their account on the web. Sync skips these ids, so the
+    phone (which keeps its own copy) does not bring the note back."""
+
+    __tablename__ = "deleted_notes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = _created()

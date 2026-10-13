@@ -1,0 +1,112 @@
+- generic [ref=f6e1]:
+  - link "Skip to content" [ref=f6e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f6e3]:
+    - banner [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - link "AI Daily Memory" [ref=f6e6] [cursor=pointer]:
+          - /url: "#/today"
+        - navigation "Main" [ref=f6e8]:
+          - link "Today" [ref=f6e9] [cursor=pointer]:
+            - /url: "#/today"
+          - link "Memory" [ref=f6e10] [cursor=pointer]:
+            - /url: "#/memory"
+          - link "Ask" [ref=f6e11] [cursor=pointer]:
+            - /url: "#/ask"
+          - link "Account" [ref=f6e12] [cursor=pointer]:
+            - /url: "#/account"
+        - generic [ref=f6e13]: tester@example.com
+        - button "Sign out" [ref=f6e14] [cursor=pointer]
+    - main [active] [ref=f6e15]:
+      - generic [ref=f6e16]:
+        - heading "Memory" [level=1] [ref=f6e17]
+        - paragraph [ref=f6e18]: Everything your days added up to. Fix a wording, or mark what isn't relevant — the evidence behind it is never changed.
+        - generic [ref=f6e19]:
+          - searchbox "Search your memory" [ref=f6e21]
+          - combobox "Kind" [ref=f6e22]:
+            - option "All kinds" [selected]
+            - option "Decision"
+            - option "Commitment"
+            - option "Action"
+            - option "Idea"
+            - option "Open question"
+          - combobox "When" [ref=f6e23]:
+            - option "Any time" [selected]
+            - option "Last 7 days"
+            - option "Last 30 days"
+            - option "Last 90 days"
+        - generic [ref=f6e24]:
+          - checkbox "Show items I marked not relevant" [ref=f6e25]
+          - generic [ref=f6e26]: Show items I marked not relevant
+          - paragraph [ref=f6e27]: 7 of 7
+        - generic [ref=f6e28]:
+          - heading "Today" [level=2] [ref=f6e29]
+          - article [ref=f6e30]:
+            - generic [ref=f6e31]:
+              - generic [ref=f6e32]: Decision
+              - paragraph [ref=f6e33]: Launch the beta on Friday
+            - generic [ref=f6e34]:
+              - button "Edit wording" [ref=f6e35] [cursor=pointer]
+              - button "Not relevant" [ref=f6e36] [cursor=pointer]
+              - button "Evidence" [ref=f6e37] [cursor=pointer]
+          - article [ref=f6e38]:
+            - generic [ref=f6e39]:
+              - generic [ref=f6e40]: Commitment
+              - paragraph [ref=f6e41]: Send Sam the revised pricing deck by Thursday noon
+            - generic [ref=f6e42]: You owe Sam · Due Thursday, October 15 · Likely · Your wording
+            - generic [ref=f6e43]:
+              - button "Edit wording" [ref=f6e44] [cursor=pointer]
+              - button "Not relevant" [ref=f6e45] [cursor=pointer]
+              - button "Evidence" [ref=f6e46] [cursor=pointer]
+          - article [ref=f6e47]:
+            - generic [ref=f6e48]:
+              - generic [ref=f6e49]: Action
+              - paragraph [ref=f6e50]: Book the venue for the offsite
+            - generic [ref=f6e51]: Likely
+            - generic [ref=f6e52]:
+              - button "Edit wording" [ref=f6e53] [cursor=pointer]
+              - button "Not relevant" [ref=f6e54] [cursor=pointer]
+              - button "Evidence" [ref=f6e55] [cursor=pointer]
+          - article [ref=f6e56]:
+            - generic [ref=f6e57]:
+              - generic [ref=f6e58]: Open question
+              - paragraph [ref=f6e59]: Who owns the onboarding copy?
+            - generic [ref=f6e60]: Possible
+            - generic [ref=f6e61]:
+              - button "Edit wording" [ref=f6e62] [cursor=pointer]
+              - button "Not relevant" [ref=f6e63] [cursor=pointer]
+              - button "Evidence" [ref=f6e64] [cursor=pointer]
+          - article [ref=f6e65]:
+            - generic [ref=f6e66]:
+              - generic [ref=f6e67]: Idea
+              - paragraph [ref=f6e68]: <img src=x onerror=alert(1)> Try a weekly digest
+            - generic [ref=f6e69]: Possible
+            - generic [ref=f6e70]:
+              - button "Edit wording" [ref=f6e71] [cursor=pointer]
+              - button "Not relevant" [ref=f6e72] [cursor=pointer]
+              - button "Evidence" [ref=f6e73] [cursor=pointer]
+          - heading "Yesterday" [level=2] [ref=f6e74]
+          - article [ref=f6e75]:
+            - generic [ref=f6e76]:
+              - generic [ref=f6e77]: Decision
+              - paragraph [ref=f6e78]: Use Postgres full-text search for recall
+            - generic [ref=f6e79]:
+              - button "Edit wording" [ref=f6e80] [cursor=pointer]
+              - button "Not relevant" [ref=f6e81] [cursor=pointer]
+              - button "Evidence" [ref=f6e82] [cursor=pointer]
+          - article [ref=f6e83]:
+            - generic [ref=f6e84]:
+              - generic [ref=f6e85]: Commitment
+              - paragraph [ref=f6e86]: Dana will review the contract
+            - generic [ref=f6e87]: Dana owes you · Likely
+            - generic [ref=f6e88]:
+              - button "Edit wording" [ref=f6e89] [cursor=pointer]
+              - button "Not relevant" [ref=f6e90] [cursor=pointer]
+              - button "Evidence" [ref=f6e91] [cursor=pointer]
+    - contentinfo [ref=f6e92]:
+      - text: Your memory belongs to you.
+      - link "How privacy works" [ref=f6e93] [cursor=pointer]:
+        - /url: /#privacy
+      - text: ·
+      - link "Open source" [ref=f6e94] [cursor=pointer]:
+        - /url: https://github.com/apercallc/AI-Daily-Memory

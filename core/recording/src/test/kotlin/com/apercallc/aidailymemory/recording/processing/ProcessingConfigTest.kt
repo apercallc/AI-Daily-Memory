@@ -5,18 +5,37 @@ import kotlin.test.assertEquals
 
 class ProcessingConfigTest {
     private val ready = StageConfig(providerIsUserApi = true, urlValid = true, keyPresent = true)
+    private val phoneOnly = StageConfig(providerIsUserApi = false, urlValid = false, keyPresent = false)
 
     @Test
-    fun `fully configured has no gaps`() {
-        assertEquals(emptyList(), ProcessingConfig.gaps(ready, ready, extractionModelPresent = true))
+    fun `fully configured with own keys has no gaps`() {
+        assertEquals(
+            emptyList(),
+            ProcessingConfig.gaps(ready, ready, extractionModelPresent = true, onDeviceModelReady = false),
+        )
     }
 
     @Test
-    fun `non user-api providers are a provider gap and hide field gaps`() {
-        val off = StageConfig(providerIsUserApi = false, urlValid = false, keyPresent = false)
+    fun `phone transcription with summaries off is complete once the model is downloaded`() {
         assertEquals(
-            listOf(ConfigGap.TRANSCRIPTION_PROVIDER, ConfigGap.EXTRACTION_PROVIDER),
-            ProcessingConfig.gaps(off, off, extractionModelPresent = false),
+            emptyList(),
+            ProcessingConfig.gaps(phoneOnly, phoneOnly, extractionModelPresent = false, onDeviceModelReady = true),
+        )
+    }
+
+    @Test
+    fun `phone transcription without its model is a model gap, and summaries off adds nothing`() {
+        assertEquals(
+            listOf(ConfigGap.TRANSCRIPTION_MODEL),
+            ProcessingConfig.gaps(phoneOnly, phoneOnly, extractionModelPresent = false, onDeviceModelReady = false),
+        )
+    }
+
+    @Test
+    fun `a downloaded model is not required when transcription uses the person's key`() {
+        assertEquals(
+            emptyList(),
+            ProcessingConfig.gaps(ready, phoneOnly, extractionModelPresent = false, onDeviceModelReady = false),
         )
     }
 
@@ -31,7 +50,7 @@ class ProcessingConfigTest {
                 ConfigGap.EXTRACTION_KEY,
                 ConfigGap.EXTRACTION_MODEL,
             ),
-            ProcessingConfig.gaps(bad, bad, extractionModelPresent = false),
+            ProcessingConfig.gaps(bad, bad, extractionModelPresent = false, onDeviceModelReady = false),
         )
     }
 }

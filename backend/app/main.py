@@ -6,18 +6,28 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.account import router as account_router
+from app.api.ask import router as ask_router
+from app.api.billing import router as billing_router
 from app.api.deliveries import router as deliveries_router
+from app.api.email_flows import router as email_router
+from app.api.export import router as export_router
 from app.api.health import router as health_router
+from app.api.memory import router as memory_router
+from app.api.notes import router as notes_router
 from app.api.reports import router as reports_router
 from app.api.signup import router as signup_router
 from app.api.sync import router as sync_router
+from app.api.tokens import router as tokens_router
 from app.api.uploads import router as uploads_router
 from app.auth_rate_limit import AuthRateLimiter, warn_if_client_ips_collapse
+from app.billing import Stripe, StripeClient
 from app.config import Settings, get_settings
 from app.db import Database
 from app.errors import ErrorResponse, install_error_handlers
+from app.mail import Mailer, ResendMailer
 from app.middleware import RequestContextMiddleware
 from app.observability import configure_logging
+from app.recall import AnswerProvider, ClaudeAnswerProvider
 from app.retention import sweep
 from app.sentry import capture_unhandled_error, initialize_sentry
 from app.storage import ObjectStore, object_store_from
@@ -54,12 +64,41 @@ async def retention_sweep_loop(
             continue
 
 
+def answer_provider_from(settings: Settings) -> AnswerProvider | None:
+    """None while Ask's model is off: answers then list the matching items and no third party
+    sees anyone's memory."""
+    if settings.ask_provider == "disabled":
+        return None
+    if settings.claude_api_key is None:
+        raise SystemExit("CLAUDE_API_KEY is required when ask_provider=claude")
+    return ClaudeAnswerProvider(
+        settings.claude_api_key.get_secret_value(), model=settings.ask_model
+    )
+
+
+def mailer_from(settings: Settings) -> Mailer | None:
+    if settings.mail_provider == "disabled":
+        return None
+    if settings.resend_api_key is None:
+        raise SystemExit("RESEND_API_KEY is required when mail_provider=resend")
+    return ResendMailer(settings.resend_api_key.get_secret_value(), settings.mail_from)
+
+
+def stripe_from(settings: Settings) -> Stripe | None:
+    if not settings.billing_enabled or settings.stripe_secret_key is None:
+        return None
+    return StripeClient(settings.stripe_secret_key.get_secret_value())
+
+
 def create_app(
     settings: Settings | None = None,
     *,
     database: Database | None = None,
     object_store: ObjectStore | None = None,
     processing_enabled: bool | None = None,
+    answer_provider: AnswerProvider | None = None,
+    mailer: Mailer | None = None,
+    stripe: Stripe | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     # Uploads are accepted only when something will process them (Gate B, ADR-0003).
@@ -76,6 +115,9 @@ def create_app(
         if db is None and settings.database_url is not None:
             db = owned = Database(settings.database_url.get_secret_value())
         application.state.database = db
+        application.state.answer_provider = answer_provider or answer_provider_from(settings)
+        application.state.mailer = mailer or mailer_from(settings)
+        application.state.stripe = stripe or stripe_from(settings)
         application.state.object_store = object_store or object_store_from(settings)
         sweep_interval = settings.retention_sweep_interval_seconds
         sweep_task: asyncio.Task[None] | None = None
@@ -134,6 +176,13 @@ def create_app(
     application.include_router(account_router, prefix="/v1")
     application.include_router(reports_router, prefix="/v1")
     application.include_router(sync_router, prefix="/v1")
+    application.include_router(tokens_router, prefix="/v1")
+    application.include_router(memory_router, prefix="/v1")
+    application.include_router(notes_router, prefix="/v1")
+    application.include_router(ask_router, prefix="/v1")
+    application.include_router(email_router, prefix="/v1")
+    application.include_router(billing_router, prefix="/v1")
+    application.include_router(export_router, prefix="/v1")
     return application
 
 

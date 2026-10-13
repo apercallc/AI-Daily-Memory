@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -480,3 +481,31 @@ async def test_extraction_runs_end_to_end_through_the_job_queue(
             text("SELECT state FROM processing_jobs WHERE kind = 'extract'"),
         ).scalar_one()
     assert job_state == "succeeded"
+
+
+async def test_a_hung_provider_is_cut_off_as_a_retryable_timeout(
+    database: Database, db: Engine
+) -> None:
+    user, session_id = await transcribed_session(database, db, lines=((0, "Hello there.", "A"),))
+
+    class Hung(FakeExtractor):
+        async def extract(self, lines: tuple[Numbered, ...]) -> ExtractionResult:
+            await asyncio.sleep(5)
+            return ExtractionResult(items=())
+
+    job = ClaimedJob(
+        id=uuid.uuid4(),
+        user_id=user,
+        kind="extract",
+        subject_id=session_id,
+        attempts=1,
+        max_attempts=5,
+        lease_owner="w",
+    )
+    handler = ExtractHandler(database.sessions, Hung(), timeout_seconds=0.01)
+
+    with pytest.raises(JobError) as caught:
+        await handler(job)
+
+    assert caught.value.code == "provider_timeout"
+    assert caught.value.retryable

@@ -18,6 +18,9 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Start fails (permission, mic busy, background start blocked) | `StartFailed(problem)` → IDLE with a visible reason | reducer + presenter, `RecordingService` | ✅ |
 | Mic lost mid-recording (call, other app) | `Interrupted(problem)`; bounded automatic recovery (backoff for mic loss, wait for call end); pause cancels it; gives up to a user notification | reducer, `InterruptionRecoveryPolicy`, `RecoveryScheduler`, `AudioCaptureEngine` | ✅ (on-device verification pending) |
 | User pauses during recovery | Pause wins; capture never auto-resumes after a privacy pause | reducer | ✅ |
+| Another app holds the microphone for minutes (video recording, voice chat that does not set a call mode) | Treated as MICROPHONE_UNAVAILABLE: retries back off to every 60 s and keep going for about 35 minutes, then a "tap to resume" notification | `InterruptionRecoveryPolicy.Default`, `RecoveryScheduler` | ✅ logic / 📐 device check |
+| Incoming call rings, then is answered | Ringing does not interrupt; once answered the platform feeds silence, the session shows "Paused for a phone call" and resumes by itself when the call ends. Call audio is never recorded | `AudioCaptureEngine`, `RecoveryScheduler` | ✅ logic / 📐 device check |
+| Person looks for proof the mic is on, away from the app | Ongoing notification with a running timer (only while audio is saved), the Android microphone indicator, and a Quick Settings tile lit only while recording; the tile pauses on tap | `CaptureNotifications`, `RecordingTileService` | ✅ (tile look unit tested) / 📐 device check |
 | Mic silently blocked (delivers zeros) or silenced by the platform | 4 s exact-zero run, or `AudioRecordingConfiguration.isClientSilenced` → `Interrupted(MICROPHONE_UNAVAILABLE)` (or `PHONE_CALL` when in a call); silence is never sealed as captured audio beyond the detection window | `DigitalSilenceDetector`, `AudioCaptureEngine` | ✅ (on-device verification pending) |
 | "Recording" but nothing being saved (stuck encoder, dead thread) | No sealed segment within segment length + grace → `NOT_CAPTURING` headline | `CaptureHealthEvaluator`, presenter | ✅ |
 | Resume right after a long pause | Stall timer runs from whichever is newer: entering RECORDING or the last seal | health evaluator | ✅ |
@@ -277,3 +280,34 @@ data rights.
 - ❓ On-device transcription/extraction is a requested direction, but conflicts with ADR-0014's
   transient cloud-processing design. Decide model/device support and update the ADR before
   implementation; offline inference failure must keep audio and expose a retryable state.
+
+## 13. Error handling (whole-app pass)
+
+| Case | Behaviour | Where | Status |
+| --- | --- | --- | --- |
+| A fault (not just I/O) while analyzing one segment | That segment is marked undecodable and the batch continues; later speech is still analyzed | `SpeechAnalyzer` | ✅ |
+| Own provider answers 401/403, 408/425/429, 5xx | Bad key is named and not retried; rate limit, busy and server errors are retried; one shared rule for both stages | `ProviderStatus`, `ApiKey*Provider` | ✅ |
+| Processing hits an I/O or database error | Session stays pending and is retried, not failed for good | `ProcessingPipeline` | ✅ |
+| Sessions whose processing gave up | Count with a "Try again" button in Memory processing; audio is kept | `ProcessingSettingsSection` | ✅ |
+| Own provider returns a malformed item, or only malformed items | Dropped items are counted in the log; all-malformed fails visibly instead of producing an empty day | `ApiKeyExtractionProvider` | ✅ |
+| Upload stops for the daily limit, server trouble or no connection | Account screen says which, and clears when a run gets through | `UploadStatusStore`, `AccountSection` | ✅ |
+| Server answers sign-in with 5xx or 404/405 | "Server had a problem" / "not an AI Daily Memory server" instead of "can't reach" | `AccountLinker` | ✅ |
+| Storage-mode call is refused (401) | Phone is signed out of the link instead of offering a pointless retry | `SettingsViewModel` | ✅ |
+| Watch snapshot cannot be published | Logged; the "last published" mark does not advance, so the next change publishes again | `WatchDataLayerTransport` | ✅ |
+| Watch message is not valid JSON | Logged with its type and dropped; the pending command times out as "Not confirmed" | `WearMainActivity` | ✅ |
+| Transcript line cannot be decrypted (Keystore reset) | Shown as "This line can't be read on this device" instead of vanishing | `TranscriptText.unreadable` | ✅ |
+| Transcript or memory list fails to load | Logged; transcript shows empty, memory shows its retry state | `SessionsViewModel`, `MemoryViewModel` | ✅ |
+| Highlight / Quick Note cannot be saved | Message instead of a crash; recording is unaffected | `CaptureViewModel` | ✅ |
+| API key cannot be sealed by the Keystore | Person is told it will not survive a restart | `ProcessingSettings.secretSaveFailed` | ✅ |
+| Server sends a garbled deliveries page | Treated as a bad answer (retry later), not a crash | `HttpUploadApi` | ✅ |
+| Damaged or non-https pending revoke entry | Dropped, never sent, and the person is told to revoke it on the server | `LinkStore` | ✅ |
+| Backend: database down or pool exhausted | 503 `database_unavailable` with Retry-After (was a 500) | `errors.py` | ✅ |
+| Backend: object store error on complete, delete or account deletion | 503 `storage_unavailable` / `Retry-After`; logged with an event name | `uploads.py`, `account.py` | ✅ |
+| Backend: provider overloaded (529/425) or key rejected (401/403) | 529/425 retried; bad key named `provider_auth_failed`, not retried | `providers.py` | ✅ |
+| Backend: extraction provider hangs | Hard timeout, retried as `provider_timeout` | `ExtractHandler` | ✅ |
+| Backend: two first syncs for one day | Serialized per user and day instead of a 500 | `api/sync.py` | ✅ |
+| Backend: `last_used_at` write fails | Logged; the request still succeeds | `auth.py` | ✅ |
+| Backend: readiness | `/v1/ready` checks the database; `/v1/health` stays liveness only | `api/health.py` | ✅ |
+| A delivery that can never be opened stays at the front of the poll | Counted and logged only; not yet acknowledged away | `DeliveryReceiver` | ⚠ open |
+| A sealed segment rejected by the lifecycle is not a capture problem | Logged only | `SegmentStore` | ⚠ open |
+| Dead backend jobs have no operator list or requeue command | Logged with a code | `jobs.py` | ⚠ open |

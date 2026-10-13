@@ -430,6 +430,9 @@ main:focus { outline: none; }
       <a href="#what">The idea</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
+          <a href="/privacy.html">Privacy policy</a>
+          <a href="/terms.html">Terms</a>
+      <a href="/app/">Sign in</a>
       <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download</a>
     </nav>
   </div>
@@ -480,7 +483,7 @@ main:focus { outline: none; }
         <div class="movement">
           <span class="num">UNDERSTAND</span>
           <h3>Speech becomes structure</h3>
-          <p>Cloud transcription and structured extraction integrations exist, but are disabled by default. On-device transcription is not implemented.</p>
+          <p>The phone turns speech into text with a free model it downloads once (English), then deletes the audio. Summaries and action items are optional and use your own AI key.</p>
         </div>
         <div class="movement">
           <span class="num">REMEMBER</span>
@@ -566,7 +569,7 @@ main:focus { outline: none; }
   <section id="how">
     <div class="wrap">
       <p class="sec-label">03 · How it works</p>
-      <h2 class="sec-head">Phone captures. Watch controls. Cloud is optional.</h2>
+      <h2 class="sec-head">Phone captures and transcribes. Watch controls. Sync is optional.</h2>
       <div class="flow">
         <div class="flow-node phone">
           <span class="fn-label">On your phone</span>
@@ -578,27 +581,27 @@ main:focus { outline: none; }
           </ul>
         </div>
         <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-node cloud">
-          <span class="fn-label">Opt-in · only when you connect an account</span>
-          <h3>Processing</h3>
+        <div class="flow-node phone">
+          <span class="fn-label">On your phone · while it charges</span>
+          <h3>Transcription</h3>
           <ul>
-            <li>Speech clips upload at night, on Wi-Fi, while charging</li>
-            <li>Transcription and structured extraction</li>
-            <li>Temporary audio deleted after the transcript is stored</li>
+            <li>A free speech model runs on the phone, or your own transcription key</li>
+            <li>Audio is deleted as soon as its words are stored</li>
+            <li>Summaries and action items only if you add your own AI key</li>
           </ul>
         </div>
         <div class="flow-arrow" aria-hidden="true">→</div>
         <div class="flow-node report">
           <span class="fn-label">Back to you</span>
-          <h3>Evidence-backed memory</h3>
+          <h3>Evidence-backed notes</h3>
           <ul>
-            <li>Daily report: decisions, actions, commitments, ideas</li>
+            <li>Searchable transcript of the parts where people talked</li>
+            <li>With a summary key: decisions, actions, commitments, ideas</li>
             <li>Every item cites the moment it came from</li>
-            <li>Corrections never overwrite the original evidence</li>
           </ul>
         </div>
       </div>
-      <div class="flow-note"><strong>No account? Capture still works.</strong> Recording and local speech analysis work without an account. When cloud processing is enabled and an account is connected, clips may upload temporarily even in "On this phone" mode; that mode means they are not retained server-side after processing. Today both provider stages are disabled by default, so the backend refuses uploads.</div>
+      <div class="flow-note"><strong>No account? Everything still works.</strong> Recording, transcription and notes all happen on the phone, and audio never leaves it. An account only syncs your notes (never audio) so you can read and search them on the web and through the API. Our server does no transcription or summarizing, and no AI provider is called from it unless you turn on a setting yourself.</div>
     </div>
   </section>
 
@@ -620,38 +623,33 @@ main:focus { outline: none; }
           </div>
           <div class="priv-item">
             <span class="n">3</span>
-            <div><h3>Nothing is retained server-side by default</h3><p>In "On this phone" mode, data is not kept on our server after processing. When a provider is enabled, speech clips are sent transiently for transcription and the transcript is sealed to your phone's key. Today both providers are disabled by default, so uploads are refused until an operator enables them.</p></div>
+            <div><h3>Audio never leaves your phone</h3><p>Speech is turned into text on the phone and the audio is deleted afterwards. There is no audio upload in the app and no server endpoint it could go to.</p></div>
           </div>
           <div class="priv-item">
                       <span class="n">4</span>
-                      <div><h3>Cloud processing is temporary</h3><p>When enabled, audio clips leave the phone for processing; temporary copies are deleted after the verified transcript is stored or the job reaches terminal failure. The phone keeps the original until the transcript is stored locally.</p></div>
+                      <div><h3>Your own keys stay yours</h3><p>If you add a transcription or AI key, the phone talks to that provider directly and the key is stored sealed on the phone. It never passes through our server. Summaries send transcript text; a transcription key sends audio. Both are off until you turn them on.</p></div>
                     </div>
           <div class="priv-item">
             <span class="n">5</span>
-            <div><h3>Transcripts are sealed to your key</h3><p>In phone storage modes, transcript lines are encrypted to your phone's own key before delivery. The server holds only a temporary encrypted copy while waiting for your phone to acknowledge receipt (maximum 7 days).</p></div>
+            <div><h3>Sync is a choice, and it is notes only</h3><p>With an account, the phone sends each day's summary and items. Full transcripts are sent only if you switch that on. Delete a session on the phone and the next sync removes it from the server.</p></div>
           </div>
           <div class="priv-item">
             <span class="n">6</span>
             <div><h3>Deletion is honest</h3><p>Stop asks Keep or Delete. Deleting removes that session's audio and derived data. We say plainly what deletion does — and what it can't, like physical flash erasure — instead of over-promising.</p></div>
           </div>
         </div>
-        <aside class="modes" aria-label="The three storage modes">
-          <h3>Three storage modes</h3>
-          <p class="modes-sub">Where your memory lives is your call, per mode. Switchable in settings.</p>
+        <aside class="modes" aria-label="Where your notes live">
+          <h3>Where your notes live</h3>
+          <p class="modes-sub">Your choice, changeable in settings.</p>
           <div class="mode">
             <div class="mode-name">On this phone <span class="badge">Default</span></div>
-            <p>Long-term memory stays on your phone. If cloud processing is enabled, clips are sent temporarily for transcription and the transcript is sealed back to your phone's key. Today processing is disabled by default.</p>
-            <div class="leak off-cloud">→ transient processing when enabled; no server-side memory retained</div>
+            <p>Audio, transcripts and any summaries stay on the phone. Nothing is sent to our server, and no account is needed.</p>
+            <div class="leak off-cloud">→ nothing leaves the phone</div>
           </div>
           <div class="mode">
-            <div class="mode-name">Reports in my cloud account</div>
-            <p>The backend can hold daily reports and structured memory items that your phone syncs to it, while full transcripts stay on the phone. Sync is explicit and opt-in: the phone pushes only what you send, and transcript lines are included only if you turn that on. Deleting a session on the phone propagates to the server on the next sync.</p>
-            <div class="leak off-cloud">→ reports and items readable server-side, by choice</div>
-          </div>
-          <div class="mode">
-            <div class="mode-name">Full cloud</div>
-            <p>Reports and synced memory are available to authorized clients through the public REST API. This requires an explicit choice; cloud processing stages are disabled by default.</p>
-            <div class="leak off-cloud">→ readable server-side, by choice and only when enabled</div>
+            <div class="mode-name">Synced to my account</div>
+            <p>The phone sends daily summaries and extracted items so you can read, search and ask about them on the web and through the REST API. Transcript lines are included only if you turn that on.</p>
+            <div class="leak off-cloud">→ notes readable server-side, by choice. Never audio.</div>
           </div>
         </aside>
       </div>
@@ -673,14 +671,15 @@ main:focus { outline: none; }
             <li>Sessions with automatic titles and transcripts view</li>
             <li>Watch remote control: start, pause, resume, stop, highlight, Quick Note</li>
             <li>Nightly speech analysis while charging (nothing leaves the phone)</li>
-            <li>Account sign-in and Wi-Fi upload queue when connected</li>
+            <li>Account sign-in and note sync when connected</li>
+            <li>Free on-phone transcription (English), new and still being tested on real phones</li>
           </ul>
         </div>
         <div class="status-col next">
           <h3>On the roadmap</h3>
           <ul>
-            <li>Transcription and structured extraction, behind privacy and cost gates</li>
-            <li>The in-app daily report screen</li>
+            <li>More transcription languages and a higher-accuracy model</li>
+            <li>Searching transcripts, not only summaries, from the web</li>
             <li>Ask My Memory — natural-language recall with evidence</li>
             <li>API access for user-owned clients (read-only scopes)</li>
             <li>Published, signed APK releases (the in-app update check needs them)</li>
@@ -688,7 +687,7 @@ main:focus { outline: none; }
           </ul>
         </div>
       </div>
-      <p class="status-note">Private testing is by invitation, on real hardware, before anything public. Play Store listing and pricing come after the reliability gates pass — not before.</p>
+      <p class="status-note">Private testing is by invitation, on real hardware, before anything public. A Play Store listing comes after the reliability gates pass — not before.</p>
     </div>
   </section>
 
@@ -729,15 +728,15 @@ main:focus { outline: none; }
         </details>
         <details>
           <summary><span class="qnum">Q3</span>Where does my audio actually live?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">Audio is stored on your phone by default, encrypted with keys in the Android Keystore, and excluded from backups. If an account is connected and a provider is enabled, speech clips may be sent transiently for transcription even in "On this phone" mode; that mode means the server doesn't keep memory after processing. Today both providers are disabled by default, so uploads are refused. Raw audio is not kept as an archive.</div>
+          <div class="answer">On your phone only. It is encrypted with keys in the Android Keystore, excluded from backups, and deleted once it has been turned into text. It is never uploaded to our server. The one exception is yours to make: if you enter your own transcription key, the phone sends audio to that provider directly.</div>
         </details>
         <details>
           <summary><span class="qnum">Q4</span>Do I need an account for it to be useful?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">No. The phone records, organizes sessions, tracks capture health, and runs speech analysis entirely offline. An account only matters when you want processing, reports, or access from other tools — and you can connect one later, with recording from before staying on the phone unless you say otherwise.</div>
+          <div class="answer">No. The phone records, organizes sessions, tracks capture health, and runs speech analysis entirely offline. An account only matters when you want your notes on the web or in other tools — and you can connect one later, with notes from before staying on the phone unless you say otherwise.</div>
         </details>
         <details>
           <summary><span class="qnum">Q5</span>Does it work offline?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">Capture is offline-first by design: recording never depends on the network or a server. Uploads happen later, on Wi-Fi, while charging. If the connection drops mid-session, nothing is lost — the queue waits.</div>
+          <div class="answer">Capture is offline-first by design: recording never depends on the network or a server. Transcription runs on the phone while it charges, and note sync waits for a connection. The one-time speech model download (about 40 MB) needs a connection; recording does not.</div>
         </details>
         <details>
           <summary><span class="qnum">Q6</span>What about my watch?<span class="plus" aria-hidden="true">+</span></summary>
@@ -745,11 +744,11 @@ main:focus { outline: none; }
         </details>
         <details>
           <summary><span class="qnum">Q7</span>What will it cost?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">Private testing is free. When it's public there will be a subscription — all-day transcription and AI processing have real per-user costs — with the honest details (free tier, limits, what's metered) published before anyone is asked to pay.</div>
+          <div class="answer">Nothing. The app, on-phone transcription, sync, the web app and the API are free. Summaries use an AI key you supply, so any cost there is between you and that provider. If hosting costs ever force a change, it will be announced well before anything is charged.</div>
         </details>
         <details>
           <summary><span class="qnum">Q8</span>Can I delete everything?<span class="plus" aria-hidden="true">+</span></summary>
-          <div class="answer">Yes. Stopping a session asks Keep or Delete; deleting removes that session's audio and its derived data, and a later sync removes the server-side copy of that session's memory. If you have a server account, deleting it (<code>DELETE /v1/me</code>) removes your server-side data and your storage prefix, and the call is retried if cleanup is incomplete. Self-service data export is not built yet.</div>
+          <div class="answer">Yes. Stopping a session asks Keep or Delete; deleting removes that session's audio and its derived data, and a later sync removes the server-side copy of that session's memory. If you have a server account, deleting it (<code>DELETE /v1/me</code>) removes your server-side data and your storage prefix, and the call is retried if cleanup is incomplete. You can also download everything the server holds as one file from Account.</div>
         </details>
       </div>
     </div>

@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.wear
 
 import android.os.Bundle
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.content.Context
@@ -28,6 +29,7 @@ import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
+import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
@@ -133,7 +135,8 @@ class WearMainActivity : ComponentActivity(),
                     requestSnapshot()
                 }
             }
-            .addOnFailureListener {
+            .addOnFailureListener { error ->
+                logWarning("connection_check_failed", error)
                 phoneNodeId = null
                 controlState = WearControlReducer.connection(controlState, false).copy(
                     error = WearError.CONNECTION_CHECK_FAILED,
@@ -155,7 +158,8 @@ class WearMainActivity : ComponentActivity(),
                     items.release()
                 }
             }
-            .addOnFailureListener {
+            .addOnFailureListener { error ->
+                logWarning("snapshot_read_failed", error)
                 controlState = controlState.copy(error = WearError.SNAPSHOT_READ_FAILED)
             }
     }
@@ -163,7 +167,8 @@ class WearMainActivity : ComponentActivity(),
     private fun requestSnapshot() {
         val nodeId = phoneNodeId ?: return
         Wearable.getMessageClient(this).sendMessage(nodeId, SNAPSHOT_REQUEST_PATH, ByteArray(0))
-            .addOnFailureListener {
+            .addOnFailureListener { error ->
+                logWarning("snapshot_request_failed", error)
                 controlState = controlState.copy(error = WearError.SNAPSHOT_UNCONFIRMED)
             }
     }
@@ -216,7 +221,8 @@ class WearMainActivity : ComponentActivity(),
             .toString()
             .toByteArray(Charsets.UTF_8)
         Wearable.getMessageClient(this).sendMessage(nodeId, COMMAND_PATH, payload)
-            .addOnFailureListener {
+            .addOnFailureListener { error ->
+                logWarning("command_send_failed", error)
                 controlState = WearControlReducer.commandUnconfirmed(
                     controlState,
                     commandId,
@@ -225,12 +231,31 @@ class WearMainActivity : ComponentActivity(),
             }
     }
 
+    /** A message that isn't valid JSON is dropped, but never silently: the type is logged. */
+    private fun parseJson(payload: ByteArray, event: String): JSONObject? = try {
+        JSONObject(payload.toString(Charsets.UTF_8))
+    } catch (e: JSONException) {
+        logWarning(event, e)
+        null
+    }
+
+    /** Exception type only: Data Layer errors never carry recording content. */
+    private fun logWarning(event: String, error: Exception) {
+        Log.w(LOG_TAG, "$event type=${error.javaClass.simpleName}")
+    }
+
     private fun receiveAcknowledgement(payload: ByteArray) {
-        val json = runCatching { JSONObject(payload.toString(Charsets.UTF_8)) }.getOrNull() ?: return
+        val json = parseJson(payload, "acknowledgement_unreadable") ?: return
         val commandId = json.optString(KEY_COMMAND_ID).takeIf { it.isNotBlank() } ?: return
-        val outcome = runCatching {
+        val outcome = try {
             CommandOutcome.valueOf(json.getString(KEY_OUTCOME))
-        }.getOrNull() ?: return
+        } catch (e: JSONException) {
+            logWarning("acknowledgement_outcome_missing", e)
+            return
+        } catch (e: IllegalArgumentException) {
+            logWarning("acknowledgement_outcome_unknown", e)
+            return
+        }
         val revision = json.optLong(KEY_REVISION, -1L)
         if (revision < 0) return
         val acknowledgement = CommandAcknowledgement(commandId, outcome, revision)
@@ -244,7 +269,7 @@ class WearMainActivity : ComponentActivity(),
     }
 
     private fun receiveSnapshot(payload: ByteArray) {
-        val json = runCatching { JSONObject(payload.toString(Charsets.UTF_8)) }.getOrNull() ?: return
+        val json = parseJson(payload, "snapshot_unreadable") ?: return
         json.toPhoneSnapshot()?.let { controlState = WearControlReducer.phoneSnapshot(controlState, it) }
     }
 
@@ -309,6 +334,7 @@ class WearMainActivity : ComponentActivity(),
     }
 
     companion object {
+        private const val LOG_TAG = "WearMain"
         const val COMMAND_PATH = "/adm/command"
         const val ACK_PATH = "/adm/ack"
         const val SNAPSHOT_PATH = "/adm/snapshot"

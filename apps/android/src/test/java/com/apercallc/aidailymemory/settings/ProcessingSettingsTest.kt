@@ -164,4 +164,42 @@ class ProcessingSettingsTest {
         assertFalse(preferences.contains("sync_token"))
         assertFalse(preferences.contains("sync_token_sealed"))
     }
+
+    @Test
+    fun `transcription defaults to the phone and an earlier disabled value reads as the phone`() {
+        assertEquals(ProcessingSettings.PROVIDER_ON_DEVICE, ProcessingSettings(preferences) { aead }.transcriptionProvider.value)
+
+        preferences.edit().putString("transcription_provider", "disabled").commit()
+        assertEquals(ProcessingSettings.PROVIDER_ON_DEVICE, ProcessingSettings(preferences) { aead }.transcriptionProvider.value)
+
+        preferences.edit().putString("transcription_provider", "user-api").commit()
+        assertEquals(ProcessingSettings.PROVIDER_USER_API, ProcessingSettings(preferences) { aead }.transcriptionProvider.value)
+    }
+
+    @Test
+    fun `summaries are off by default`() {
+        assertEquals(ProcessingSettings.PROVIDER_DISABLED, ProcessingSettings(preferences) { aead }.extractionProvider.value)
+    }
+
+    @Test
+    fun `phone transcription waits only for the speech model`() {
+        var ready = false
+        val settings = ProcessingSettings(preferences, onDeviceModelReady = { ready }) { aead }
+
+        assertEquals(
+            listOf(com.apercallc.aidailymemory.recording.processing.ConfigGap.TRANSCRIPTION_MODEL),
+            settings.configGaps(),
+        )
+        ready = true
+        assertEquals(emptyList(), settings.configGaps())
+    }
+
+    @Test
+    fun `an unknown transcription provider is stored as the phone, never as a half-set service`() {
+        val settings = ProcessingSettings(preferences) { aead }
+
+        settings.setTranscriptionProvider("something-else")
+
+        assertEquals(ProcessingSettings.PROVIDER_ON_DEVICE, settings.transcriptionProvider.value)
+    }
 }

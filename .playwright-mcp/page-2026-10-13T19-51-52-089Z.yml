@@ -1,0 +1,14 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Reset your password" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Enter your email and we'll send a link that works for one hour.
+      - generic [ref=e8]:
+        - generic [ref=e9]: Email
+        - textbox "Email" [ref=e10]
+        - generic [ref=e11]:
+          - button "Send reset link" [ref=e12] [cursor=pointer]
+          - link "Back to sign in" [ref=e13] [cursor=pointer]:
+            - /url: "#/"

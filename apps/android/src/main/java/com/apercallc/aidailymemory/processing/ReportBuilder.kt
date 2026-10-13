@@ -28,7 +28,7 @@ object ReportBuilder {
         generatedAtEpochMs: Long,
         extractionModel: String,
     ): DailyReport {
-        val headline = items.firstOrNull()?.let { summarizeHeadline(items) } ?: "Memory Day"
+        val headline = items.firstOrNull()?.let { summarizeHeadline(items) } ?: "Transcript only"
         val summary = buildSummary(items)
         val reportItems = items.map { it.toReportItem() }
         val coverage = ReportCoverage(

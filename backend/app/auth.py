@@ -6,6 +6,7 @@ Tokens are 256-bit random values, so a plain (unsalted) hash is not brute-forcea
 """
 
 import hashlib
+import logging
 import secrets
 import uuid
 from collections.abc import Awaitable, Callable
@@ -14,18 +15,30 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Final, Literal
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import delete, select, update
+from sqlalchemy import any_, delete, literal, or_, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Database, get_session
 from app.db.models import AccessToken, AudioUpload, DeviceKey, SealedDelivery
 
+logger = logging.getLogger("app.auth")
+
 TOKEN_PREFIX: Final = "adm_"  # noqa: S105 - a public prefix, not a secret
-Scope = Literal["upload:write", "memory:read", "transcript:read"]
+Scope = Literal["upload:write", "memory:read", "memory:write", "transcript:read", "account:manage"]
 # Devices upload audio and read their own memory. API keys start with memory:read only;
 # transcript access is a separate explicit scope.
 DEVICE_SCOPES: Final[tuple[Scope, ...]] = ("upload:write", "memory:read")
 API_KEY_SCOPES: Final[tuple[Scope, ...]] = ("memory:read",)
+# A signed-in browser: reads and corrects memory and manages the account, but never uploads audio.
+# Its token expires, unlike a phone's, because a browser is easier to lose or leave open.
+WEB_SCOPES: Final[tuple[Scope, ...]] = (
+    "memory:read",
+    "memory:write",
+    "transcript:read",
+    "account:manage",
+)
+WEB_TOKEN_TTL: Final = timedelta(days=30)
 # Writing last_used_at on every request would turn reads into writes.
 _LAST_USED_RESOLUTION: Final = timedelta(hours=1)
 _BEARER: Final = "bearer "
@@ -102,9 +115,10 @@ def _bearer(request: Request) -> str:
     return token
 
 
-def require(scope: Scope) -> Callable[..., Awaitable[Principal]]:
-    """Dependency: an active token carrying [scope]. Unknown, revoked, and expired tokens all
-    get the same 401, so the response never reveals which it was."""
+def require(scope: Scope, *alternatives: Scope) -> Callable[..., Awaitable[Principal]]:
+    """Dependency: an active token carrying [scope] (or any of [alternatives]). Unknown, revoked,
+    and expired tokens all get the same 401, so the response never reveals which it was."""
+    accepted = (scope, *alternatives)
 
     async def dependency(
         request: Request,
@@ -119,20 +133,62 @@ def require(scope: Scope) -> Callable[..., Awaitable[Principal]]:
             or (row.expires_at is not None and row.expires_at <= now)
         ):
             raise _unauthorized()
-        if scope not in row.scopes:
+        if not any(s in row.scopes for s in accepted):
             raise HTTPException(status_code=403, detail="Token lacks the required scope.")
         if row.last_used_at is None or now - row.last_used_at >= _LAST_USED_RESOLUTION:
             # Its own short transaction: committing the request's session here would end
             # the handler's unit of work too.
             database: Database = request.app.state.database
-            async with database.sessions() as usage:
-                await usage.execute(
-                    update(AccessToken).where(AccessToken.id == row.id).values(last_used_at=now),
+            try:
+                async with database.sessions() as usage:
+                    await usage.execute(
+                        update(AccessToken)
+                        .where(AccessToken.id == row.id)
+                        .values(last_used_at=now),
+                    )
+                    await usage.commit()
+            except SQLAlchemyError as error:
+                # Bookkeeping only: a valid token must not fail the request because this write did.
+                logger.warning(
+                    "token_last_used_update_failed", extra={"error_type": type(error).__name__}
                 )
-                await usage.commit()
         return Principal(user_id=row.user_id, token_id=row.id, scopes=frozenset(row.scopes))
 
     return dependency
+
+
+async def revoke_other_browser_sessions(
+    session: AsyncSession, user_id: uuid.UUID, *, keep: uuid.UUID
+) -> None:
+    """Revokes the user's other browser tokens (those without the upload scope). Phones and API
+    keys are left alone; they are listed and revoked one by one."""
+    await session.execute(
+        update(AccessToken)
+        .where(
+            AccessToken.user_id == user_id,
+            AccessToken.id != keep,
+            AccessToken.revoked_at.is_(None),
+            AccessToken.kind == "device",
+            ~(literal("upload:write") == any_(AccessToken.scopes)),
+        )
+        .values(revoked_at=datetime.now(UTC)),
+    )
+
+
+async def revoke_web_and_api_sessions(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Revokes every browser session and API key (not phones) for [user_id]."""
+    await session.execute(
+        update(AccessToken)
+        .where(
+            AccessToken.user_id == user_id,
+            AccessToken.revoked_at.is_(None),
+            or_(
+                AccessToken.kind == "api",
+                ~(literal("upload:write") == any_(AccessToken.scopes)),
+            ),
+        )
+        .values(revoked_at=datetime.now(UTC)),
+    )
 
 
 async def revoke_token(session: AsyncSession, user_id: uuid.UUID, token_id: uuid.UUID) -> bool:

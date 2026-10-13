@@ -101,7 +101,10 @@ class MemoryViewModel(
                 }
                 .map<List<MemoryDay>, MemoryLoadState> { MemoryLoadState.Content(it) }
                 .onStart { emit(MemoryLoadState.Loading) }
-                .catch { emit(MemoryLoadState.Failed) }
+                .catch {
+                    logFailure(TAG, "memory_load_failed", it)
+                    emit(MemoryLoadState.Failed)
+                }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MemoryLoadState.Loading)
 

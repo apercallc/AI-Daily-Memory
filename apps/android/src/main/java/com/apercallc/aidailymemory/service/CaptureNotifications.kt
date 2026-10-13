@@ -14,6 +14,7 @@ import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
+import com.apercallc.aidailymemory.recording.presentation.Headline
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusPresenter
 import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibility
 import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibilityPolicy
@@ -132,8 +133,25 @@ class CaptureNotifications(private val context: Context) {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .also { showRecordingTimer(it, model) }
             .also { addActions(it, model) }
             .build()
+
+    @Volatile private var recordingSince: Long? = null
+
+    /**
+     * While audio is really being saved, the notification counts up how long this stretch has
+     * been recording. It disappears the moment recording stops, pauses or is interrupted, so a
+     * running clock always means the microphone is on.
+     */
+    private fun showRecordingTimer(builder: NotificationCompat.Builder, model: CaptureStatusModel) {
+        if (model.headline != Headline.RECORDING) {
+            recordingSince = null
+            return
+        }
+        val since = recordingSince ?: System.currentTimeMillis().also { recordingSince = it }
+        builder.setWhen(since).setShowWhen(true).setUsesChronometer(true)
+    }
 
     /**
      * A session needs the user while no service runs (after a restart, or when automatic

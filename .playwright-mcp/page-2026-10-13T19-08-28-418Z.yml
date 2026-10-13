@@ -1,0 +1,56 @@
+- generic [active] [ref=f4e1]:
+  - link "Skip to content" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f4e3]:
+    - banner [ref=f4e85]:
+      - generic [ref=f4e86]:
+        - link "AI Daily Memory" [ref=f4e87] [cursor=pointer]:
+          - /url: "#/today"
+        - navigation "Main" [ref=f4e89]:
+          - link "Today" [ref=f4e90] [cursor=pointer]:
+            - /url: "#/today"
+          - link "Memory" [ref=f4e91] [cursor=pointer]:
+            - /url: "#/memory"
+          - link "Ask" [ref=f4e92] [cursor=pointer]:
+            - /url: "#/ask"
+          - link "Account" [ref=f4e93] [cursor=pointer]:
+            - /url: "#/account"
+        - generic [ref=f4e94]: tester@example.com
+        - button "Sign out" [ref=f4e95] [cursor=pointer]
+    - main [ref=f4e96]:
+      - generic [ref=f4e97]:
+        - heading "Ask" [level=1] [ref=f4e98]
+        - paragraph [ref=f4e99]: Ask about your days in plain words. Try a time (“yesterday”, “last week”), a person, or a kind of thing (decisions, promises).
+        - generic [ref=f4e100]:
+          - generic [ref=f4e101]: Ask your memory
+          - textbox "Your question" [ref=f4e102]:
+            - /placeholder: What did I promise Sam?
+            - text: What did I promise Sam about pricing?
+          - generic [ref=f4e103]:
+            - button "Ask" [ref=f4e104] [cursor=pointer]
+            - generic [ref=f4e105]: Answers use only what's in your memory, and say so when there's nothing.
+        - generic [ref=f4e106]:
+          - button "What did I decide yesterday?" [ref=f4e107] [cursor=pointer]
+          - button "What did I promise this week?" [ref=f4e108] [cursor=pointer]
+          - button "What open questions do I have?" [ref=f4e109] [cursor=pointer]
+          - button "What are my action items from last week?" [ref=f4e110] [cursor=pointer]
+        - region "Answer" [ref=f4e115]:
+          - paragraph [ref=f4e116]: "Here is what your memory has: - 2026-10-13 (commitment): Send Sam the revised pricing deck by Thursday noon (you owe Sam) due 2026-10-15"
+          - generic [ref=f4e117]:
+            - heading "Based on 1 item" [level=3] [ref=f4e118]
+            - generic [ref=f4e119]:
+              - generic [ref=f4e120]:
+                - generic [ref=f4e121]: Commitment
+                - paragraph [ref=f4e122]: Send Sam the revised pricing deck by Thursday noon
+              - generic [ref=f4e123]:
+                - link "2026-10-13" [ref=f4e124] [cursor=pointer]:
+                  - /url: "#/today?day=2026-10-13"
+                - text: · Sam · due 2026-10-15
+          - paragraph [ref=f4e125]: These are the matching items. A written answer isn't enabled on this server.
+    - contentinfo [ref=f4e111]:
+      - text: Your memory belongs to you.
+      - link "How privacy works" [ref=f4e112] [cursor=pointer]:
+        - /url: /#privacy
+      - text: ·
+      - link "Open source" [ref=f4e113] [cursor=pointer]:
+        - /url: https://github.com/apercallc/AI-Daily-Memory

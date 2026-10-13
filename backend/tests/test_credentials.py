@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, text
@@ -19,7 +20,7 @@ async def database(db: Engine, database_url: str) -> AsyncIterator[Database]:
     await database.dispose()
 
 
-async def _sign_up(database: Database, **kwargs: str) -> SignedUp:
+async def _sign_up(database: Database, **kwargs: Any) -> SignedUp:
     async with database.sessions() as session:
         try:
             signed_up = await sign_up(session, **kwargs)
@@ -30,7 +31,7 @@ async def _sign_up(database: Database, **kwargs: str) -> SignedUp:
         return signed_up
 
 
-async def _log_in(database: Database, **kwargs: str) -> LoggedIn:
+async def _log_in(database: Database, **kwargs: Any) -> LoggedIn:
     kwargs.setdefault("source", "source-a")
     """Mirrors app/api/signup.py: a failed attempt still commits (it bumps the lockout state)."""
     async with database.sessions() as session:

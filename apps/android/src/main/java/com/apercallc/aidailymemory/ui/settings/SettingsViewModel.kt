@@ -14,13 +14,13 @@ import com.apercallc.aidailymemory.recording.processing.ProviderPresets
 import com.apercallc.aidailymemory.recording.server.ConnectLink
 import com.apercallc.aidailymemory.recording.server.ServerAddress
 import com.apercallc.aidailymemory.recording.server.ConnectionCheck
-import com.apercallc.aidailymemory.recording.server.ServerMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.OffState
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.apercallc.aidailymemory.settings.ProcessingSettings
+import com.apercallc.aidailymemory.net.ApiException
 import com.apercallc.aidailymemory.net.ConnectError
 import com.apercallc.aidailymemory.net.ServerLink
 import java.time.Instant
@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,13 +43,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/** Storage mode as the settings screen sees it: loading, loaded, updating, or failed. */
-internal data class StorageModeUi(
-    val mode: String? = null,
-    val updating: Boolean = false,
-    val error: StorageModeError? = null,
-)
 
 private data class UrlDrafts(
     val transcription: String? = null,
@@ -90,7 +84,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val connecting = MutableStateFlow(false)
     private val testing = MutableStateFlow(false)
     private val connectError = MutableStateFlow<ConnectError?>(null)
-    private val storage = MutableStateFlow(StorageModeUi())
 
     /** Server text that is not a usable address yet; shown as typed, never stored. */
     private val serverDraft = MutableStateFlow<String?>(null)
@@ -111,38 +104,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         connectError.value = null
     }
 
-    init {
-        // Refetched from scratch on every link change: a mode fetched under an old token must
-        // never be shown as if it were the new account's.
-        viewModelScope.launch {
-            container.links.link.collectLatest { link ->
-                storage.value = StorageModeUi()
-                if (link != null) fetchStorageMode(link)
-            }
-        }
-    }
-
-    private suspend fun fetchStorageMode(link: ServerLink) {
-        storage.update { it.copy(error = null) }
-        try {
-            val mode = withContext(Dispatchers.IO) { container.accountApi.me(link) }
-            storage.update { it.copy(mode = mode, error = null) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logFailure(TAG, "storage_mode_fetch_failed", e)
-            // Distinct from "still loading" (mode == null, no error): the UI offers a retry.
-            storage.update { it.copy(mode = null, error = StorageModeError.LOAD_FAILED) }
-        }
-    }
-
-    /** Retry after a failed fetch. */
-    fun reloadStorageMode() {
-        val link = container.links.link.value ?: return
-        if (storage.value.updating) return
-        viewModelScope.launch { fetchStorageMode(link) }
-    }
-
     val account: StateFlow<AccountUi> = combine(
         combine(
             container.links.link,
@@ -152,11 +113,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         ),
         combine(connecting, testing, ::Pair),
         connectError,
-        container.links.link.flatMapLatest {
-            container.database.clips().observeProblems(container.links.uploadSinceEpochMs)
-        },
-        combine(storage, container.links.serverUrl, serverDraft, ::Triple),
-    ) { (link, problem, revoke), (busy, testingNow), error, problems, (storageUi, server, draft) ->
+        combine(container.links.serverUrl, serverDraft, ::Pair),
+    ) { (link, problem, revoke), (busy, testingNow), error, (server, draft) ->
         AccountUi(
             host = link?.let { hostOf(it.baseUrl) },
             serverUrl = server,
@@ -165,12 +123,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             connecting = busy,
             testing = testingNow,
             error = error,
-            uploadProblems = problems,
             revokePending = revoke.first,
             revokeManual = revoke.second,
-            storageMode = storageUi.mode,
-            storageModeUpdating = storageUi.updating,
-            storageModeError = storageUi.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AccountUi())
 
@@ -186,19 +140,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.transcriptionProvider,
         pSettings.deleteAudioAfterTranscription,
         urlDrafts,
-        // Any provider edit or connect/disconnect refreshes the section.
-        combine(pSettings.configRevision, container.links.link) { _, link -> link },
-    ) { enabled, tp, deleteAudio, drafts, _ ->
+        // Any provider edit or model download refreshes the section.
+        combine(
+            pSettings.configRevision,
+            container.speechModel.state,
+            // Starts at 0 so the section renders before the database has answered.
+            container.database.processingState().observeFailedCount().onStart { emit(0) },
+        ) { _, model, failed -> model to failed },
+    ) { enabled, tp, deleteAudio, drafts, (modelState, failedSessions) ->
         val transcriptionPreset = ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl)
         ProcessingUi(
             enabled = enabled,
-            transcriptionProvider = tp,
+            transcriptionOwnKey = tp == ProcessingSettings.PROVIDER_USER_API,
+            summaries = pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_USER_API,
+            modelState = modelState,
+            modelSizeMb = (container.speechModel.spec.zipBytes / BYTES_PER_MB).toInt(),
             transcriptionApiKey = pSettings.transcriptionApiKey ?: "",
             transcriptionApiUrl = drafts.transcription ?: pSettings.transcriptionApiUrl ?: "",
             transcriptionApiUrlInvalid = drafts.transcription != null,
-            extractionProvider = pSettings.extractionProvider.value,
-            ownProvider = tp == ProcessingSettings.PROVIDER_USER_API ||
-                pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_USER_API,
             extractionApiKey = pSettings.extractionApiKey ?: "",
             extractionApiUrl = drafts.extraction ?: pSettings.extractionApiUrl ?: "",
             extractionApiUrlInvalid = drafts.extraction != null,
@@ -209,8 +168,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             extractionPresetId = ProviderPresets.match(ProviderPresets.summary, pSettings.extractionApiUrl)?.id
                 ?: ProviderPresets.CUSTOM_ID,
             deleteAudioAfterTranscription = deleteAudio,
+            failedSessions = failedSessions,
             configGaps = pSettings.configGaps(),
-            mode = ServerMode.of(container.links.isLinked),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
 
@@ -236,12 +195,31 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             onProcessingSettingsChanged()
             say(R.string.settings_saved)
         },
-        onTranscriptionProviderChange = { provider ->
-            pSettings.setTranscriptionProvider(provider)
+        onTranscriptionOwnKeyChange = { enabled ->
+            pSettings.setTranscriptionProvider(
+                if (enabled) ProcessingSettings.PROVIDER_USER_API else ProcessingSettings.PROVIDER_ON_DEVICE,
+            )
+            // Pre-filled so the only thing left to add is a key.
+            if (enabled) prefillTranscription()
+            onProcessingSettingsChanged()
+            say(R.string.settings_saved)
+        },
+        onSummariesChange = { enabled ->
+            pSettings.setExtractionProvider(
+                if (enabled) ProcessingSettings.PROVIDER_USER_API else ProcessingSettings.PROVIDER_DISABLED,
+            )
+            if (enabled) prefillSummaries()
+            onProcessingSettingsChanged()
+            say(R.string.settings_saved)
+        },
+        onDownloadModel = container::downloadSpeechModel,
+        onRemoveModel = {
+            container.speechModel.delete()
             onProcessingSettingsChanged()
         },
         onTranscriptionApiKeyChange = { value ->
             pSettings.transcriptionApiKey = value
+            if (pSettings.secretSaveFailed) say(R.string.key_not_saved)
             onProcessingSettingsChanged()
         },
         onTranscriptionApiUrlChange = { value ->
@@ -250,12 +228,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 pSettings.transcriptionApiUrl = it
             }
         },
-        onExtractionProviderChange = { provider ->
-            pSettings.setExtractionProvider(provider)
-            onProcessingSettingsChanged()
-        },
         onExtractionApiKeyChange = { value ->
             pSettings.extractionApiKey = value
+            if (pSettings.secretSaveFailed) say(R.string.key_not_saved)
             onProcessingSettingsChanged()
         },
         onExtractionApiUrlChange = { value ->
@@ -272,14 +247,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             pSettings.setDeleteAudioAfterTranscription(enabled)
             say(R.string.settings_saved)
         },
-        onOwnProviderChange = { enabled ->
-            val provider = if (enabled) ProcessingSettings.PROVIDER_USER_API else ProcessingSettings.PROVIDER_DISABLED
-            pSettings.setTranscriptionProvider(provider)
-            pSettings.setExtractionProvider(provider)
-            // Pre-filled so the only thing left to add is a key.
-            if (enabled) prefillProviders()
-            onProcessingSettingsChanged()
-            say(R.string.settings_saved)
+        onRetryFailed = {
+            container.appScope.launch(Dispatchers.IO) {
+                container.database.processingState().retryFailed(System.currentTimeMillis())
+                container.processingScheduler.schedule()
+            }
+            say(R.string.processing_retrying)
         },
         onTranscriptionPresetChange = { id ->
             urlDrafts.update { it.copy(transcription = null) }
@@ -312,7 +285,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             }
             onProcessingSettingsChanged()
         },
-        onTest = ::testConnection,
         onSaveProvider = {
             onProcessingSettingsChanged()
             say(R.string.settings_saved)
@@ -365,10 +337,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** Fills the first ready-made provider into any stage that has no address yet. */
-    private fun prefillProviders() {
+    private fun prefillTranscription() {
         if (pSettings.transcriptionApiUrl == null) {
             ProviderPresets.transcription.first().let { pSettings.transcriptionApiUrl = it.endpointFor(it.defaultModel) }
         }
+    }
+
+    private fun prefillSummaries() {
         if (pSettings.extractionApiUrl == null) {
             ProviderPresets.summary.first().let {
                 pSettings.extractionApiUrl = it.endpoint
@@ -389,31 +364,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         if (pSettings.syncEnabled.value) container.syncScheduler.schedule()
         else container.syncScheduler.cancel()
-    }
-
-    /** Switches storage mode server-side; audio already uploaded is unaffected (ADR-0014). */
-    fun changeStorageMode(mode: String) {
-        val link = container.links.link.value ?: return
-        if (storage.value.updating) return
-        storage.update { it.copy(updating = true, error = null) }
-        viewModelScope.launch {
-            val applied = try {
-                withContext(Dispatchers.IO) { container.accountApi.setStorageMode(link, mode) }
-                true
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logFailure(TAG, "storage_mode_change_failed", e)
-                false
-            }
-            storage.update {
-                if (applied) {
-                    it.copy(mode = mode, updating = false)
-                } else {
-                    it.copy(updating = false, error = StorageModeError.CHANGE_FAILED)
-                }
-            }
-        }
     }
 
     private val _messages = Channel<Int>(Channel.BUFFERED)
@@ -502,17 +452,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.appScope.launch(Dispatchers.IO) { linker.disconnect() }
     }
 
-    /** Failed clips start over; unreadable segments are read again. */
-    fun retryUploads() {
-        container.appScope.launch(Dispatchers.IO) {
-            container.database.clips().retryProblems()
-            container.uploadScheduler.schedule()
-        }
-    }
-
     companion object {
         private const val TAG = "SettingsViewModel"
         private const val STOP_TIMEOUT_MS = 5_000L
+        private const val BYTES_PER_MB = 1_000_000L
+        private const val HTTP_UNAUTHORIZED = 401
 
         fun nextChange(rhythm: DailyRhythm, now: Instant, zone: ZoneId): NextChange? =
             RhythmPlanner.nextAction(rhythm, now, zone)?.let { (transition, action) ->

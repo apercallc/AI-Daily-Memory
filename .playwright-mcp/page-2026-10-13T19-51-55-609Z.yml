@@ -1,0 +1,20 @@
+- generic [ref=f2e1]:
+  - link "Skip to content" [ref=f2e2] [cursor=pointer]:
+    - /url: "#main"
+  - main [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - heading "AI Daily Memory" [level=1] [ref=f2e6]
+      - paragraph [ref=f2e7]: Review what your day added up to, correct it, and ask it questions.
+      - generic [ref=f2e21]:
+        - generic [ref=f2e22]: Email
+        - textbox "Email" [active] [ref=f2e23]
+        - generic [ref=f2e24]: Password
+        - textbox "Password" [ref=f2e25]
+        - paragraph [ref=f2e26]: At least 12 characters. A passphrase of a few words works well.
+        - generic [ref=f2e27]:
+          - checkbox "Keep me signed in on this device" [ref=f2e28]
+          - generic [ref=f2e29]: Keep me signed in on this device
+        - generic [ref=f2e30]:
+          - button "Create account" [ref=f2e31] [cursor=pointer]
+          - button "I already have an account" [ref=f2e32] [cursor=pointer]
+      - paragraph [ref=f2e20]: Use the same email on your phone (Settings → Account & server) to connect it. Your recordings stay on your phone unless you choose otherwise.

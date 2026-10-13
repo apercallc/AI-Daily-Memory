@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — AI Daily Memory</title>
+<meta name="robots" content="index,follow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23211b14'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23c8361f'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/app/app.css">
+</head>
+<body>
+<header class="bar"><div class="bar-in"><a class="brand" href="/"><span class="dot" aria-hidden="true"></span>AI Daily Memory</a>
+<nav class="tabs" aria-label="Main"><a href="/privacy.html" aria-current="page">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></nav></div></header>
+<main id="main">
+<h1>Privacy</h1>
+<div class="notice warn"><strong>Draft.</strong> This describes what the service does today in plain language. It has not been reviewed by a lawyer and is not final; the date below changes when it does.</div>
+<p class="faint">Last updated 13 October 2026.</p>
+
+<h2>The short version</h2>
+<p>AI Daily Memory records conversations, so privacy is the product, not a setting. The recording
+indicator is always visible, you can pause or stop from the phone, the watch or the notification, and
+you can delete everything.</p>
+
+<h2>What stays on your phone</h2>
+<ul>
+<li>Audio is encrypted on the phone with a key in the Android Keystore. App data is excluded from backups and device transfer.</li>
+<li>Your audio is turned into text on the phone, then deleted. Audio is never uploaded to our servers.</li>
+<li>By default your transcripts and any summaries stay on the phone too. Nothing is kept on our servers unless you connect an account.</li>
+<li>The phone transcribes only the parts of the audio where someone is talking; silence, noise and music are skipped.</li>
+<li>The free speech model is a one-time download from its publisher, checked against a fixed checksum before it is used.</li>
+</ul>
+
+<h2>What leaves the phone, and only if you choose</h2>
+<ul>
+<li><strong>Notes sync</strong> (needs an account): your phone sends each day's summary and items over an encrypted connection. Transcript lines are sent only if you turn on <em>Also sync full transcripts</em>, and then the server keeps them so you can search them on the web. Audio is never sent.</li>
+<li>If you add your own transcription or AI key on the phone, that provider receives your audio (transcription) or transcript text (summaries) directly from the phone, with your key. It does not pass through our server, and we never see the key.</li>
+<li>Older app versions uploaded speech clips for server-side transcription. That upload has been removed; any copy a server still held is deleted by a retention sweep.</li>
+<li>When Ask uses a model (an operator setting, off by default), the memory items that match your question are sent to that provider to phrase the answer. Otherwise Ask only lists matching items.</li>
+</ul>
+
+<h2>Your account</h2>
+<ul>
+<li>We store your email and a salted, slow hash of your password. Access tokens and API keys are stored only as hashes.</li>
+<li>Email is used for your account only: confirming your address and resetting your password.</li>
+</ul>
+
+<h2>Your rights</h2>
+<ul>
+<li><strong>Corrections.</strong> You can reword or hide anything the AI extracted. Your wording is stored beside the original, and transcripts are never rewritten.</li>
+<li><strong>Export.</strong> Download everything we hold as one file from Account, any time.</li>
+<li><strong>Deletion.</strong> Delete your account from the app or the web. It removes your data and stored objects, and a second sweep removes anything an older app version had started uploading.</li>
+</ul>
+
+<h2>Error reports</h2>
+<p>The apps, website and server report crash diagnostics (exception type, where it happened, app version)
+to Sentry in the United States. Messages, addresses and any recorded content are removed before sending.</p>
+
+<h2>Service providers</h2>
+<p>Hosting (Railway), email delivery, and error reporting (Sentry). Speech-to-text and language-model
+providers receive data only if you enter your own key for them, and an operator can turn on a model for
+Ask. Payments (Stripe) are not in use. Each receives only what its job needs.</p>
+
+<h2>Recording other people</h2>
+<p>Laws about recording conversations differ by place, and some require everyone's consent. You are
+responsible for using the app where and how the law allows. The app never hides that it is recording.</p>
+
+<h2>Contact</h2>
+<p>Questions or a privacy request: open an issue at <a href="https://github.com/apercallc/AI-Daily-Memory">the project page</a>,
+or, for anything private, use the security contact in <a href="https://github.com/apercallc/AI-Daily-Memory/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</main>
+<footer class="app"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="https://github.com/apercallc/AI-Daily-Memory">Open source</a></footer>
+</body>
+</html>

@@ -123,6 +123,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.wearable)
     implementation(libs.sentry.android)
+    // Free on-device speech recognition (ADR-0026). Vosk needs JNA as an AAR for its native glue.
+    implementation(libs.vosk.android)
+    implementation("${libs.jna.get()}@aar")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

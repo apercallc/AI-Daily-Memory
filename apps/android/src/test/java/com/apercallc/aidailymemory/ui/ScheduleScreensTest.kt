@@ -77,7 +77,7 @@ class ScheduleScreensTest {
             }
         }
         compose.onNodeWithText("No memory yet").assertExists()
-        compose.onNodeWithText("Connect an account").performClick()
+        compose.onNodeWithText("Open settings").performClick()
         assertEquals(1, opened)
     }
 
@@ -230,9 +230,9 @@ class ScheduleScreensTest {
         }
 
         compose.onNodeWithText("Memory processing").performScrollTo().assertExists()
-        compose.onNodeWithText("Process my recordings").assertDoesNotExist()
+        compose.onNodeWithText("Transcribe my recordings").assertDoesNotExist()
         compose.onNodeWithText("Memory processing").performClick()
-        compose.onNodeWithText("Process my recordings").performScrollTo().assertExists()
+        compose.onNodeWithText("Transcribe my recordings").performScrollTo().assertExists()
 
         compose.onNodeWithText("Daily reports").performScrollTo().assertExists()
         compose.onNodeWithText("Send daily reports to my account").assertDoesNotExist()

@@ -11,17 +11,19 @@ same bearer-token flow as any other device (`app/auth.py`).
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.email_flows import send_link
 from app.auth_rate_limit import auth_rate_limit, client_address
 from app.config import Settings
 from app.credentials import LoginError, SignupError, hash_source, log_in, sign_up
 from app.db import get_session
+from app.email_tokens import issue
 from app.errors import ErrorResponse, error_response
 
 logger = logging.getLogger("app.signup")
@@ -43,6 +45,8 @@ class SignUpRequest(BaseModel):
     email: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=256)
     device_name: str = Field(min_length=1, max_length=80)
+    # "web" asks for a browser session: memory and account scopes, and a token that expires.
+    client: Literal["device", "web"] = "device"
 
 
 class LogInRequest(BaseModel):
@@ -51,6 +55,7 @@ class LogInRequest(BaseModel):
     email: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=256)
     device_name: str = Field(min_length=1, max_length=80)
+    client: Literal["device", "web"] = "device"
 
 
 class IssuedDeviceToken(BaseModel):
@@ -66,16 +71,36 @@ class IssuedDeviceToken(BaseModel):
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("signup", limit=5, window_seconds=3_600))],
 )
-async def signup(body: SignUpRequest, session: Session) -> IssuedDeviceToken | JSONResponse:
+async def signup(
+    body: SignUpRequest, request: Request, session: Session, background: BackgroundTasks
+) -> IssuedDeviceToken | JSONResponse:
     try:
         signed_up = await sign_up(
-            session, email=body.email, password=body.password, device_name=body.device_name
+            session,
+            email=body.email,
+            password=body.password,
+            device_name=body.device_name,
+            client=body.client,
         )
     except SignupError as e:
         await session.rollback()
         status = _SIGNUP_STATUS.get(e.code, 400)
         return error_response(status, code=e.code)
+    mailer = getattr(request.app.state, "mailer", None)
+    verify_token = None
+    if mailer is not None:
+        verify_token = await issue(session, signed_up.user_id, "verify")
     await session.commit()
+    if mailer is not None and verify_token is not None:
+        # After the response: a slow mail provider must not slow or fail sign-up.
+        background.add_task(
+            send_link,
+            mailer,
+            request.app.state.settings,
+            to=body.email.strip().lower(),
+            purpose="verify",
+            token=verify_token,
+        )
     return IssuedDeviceToken(token=signed_up.token.token)
 
 
@@ -97,6 +122,7 @@ async def login(
             email=body.email,
             password=body.password,
             device_name=body.device_name,
+            client=body.client,
             source=hash_source(client_address(request), key),
         )
     except LoginError as e:

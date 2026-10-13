@@ -93,6 +93,7 @@ import com.apercallc.aidailymemory.update.UpdateViewModel
 import com.apercallc.aidailymemory.capture.CaptureOverview
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
+import com.apercallc.aidailymemory.ondevice.ModelState
 import com.apercallc.aidailymemory.recording.permission.BatteryGuidance
 import com.apercallc.aidailymemory.recording.wear.RecordingOrigin
 import com.apercallc.aidailymemory.recording.permission.CapturePreconditionInputs
@@ -129,6 +130,7 @@ fun AiDailyMemoryApp(
     onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val speechModelPrompt by viewModel.speechModelPrompt.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -197,6 +199,8 @@ fun AiDailyMemoryApp(
         overview = state.overview,
         origin = state.origin,
         batteryRestricted = batteryRestricted,
+        speechModel = speechModelPrompt,
+        onDownloadSpeechModel = viewModel::downloadSpeechModel,
         indicator = indicator,
         onNotificationSettings = {
             open(
@@ -361,6 +365,8 @@ fun CaptureScreen(
     indicator: IndicatorVisibility = IndicatorVisibility.VISIBLE,
     onNotificationSettings: () -> Unit = {},
     origin: RecordingOrigin? = null,
+    speechModel: ModelState? = null,
+    onDownloadSpeechModel: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Scaffold(
@@ -399,6 +405,7 @@ fun CaptureScreen(
             // Above the status card on purpose: it is the one setting that silently ends a day
             // of recording, so it must not hide below the fold.
             if (batteryRestricted) BatteryCard(vendor, onBatterySettings, onAppBatterySettings)
+            speechModel?.let { SpeechModelCard(it, onDownloadSpeechModel) }
 
             CaptureStatusCard(model = model, overview = overview)
             // Only while a session is open: it says whose button started the recording.
@@ -724,6 +731,47 @@ private fun IndicatorWarningCard(indicator: IndicatorVisibility, onSettings: () 
                 modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 onClick = onSettings,
             ) { Text(stringResource(R.string.indicator_open_settings)) }
+        }
+    }
+}
+
+/** Nothing is transcribed until the free model is on the phone, so say so on the first screen. */
+@Composable
+private fun SpeechModelCard(state: ModelState, onDownload: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.speech_model_card_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(text = stringResource(R.string.speech_model_card_body))
+            when (state) {
+                is ModelState.Downloading -> Text(
+                    text = stringResource(R.string.processing_model_downloading, state.percent),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                else -> {
+                    if (state is ModelState.Failed) {
+                        Text(
+                            text = stringResource(R.string.speech_model_card_failed),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                    Button(
+                        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                        onClick = onDownload,
+                    ) { Text(stringResource(R.string.speech_model_card_action)) }
+                }
+            }
         }
     }
 }

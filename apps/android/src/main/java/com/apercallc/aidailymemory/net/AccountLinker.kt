@@ -16,6 +16,12 @@ enum class ConnectError {
     EMAIL_TAKEN,
     WRONG_CREDENTIALS,
     TOO_MANY_ATTEMPTS,
+
+    /** The server answered with a failure of its own (5xx). */
+    SERVER_ERROR,
+
+    /** The address answered, but it is not this app's server (404/405). */
+    WRONG_SERVER,
 }
 
 /**
@@ -35,8 +41,6 @@ class AccountLinker(
     private val onUnlinked: () -> Unit,
     /** The server revoke didn't go through: arrange a retry when online. */
     private val onRevokePending: () -> Unit = {},
-    /** Registers this phone's device key for a just-verified link (ADR-0014); throws on failure. */
-    private val registerKey: (ServerLink) -> Unit = {},
     private val signIn: SignInApi? = null,
     /** Where sign-in goes: the hosted server unless the person chose their own. */
     private val server: () -> String = { links.serverUrl.value },
@@ -75,7 +79,18 @@ class AccountLinker(
         "weak_password" -> ConnectError.WEAK_PASSWORD
         "email_taken" -> ConnectError.EMAIL_TAKEN
         "invalid_credentials" -> ConnectError.WRONG_CREDENTIALS
-        else -> if (e.status == HTTP_TOO_MANY_REQUESTS) ConnectError.TOO_MANY_ATTEMPTS else ConnectError.UNREACHABLE
+        else -> statusError(e)
+    }
+
+    /** What a failed answer means for the person; the status and code are logged for diagnosis. */
+    private fun statusError(e: ApiException): ConnectError {
+        logFailure(TAG, "server_refused status=${e.status} code=${e.code}", e, warning = true)
+        return when {
+            e.status == HTTP_TOO_MANY_REQUESTS -> ConnectError.TOO_MANY_ATTEMPTS
+            e.status == HTTP_NOT_FOUND || e.status == HTTP_METHOD_NOT_ALLOWED -> ConnectError.WRONG_SERVER
+            e.status >= HTTP_SERVER_ERROR -> ConnectError.SERVER_ERROR
+            else -> ConnectError.UNREACHABLE
+        }
     }
 
     private fun verifyAndSave(link: ServerLink, includeBacklog: Boolean): ConnectError? {
@@ -83,21 +98,16 @@ class AccountLinker(
         retryPendingRevoke()
         try {
             api.me(link)
-            // Close the window in which someone else holding this token could register a key.
-            registerKey(link)
         } catch (e: ApiException) {
             val refused = e.status == HTTP_UNAUTHORIZED || e.status == HTTP_FORBIDDEN
-            return if (refused || e.code == "device_key_mismatch") {
+            return if (refused) {
                 ConnectError.REJECTED
             } else {
-                ConnectError.UNREACHABLE
+                statusError(e)
             }
         } catch (e: IOException) {
             logFailure(TAG, "account_check_failed", e, warning = true)
             return ConnectError.UNREACHABLE
-        } catch (e: GeneralSecurityException) {
-            logFailure(TAG, "device_key_unavailable", e)
-            return ConnectError.SAVE_FAILED
         }
         try {
             links.save(link, now(), includeBacklog)
@@ -165,5 +175,8 @@ class AccountLinker(
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403
         const val HTTP_TOO_MANY_REQUESTS = 429
+        const val HTTP_NOT_FOUND = 404
+        const val HTTP_METHOD_NOT_ALLOWED = 405
+        const val HTTP_SERVER_ERROR = 500
     }
 }

@@ -110,6 +110,9 @@ interface SessionDao {
     @Query("SELECT session_id FROM session_info WHERE memory_day = :memoryDay")
     suspend fun sessionIdsForDay(memoryDay: String): List<String>
 
+    @Query("SELECT * FROM session_info WHERE memory_day = :memoryDay ORDER BY started_at_epoch_ms")
+    suspend fun infoForDay(memoryDay: String): List<SessionInfoEntity>
+
     @Query("SELECT memory_day FROM session_info WHERE session_id = :sessionId")
     suspend fun memoryDayForSession(sessionId: String): String?
 

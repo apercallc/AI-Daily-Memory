@@ -57,19 +57,12 @@ data class AccountUi(
     val testing: Boolean = false,
     val error: ConnectError? = null,
     /** Clips that gave up plus segments that couldn't be read; their audio stays on the phone. */
-    val uploadProblems: Int = 0,
     /** A disconnected token the server hasn't revoked yet. */
     val revokePending: Boolean = false,
     /** A disconnected token this phone can't revoke itself (it has to be done server-side). */
     val revokeManual: Boolean = false,
     /** Where memory lives (ADR-0014); null while connected but not yet fetched. */
-    val storageMode: String? = null,
-    val storageModeUpdating: Boolean = false,
-    /** Fetching or changing the mode failed; distinct from "still loading" (mode == null). */
-    val storageModeError: StorageModeError? = null,
 )
-
-enum class StorageModeError { LOAD_FAILED, CHANGE_FAILED }
 
 /** Everything the account section can ask for, so the signature stays readable. */
 data class AccountCallbacks(
@@ -78,10 +71,7 @@ data class AccountCallbacks(
     val onLogIn: (email: String, password: String, includeBacklog: Boolean) -> Unit = { _, _, _ -> },
     val onEdit: () -> Unit = {},
     val onDisconnect: () -> Unit = {},
-    val onRetryUploads: () -> Unit = {},
     val onTest: () -> Unit = {},
-    val onStorageModeChange: (String) -> Unit = {},
-    val onStorageModeRetry: () -> Unit = {},
     val onOpenWebsite: () -> Unit = {},
     /** Text typed in the server field; blank returns to the hosted server. */
     val onServerChange: (String) -> Unit = {},
@@ -116,12 +106,6 @@ fun AccountSection(account: AccountUi, callbacks: AccountCallbacks) {
     }
 }
 
-private val STORAGE_MODES = listOf(
-    "phone_only" to R.string.storage_mode_phone_only,
-    "reports_cloud" to R.string.storage_mode_reports_cloud,
-    "full_cloud" to R.string.storage_mode_full_cloud,
-)
-
 @Composable
 private fun Connected(account: AccountUi, callbacks: AccountCallbacks) {
     val spacing = AiDailyMemoryTheme.spacing
@@ -140,29 +124,6 @@ private fun Connected(account: AccountUi, callbacks: AccountCallbacks) {
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
     ) {
         Text(stringResource(if (account.testing) R.string.test_running else R.string.test_connection))
-    }
-    StorageModePicker(account.storageMode, account.storageModeUpdating, callbacks.onStorageModeChange)
-    when (account.storageModeError) {
-        StorageModeError.LOAD_FAILED -> {
-            Status(stringResource(R.string.storage_mode_load_failed), isError = true)
-            OutlinedButton(
-                onClick = callbacks.onStorageModeRetry,
-                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-            ) { Text(stringResource(R.string.storage_mode_retry)) }
-        }
-        StorageModeError.CHANGE_FAILED ->
-            Status(stringResource(R.string.storage_mode_change_failed), isError = true)
-        null -> Unit
-    }
-    if (account.uploadProblems > 0) {
-        Status(
-            pluralStringResource(R.plurals.account_upload_problems, account.uploadProblems, account.uploadProblems),
-            isError = true,
-        )
-        OutlinedButton(
-            onClick = callbacks.onRetryUploads,
-            modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-        ) { Text(stringResource(R.string.account_retry_uploads)) }
     }
     OutlinedButton(
         onClick = callbacks.onDisconnect,
@@ -337,6 +298,8 @@ private fun Offline(account: AccountUi, callbacks: AccountCallbacks) {
         ConnectError.UNREACHABLE -> Status(stringResource(R.string.account_unreachable), isError = true)
         ConnectError.SAVE_FAILED -> Status(stringResource(R.string.account_save_failed), isError = true)
         ConnectError.TOO_MANY_ATTEMPTS -> Status(stringResource(R.string.account_too_many_attempts), isError = true)
+        ConnectError.SERVER_ERROR -> Status(stringResource(R.string.account_server_error), isError = true)
+        ConnectError.WRONG_SERVER -> Status(stringResource(R.string.account_wrong_server), isError = true)
         else -> Unit
     }
     Button(
@@ -425,39 +388,6 @@ private fun ServerChoice(account: AccountUi, isHosted: Boolean, onChange: (Strin
         enabled = enabled,
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
     ) { Text(stringResource(R.string.account_server_use_default)) }
-}
-
-/** Where memory lives (ADR-0014). Shown only once the current mode is known; a switch is
- * disabled while a change is in flight so a slow network can't queue up two conflicting ones. */
-@Composable
-private fun StorageModePicker(mode: String?, updating: Boolean, onChange: (String) -> Unit) {
-    val spacing = AiDailyMemoryTheme.spacing
-    if (mode == null) return
-    Text(
-        text = stringResource(R.string.storage_mode_title),
-        style = MaterialTheme.typography.titleSmall,
-    )
-    Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-        STORAGE_MODES.forEach { (value, labelRes) ->
-            val selected = value == mode
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = spacing.minTouchTarget)
-                    .selectable(
-                        selected = selected,
-                        role = Role.RadioButton,
-                        enabled = !updating,
-                        onClick = { if (!selected) onChange(value) },
-                    ),
-            ) {
-                RadioButton(selected = selected, onClick = null, enabled = !updating)
-                Text(stringResource(labelRes), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
 }
 
 /** Announced by TalkBack when it appears, not only when focused. */

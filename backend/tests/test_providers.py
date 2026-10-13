@@ -107,7 +107,7 @@ async def test_unauthorized_is_not_retryable() -> None:
 
     with pytest.raises(JobError) as caught:
         await _provider(handler).transcribe(b"x", codec="aac-lc-adts", sample_rate_hz=16_000)
-    assert caught.value.code == "provider_error"
+    assert caught.value.code == "provider_auth_failed"
     assert not caught.value.retryable
 
 
@@ -282,7 +282,7 @@ async def test_extraction_unauthorized_is_not_retryable() -> None:
 
     with pytest.raises(JobError) as caught:
         await _extractor(handler).extract(_LINES)
-    assert caught.value.code == "provider_error"
+    assert caught.value.code == "provider_auth_failed"
     assert not caught.value.retryable
 
 

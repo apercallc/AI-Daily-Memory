@@ -18,6 +18,7 @@ import com.apercallc.aidailymemory.recording.processing.SyncCoverage
 import com.apercallc.aidailymemory.recording.processing.SyncItem
 import com.apercallc.aidailymemory.recording.processing.SyncPayload
 import com.apercallc.aidailymemory.recording.processing.SyncReport
+import com.apercallc.aidailymemory.recording.processing.SyncSession
 import com.apercallc.aidailymemory.recording.processing.SyncTranscriptLine
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import java.io.IOException
@@ -198,6 +199,7 @@ class SyncManager(
                 extractionModel = report.extractionModel,
                 extractionVersion = report.extractionVersion,
                 transcriptLines = transcriptLines,
+                sessions = sessionsForReport(report.memoryDay, items),
             )
         }
         return SyncPayload(
@@ -207,6 +209,24 @@ class SyncManager(
             includeTranscripts = includeTranscripts,
             deletedSessions = deletedSessions,
         )
+    }
+
+    /**
+     * The day's sessions that have words or items, with the person's own name for each. Sessions
+     * still being recorded or not yet transcribed are left out: they would only be empty notes.
+     */
+    private suspend fun sessionsForReport(
+        memoryDay: String,
+        items: List<MemoryItemEntity>,
+    ): List<SyncSession> {
+        val info = database.sessions().infoForDay(memoryDay)
+        if (info.isEmpty()) return emptyList()
+        val withWords = database.localTranscripts().forSessions(info.map { it.sessionId })
+            .map { it.sessionId }.toSet()
+        val withItems = items.map { it.sessionId }.toSet()
+        return info
+            .filter { it.sessionId in withWords || it.sessionId in withItems }
+            .map { SyncSession(it.sessionId, it.customTitle, it.startedAtEpochMs) }
     }
 
     /**

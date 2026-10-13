@@ -41,6 +41,20 @@ data class SyncReport(
     val extractionVersion: Int,
     /** Included only when the user enables full transcript sync. */
     val transcriptLines: List<SyncTranscriptLine>? = null,
+    /**
+     * The day's sessions that have something to show (words or items), whether or not words are
+     * sent. Lets the server keep a note for each and carry the name the person gave it.
+     */
+    val sessions: List<SyncSession> = emptyList(),
+)
+
+/** What the phone knows about one session besides its words (ADR-0027). */
+@Serializable
+data class SyncSession(
+    val sessionId: String,
+    /** The person's own name for it; null while it has only the automatic title. */
+    val title: String? = null,
+    val startedAtEpochMs: Long? = null,
 )
 
 @Serializable

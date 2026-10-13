@@ -104,4 +104,16 @@ class SettingsStoreTest {
         assertTrue(store.onboardingDone.value)
         assertTrue(SettingsStore(prefs).onboardingDone.value)
     }
+
+    @Test
+    fun `the update check is remembered so a restart cannot repeat it`() {
+        val store = SettingsStore(prefs)
+        assertFalse(store.upgradeChecked)
+        assertFalse(store.onboardingRecorded)
+
+        store.upgradeChecked = true
+
+        assertTrue(SettingsStore(prefs).upgradeChecked)
+        assertFalse(SettingsStore(prefs).onboardingRecorded)
+    }
 }

@@ -6,6 +6,7 @@
   force; this ADR changes where processing runs and where memory is stored, not how audio is
   captured or how evidence works.
 - Date: 2026-10-12
+- Note: the code drifted from this ADR in 0.3.0 (hosted processing). ADR-0026 puts it back.
 
 ## Context
 

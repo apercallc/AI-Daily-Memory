@@ -9,7 +9,13 @@ import com.google.android.gms.wearable.Wearable
 
 /** Phone-authored durable snapshot and command acknowledgement transport. */
 object WatchDataLayerTransport {
-    fun publishSnapshot(context: Context, snapshot: PhoneRecordingSnapshot) {
+    /**
+     * [onPublished] runs only once the Data Layer has accepted the snapshot, so the "last
+     * published" watermark never claims a revision the watch could not have received. A failure
+     * (or a synchronous throw from the client) is logged and leaves the watermark alone; the next
+     * state change publishes again.
+     */
+    fun publishSnapshot(context: Context, snapshot: PhoneRecordingSnapshot, onPublished: () -> Unit = {}) {
         val request = PutDataMapRequest.create(WatchWireCodec.SNAPSHOT_PATH).apply {
             dataMap.putLong(KEY_REVISION, snapshot.revision)
             dataMap.putString(KEY_STATUS, snapshot.status)
@@ -20,11 +26,16 @@ object WatchDataLayerTransport {
             snapshot.origin?.let { dataMap.putString(KEY_ORIGIN, it) }
         }.asPutDataRequest()
             .setUrgent()
-        Wearable.getDataClient(context.applicationContext)
-            .putDataItem(request)
-            .addOnFailureListener { error ->
-                logFailure(TAG, "watch_snapshot_publish_failed", error)
-            }
+        try {
+            Wearable.getDataClient(context.applicationContext)
+                .putDataItem(request)
+                .addOnSuccessListener { onPublished() }
+                .addOnFailureListener { error ->
+                    logFailure(TAG, "watch_snapshot_publish_failed", error)
+                }
+        } catch (e: RuntimeException) {
+            logFailure(TAG, "watch_snapshot_publish_threw", e)
+        }
     }
 
     fun sendAcknowledgement(

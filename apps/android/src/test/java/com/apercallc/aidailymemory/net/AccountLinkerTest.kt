@@ -34,10 +34,6 @@ class AccountLinkerTest {
 
         override fun me(link: ServerLink): String = onMe().also { calls += "me" }
 
-        override fun setStorageMode(link: ServerLink, mode: String) {
-            calls += "setStorageMode"
-        }
-
         override fun revokeCurrent(link: ServerLink) {
             calls += "revoke"
             onRevoke()
@@ -57,7 +53,6 @@ class AccountLinkerTest {
 
     private var revokeRetries = 0
 
-    private var register: (ServerLink) -> Unit = {}
 
     private class FakeSignIn : SignInApi {
         var result: () -> String = { "adm_" + "S".repeat(43) }
@@ -85,7 +80,6 @@ class AccountLinkerTest {
         onLinked = { linked++ },
         onUnlinked = { unlinked++ },
         onRevokePending = { revokeRetries++ },
-        registerKey = { register(it) },
         signIn = signIn,
         now = { 42L },
     )
@@ -132,7 +126,7 @@ class AccountLinkerTest {
         api.onMe = { throw IOException("dns") }
         assertEquals(ConnectError.UNREACHABLE, linker().connect(token, false))
         api.onMe = { throw ApiException(503, "service_unavailable") }
-        assertEquals(ConnectError.UNREACHABLE, linker().connect(token, false))
+        assertEquals(ConnectError.SERVER_ERROR, linker().connect(token, false))
 
         assertNull(links.link.value)
     }
@@ -220,22 +214,6 @@ class AccountLinkerTest {
     }
 
     @Test
-    fun `the device key is registered while connecting, and a mismatch refuses the link`() {
-        val registered = mutableListOf<ServerLink>()
-        register = { registered += it }
-        assertNull(linker().connect(token, false))
-        assertEquals(listOf(ServerLink(url, token)), registered)
-
-        links.clear()
-        register = { throw ApiException(409, "device_key_mismatch") }
-        assertEquals(ConnectError.REJECTED, linker().connect(token, false))
-        assertNull(links.link.value)
-
-        register = { throw GeneralSecurityException("no keystore") }
-        assertEquals(ConnectError.SAVE_FAILED, linker().connect(token, false))
-    }
-
-    @Test
     fun `disconnecting when not linked does nothing`() {
         linker().disconnect()
 
@@ -278,7 +256,11 @@ class AccountLinkerTest {
             ApiException(409, "email_taken") to ConnectError.EMAIL_TAKEN,
             ApiException(401, "invalid_credentials") to ConnectError.WRONG_CREDENTIALS,
             ApiException(429, "rate_limited") to ConnectError.TOO_MANY_ATTEMPTS,
-            ApiException(503, "service_unavailable") to ConnectError.UNREACHABLE,
+            ApiException(503, "service_unavailable") to ConnectError.SERVER_ERROR,
+            ApiException(500, "internal_error") to ConnectError.SERVER_ERROR,
+            ApiException(404, "http_404") to ConnectError.WRONG_SERVER,
+            ApiException(405, "method_not_allowed") to ConnectError.WRONG_SERVER,
+            ApiException(418, "teapot") to ConnectError.UNREACHABLE,
         )
         cases.forEach { (failure, expected) ->
             signIn.result = { throw failure }
@@ -288,6 +270,15 @@ class AccountLinkerTest {
         assertEquals(ConnectError.UNREACHABLE, linker().signUp("me@example.com", "pw", "Pixel", false))
         assertNull(links.link.value)
         assertEquals(0, linked)
+    }
+
+    @Test
+    fun `a server failure while verifying a token is reported as the server's, not the network's`() {
+        api.onMe = { throw ApiException(500, "internal_error") }
+        assertEquals(ConnectError.SERVER_ERROR, linker().connect(token, false))
+        api.onMe = { throw ApiException(404, "http_404") }
+        assertEquals(ConnectError.WRONG_SERVER, linker().connect(token, false))
+        assertNull(links.link.value)
     }
 
     @Test

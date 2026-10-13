@@ -90,3 +90,25 @@ jobs:
 
       - name: Dependency audit
         run: uv run pip-audit
+
+  website:
+    name: Website and web app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Web app unit tests
+        run: node --test website/app/test/helpers.test.mjs
+
+      - name: CLI tests
+        run: cd interfaces/cli && python3 -m unittest test_adm
+
+      - name: Image builds and its nginx config is valid
+        run: |
+          docker build -t adm-web website
+          docker run --rm adm-web nginx -t

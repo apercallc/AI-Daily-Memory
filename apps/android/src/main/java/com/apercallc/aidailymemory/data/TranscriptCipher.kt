@@ -13,6 +13,8 @@ data class TranscriptText(
     val zoneId: String,
     val text: String,
     val speaker: String?,
+    /** The sealed line could not be opened here (e.g. after a Keystore reset); [text] is empty. */
+    val unreadable: Boolean = false,
 )
 
 /**
@@ -26,6 +28,16 @@ class TranscriptCipher(private val aead: () -> Aead) {
         val plain = JSONObject().put("text", text).put("speaker", speaker ?: JSONObject.NULL).toString()
         return aead().encrypt(plain.toByteArray(Charsets.UTF_8), ad(uploadId, idx))
     }
+
+    /** A placeholder for a line that can't be opened, so the gap is shown rather than hidden. */
+    fun unreadable(line: TranscriptLine) = TranscriptText(
+        key = "${line.uploadId}:${line.idx}",
+        startEpochMs = line.startEpochMs,
+        zoneId = line.zoneId,
+        text = "",
+        speaker = null,
+        unreadable = true,
+    )
 
     /** Null (logged) if the line can't be opened, e.g. after a Keystore reset. */
     fun open(line: TranscriptLine): TranscriptText? = try {

@@ -1,0 +1,27 @@
+- generic [active] [ref=f5e1]:
+  - link "Skip to content" [ref=f5e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f5e3]:
+    - banner [ref=f5e4]:
+      - generic [ref=f5e5]:
+        - link "AI Daily Memory" [ref=f5e6] [cursor=pointer]:
+          - /url: "#/today"
+        - navigation "Main" [ref=f5e8]:
+          - link "Today" [ref=f5e9] [cursor=pointer]:
+            - /url: "#/today"
+          - link "Memory" [ref=f5e10] [cursor=pointer]:
+            - /url: "#/memory"
+          - link "Ask" [ref=f5e11] [cursor=pointer]:
+            - /url: "#/ask"
+          - link "Account" [ref=f5e12] [cursor=pointer]:
+            - /url: "#/account"
+        - generic [ref=f5e13]: tester@example.com
+        - button "Sign out" [ref=f5e14] [cursor=pointer]
+    - main [ref=f5e15]
+    - contentinfo [ref=f5e16]:
+      - text: Your memory belongs to you.
+      - link "How privacy works" [ref=f5e17] [cursor=pointer]:
+        - /url: /#privacy
+      - text: ·
+      - link "Open source" [ref=f5e18] [cursor=pointer]:
+        - /url: https://github.com/apercallc/AI-Daily-Memory

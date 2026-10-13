@@ -77,3 +77,36 @@ async def test_unknown_account_and_missing_database_are_reported(
     assert await run(missing, settings_for(database_url), out) == 1
     assert "No such account" in out.getvalue()
     assert await run(missing, Settings(app_env="test"), io.StringIO()) == 2
+
+
+@pytest.mark.anyio
+async def test_dead_jobs_are_listed_and_can_be_requeued_once(db: Engine, database_url: str) -> None:
+    user, job = uuid.uuid4(), uuid.uuid4()
+    with db.begin() as c:
+        c.execute(text("INSERT INTO users (id) VALUES (:u)"), {"u": user})
+        c.execute(
+            text(
+                "INSERT INTO processing_jobs (id, user_id, kind, idempotency_key, subject_id, "
+                "state, attempts, last_error_code) VALUES (:j, :u, 'extract', 'k1', :s, 'dead', 5, "
+                "'provider_auth_failed')"
+            ),
+            {"j": job, "u": user, "s": uuid.uuid4()},
+        )
+    settings = settings_for(database_url)
+
+    listing = io.StringIO()
+    assert await run(["dead-jobs"], settings, listing) == 0
+    assert f"{job}  extract  provider_auth_failed  attempts 5/5" in listing.getvalue()
+
+    first = io.StringIO()
+    assert await run(["requeue-job", "--job-id", str(job)], settings, first) == 0
+    assert "Requeued." in first.getvalue()
+    with db.connect() as c:
+        row = c.execute(text("SELECT state, attempts, last_error_code FROM processing_jobs")).one()
+    assert tuple(row) == ("queued", 0, None)
+
+    again = io.StringIO()
+    assert await run(["requeue-job", "--job-id", str(job)], settings, again) == 1
+    empty = io.StringIO()
+    assert await run(["dead-jobs"], settings, empty) == 0
+    assert empty.getvalue() == ""

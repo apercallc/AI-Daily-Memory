@@ -114,7 +114,15 @@ class S3ObjectStore:
             region_name=region,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                # A hung object store must fail fast with a clear error, not run to the request
+                # timeout; the phone retries.
+                connect_timeout=5,
+                read_timeout=20,
+                retries={"max_attempts": 2, "mode": "standard"},
+            ),
         )
 
     def presign_put(

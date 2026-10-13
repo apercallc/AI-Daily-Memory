@@ -55,6 +55,11 @@ class SettingsStore(private val prefs: SharedPreferences) {
     /** Whether the walkthrough has ever been marked finished or skipped (or skipped on upgrade). */
     val onboardingRecorded: Boolean get() = prefs.contains(KEY_ONBOARDING_DONE)
 
+    /** The one-time check for a phone updated from an earlier version has run. */
+    var upgradeChecked: Boolean
+        get() = prefs.getBoolean(KEY_UPGRADE_CHECKED, false)
+        set(value) = prefs.edit { putBoolean(KEY_UPGRADE_CHECKED, value) }
+
     fun setOnboardingDone(done: Boolean) {
         prefs.edit { putBoolean(KEY_ONBOARDING_DONE, done) }
         _onboardingDone.value = done
@@ -104,6 +109,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
         private const val KEY_LAST_CHECK = "rhythm_last_check_epoch_ms"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
+        private const val KEY_UPGRADE_CHECKED = "upgrade_checked"
         private const val NONE = Long.MIN_VALUE
     }
 }

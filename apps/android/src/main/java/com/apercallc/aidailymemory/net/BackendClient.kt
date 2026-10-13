@@ -1,10 +1,8 @@
 package com.apercallc.aidailymemory.net
 
-import android.util.Base64
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import com.apercallc.aidailymemory.recording.server.HostedServer
@@ -27,43 +25,10 @@ data class ServerLink(val baseUrl: String, val token: String) {
 /** The backend said no, with its error envelope's code (app/errors.py). */
 class ApiException(val status: Int, val code: String) : IOException("api_error status=$status code=$code")
 
-/**
- * Object storage refused a presigned PUT (expired URL, clock skew, signature). Never an
- * account problem: the backend is the only party that can reject the device token.
- */
-class StorageException(val status: Int) : IOException("storage_rejected status=$status")
-
-data class ClipRequest(
-    val uploadId: String,
-    val sessionId: String,
-    val segmentId: String,
-    val offsetMs: Long,
-    val durationMs: Long,
-    val byteSize: Long,
-    val sha256: String,
-    val codec: String,
-    val sampleRateHz: Int,
-    val channelCount: Int,
-    /** ISO-8601 with offset: the server rejects times without one. */
-    val capturedAt: String,
-)
-
-data class UploadTarget(val url: String, val headers: Map<String, String>)
-
-/** [uploadId] is the id the server keeps the clip under (it can differ for a re-created clip). */
-data class UploadState(val state: String, val target: UploadTarget?, val uploadId: String? = null)
-
 /** The calling device's account (backend/app/api/account.py). */
 interface AccountApi {
-    /** Verifies the token; returns the account's storage mode (ADR-0014). */
+    /** Verifies the token; returns the account's storage mode label (unused by the phone). */
     fun me(link: ServerLink): String
-
-    /**
-     * Switches the account's storage mode. Takes effect for uploads made from now on; audio
-     * already uploaded keeps whatever the mode was at the time (ADR-0014) — nothing already on
-     * the server moves as part of this call.
-     */
-    fun setStorageMode(link: ServerLink, mode: String)
 
     /** Revokes the calling token on the server (Disconnect). */
     fun revokeCurrent(link: ServerLink)
@@ -81,69 +46,15 @@ interface SignInApi {
     fun logIn(server: String, email: String, password: String, deviceName: String): String
 }
 
-/** A sealed transcript waiting on the server (backend/app/api/deliveries.py). */
-data class SealedDelivery(val deliveryId: String, val uploadId: String, val ciphertext: ByteArray) {
-    override fun equals(other: Any?): Boolean =
-        other is SealedDelivery && other.deliveryId == deliveryId && other.uploadId == uploadId &&
-            other.ciphertext.contentEquals(ciphertext)
-
-    override fun hashCode(): Int = deliveryId.hashCode()
-}
-
-/** Collecting sealed transcripts (ADR-0014). */
-interface DeliveryApi {
-    /** Registers (or rotates to) this phone's HPKE public key. Idempotent for the same key. */
-    fun registerKey(link: ServerLink, publicKey: ByteArray)
-
-    fun deliveries(link: ServerLink, limit: Int): List<SealedDelivery>
-
-    /** The phone stored them: the server deletes its copies. Returns how many it deleted. */
-    fun acknowledge(link: ServerLink, deliveryIds: List<String>): Int
-}
-
-/** The one seam to the backend upload protocol (docs: backend/app/api/uploads.py). */
-interface UploadApi {
-    fun create(link: ServerLink, clip: ClipRequest): UploadState
-
-    fun put(target: UploadTarget, bytes: ByteArray)
-
-    fun complete(link: ServerLink, uploadId: String): UploadState
-
-    /** The upload's state on the server, or null if the server has no such upload for us. */
-    fun status(link: ServerLink, uploadId: String): String?
-}
-
 /**
- * Plain HttpURLConnection: three calls per clip don't justify an HTTP library. Blocking, so
- * callers run it on a background dispatcher. Bodies and tokens never reach the logs.
+ * Plain HttpURLConnection: a handful of small account calls don't justify an HTTP library.
+ * Blocking, so callers run it on a background dispatcher. Bodies and tokens never reach the logs.
+ * It carries sign-in, token checks and revoke only; audio is never sent anywhere (ADR-0026).
  */
-class HttpUploadApi(
+class HttpAccountApi(
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 60_000,
-) : UploadApi, AccountApi, DeliveryApi, SignInApi {
-    override fun registerKey(link: ServerLink, publicKey: ByteArray) {
-        val body = JSONObject().put("public_key", Base64.encodeToString(publicKey, Base64.NO_WRAP))
-        request(link, "PUT", "/v1/device-key", body)
-    }
-
-    override fun deliveries(link: ServerLink, limit: Int): List<SealedDelivery> {
-        val page = request(link, "GET", "/v1/deliveries?limit=$limit", null).optJSONArray("deliveries")
-            ?: throw IOException("missing_deliveries")
-        return (0 until page.length()).map { i ->
-            val item = page.getJSONObject(i)
-            SealedDelivery(
-                deliveryId = item.getString("delivery_id"),
-                uploadId = item.getString("upload_id"),
-                ciphertext = Base64.decode(item.getString("ciphertext"), Base64.DEFAULT),
-            )
-        }
-    }
-
-    override fun acknowledge(link: ServerLink, deliveryIds: List<String>): Int {
-        val body = JSONObject().put("delivery_ids", JSONArray(deliveryIds))
-        return request(link, "POST", "/v1/deliveries/ack", body).optInt("acknowledged")
-    }
-
+) : AccountApi, SignInApi {
     override fun me(link: ServerLink): String =
         request(link, "GET", "/v1/me", null).optString("storage_mode").ifEmpty { throw IOException("missing_mode") }
 
@@ -160,54 +71,8 @@ class HttpUploadApi(
         }
     }
 
-    override fun setStorageMode(link: ServerLink, mode: String) {
-        request(link, "PUT", "/v1/me", JSONObject().put("storage_mode", mode))
-    }
-
     override fun revokeCurrent(link: ServerLink) {
         request(link, "DELETE", "/v1/tokens/current", null)
-    }
-
-    override fun create(link: ServerLink, clip: ClipRequest): UploadState {
-        val body = JSONObject()
-            .put("upload_id", clip.uploadId)
-            .put("session_id", clip.sessionId)
-            .put("segment_id", clip.segmentId)
-            .put("offset_ms", clip.offsetMs)
-            .put("duration_ms", clip.durationMs)
-            .put("byte_size", clip.byteSize)
-            .put("sha256", clip.sha256)
-            .put("codec", clip.codec)
-            .put("sample_rate_hz", clip.sampleRateHz)
-            .put("channel_count", clip.channelCount)
-            .put("captured_at", clip.capturedAt)
-        return parseState(request(link, "POST", "/v1/uploads", body))
-    }
-
-    override fun complete(link: ServerLink, uploadId: String): UploadState =
-        parseState(request(link, "POST", "/v1/uploads/$uploadId/complete", null))
-
-    override fun status(link: ServerLink, uploadId: String): String? = try {
-        request(link, "GET", "/v1/uploads/$uploadId", null).optString("state").ifEmpty { null }
-    } catch (e: ApiException) {
-        if (e.status == HTTP_NOT_FOUND) null else throw e
-    }
-
-    override fun put(target: UploadTarget, bytes: ByteArray) {
-        val connection = open(target.url, "PUT")
-        try {
-            target.headers.forEach { (name, value) ->
-                // HttpURLConnection sets Content-Length itself from the fixed-length mode.
-                if (!name.equals("Content-Length", ignoreCase = true)) connection.setRequestProperty(name, value)
-            }
-            connection.doOutput = true
-            connection.setFixedLengthStreamingMode(bytes.size)
-            connection.outputStream.use { it.write(bytes) }
-            val status = connection.responseCode
-            if (status !in 200..299) throw StorageException(status)
-        } finally {
-            connection.disconnect()
-        }
     }
 
     private fun request(link: ServerLink, method: String, path: String, body: JSONObject?): JSONObject =
@@ -246,10 +111,6 @@ class HttpUploadApi(
         }
     }
 
-    private companion object {
-        const val HTTP_NOT_FOUND = 404
-    }
-
     private fun open(url: String, method: String): HttpURLConnection {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = method
@@ -257,23 +118,6 @@ class HttpUploadApi(
         connection.readTimeout = readTimeoutMs
         connection.instanceFollowRedirects = false
         return connection
-    }
-
-    private fun parseState(json: JSONObject): UploadState {
-        val state = json.optString("state").ifEmpty { throw IOException("missing_state") }
-        val target = json.optJSONObject("upload")?.let { upload ->
-            val url = upload.optString("url")
-            // Presigned URLs must be HTTPS too (loopback only in tests).
-            if (!url.startsWith("https://") && !url.startsWith("http://127.0.0.1")) {
-                throw IOException("unsafe_upload_url")
-            }
-            val headers = upload.optJSONObject("headers")
-            UploadTarget(
-                url = url,
-                headers = headers?.keys()?.asSequence()?.associateWith { headers.optString(it) }.orEmpty(),
-            )
-        }
-        return UploadState(state, target, json.optString("upload_id").ifEmpty { null })
     }
 }
 

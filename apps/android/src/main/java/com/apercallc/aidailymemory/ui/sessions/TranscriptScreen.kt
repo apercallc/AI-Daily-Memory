@@ -49,7 +49,8 @@ fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier
             else -> items(lines, key = { it.key }) { line ->
                 val time = times(Instant.ofEpochMilli(line.startEpochMs).atZone(zoneOf(line.zoneId)))
                 val speaker = line.speaker?.let { stringResource(R.string.transcript_speaker, it) }
-                val spoken = listOfNotNull(time, speaker, line.text).joinToString(", ")
+                val bodyText = if (line.unreadable) stringResource(R.string.transcript_unreadable) else line.text
+                val spoken = listOfNotNull(time, speaker, bodyText).joinToString(", ")
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(spacing.md),
                     // One announcement per line: time, speaker, words.
@@ -65,7 +66,15 @@ fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier
                         speaker?.let {
                             Text(text = it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
-                        Text(text = line.text, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = bodyText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (line.unreadable) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
                     }
                 }
             }

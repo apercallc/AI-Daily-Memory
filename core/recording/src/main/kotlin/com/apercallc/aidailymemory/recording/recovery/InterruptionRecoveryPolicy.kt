@@ -83,11 +83,14 @@ data class InterruptionRecoveryPolicy(
     companion object {
         private const val MAX_SHIFT = 62
 
-        /** Provisional: 2 s, 4 s, … capped at 60 s, eight tries (about four minutes). */
+        /**
+         * Provisional: 2 s, 4 s, … capped at 60 s, forty tries (about 35 minutes). Long enough to
+         * outlast a video recording or voice chat in another app that holds the microphone.
+         */
         val Default = InterruptionRecoveryPolicy(
             initialDelayMs = 2_000,
             maxDelayMs = 60_000,
-            maxAttempts = 8,
+            maxAttempts = 40,
         )
     }
 }

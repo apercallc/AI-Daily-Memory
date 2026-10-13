@@ -19,10 +19,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * SharedPreferences, which are excluded from backup and device transfer like all app data
  * (data_extraction_rules.xml).
  *
- * Processing and sync are on by default and do nothing until there is somewhere to do it: a
- * connected account (the one hosted server) or, for processing, the optional own-provider keys
- * below. Offline, nothing leaves the phone. Sync has no address or token of its own; it uses the
- * connected account.
+ * Transcription runs on the phone with a free downloadable model unless the person supplies their
+ * own provider key; summaries are off unless they supply one. Audio never leaves the phone.
+ * Sync is on by default and does nothing without a connected account; it has no address or token
+ * of its own.
  *
  * Writes publish immediately; reads never throw. The transcription key, extraction key and
  * sync bearer token are sealed with a Keystore-backed AEAD (same scheme as the account token in
@@ -32,7 +32,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * Nothing touches the Keystore until a secret is read or written (call off the main thread
  * where possible).
  */
-class ProcessingSettings(private val prefs: SharedPreferences, private val aead: () -> Aead) {
+class ProcessingSettings(
+    private val prefs: SharedPreferences,
+    /** True once the free on-device speech model is downloaded and verified. */
+    private val onDeviceModelReady: () -> Boolean = { false },
+    private val aead: () -> Aead,
+) {
 
     /** One sealed secret: cached after the first read so the Keystore is hit once. */
     private inner class SealedSecret(
@@ -43,6 +48,8 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
         private val ad = "aidm:processing-secret:$purpose:v1".toByteArray(Charsets.UTF_8)
         private var cached: String? = null
         private var read = false
+
+        @Volatile var lastSaveFailed = false
 
         @Synchronized
         fun get(): String? {
@@ -64,6 +71,9 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
                 return
             }
             val sealed = seal(value)
+            // The key still works until the process ends, but it was not stored: the caller can
+            // tell the person instead of letting it vanish on the next start.
+            lastSaveFailed = sealed == null
             prefs.edit {
                 remove(legacyKey)
                 if (sealed != null) putString(sealedKey, sealed) else remove(sealedKey)
@@ -105,6 +115,9 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
     private val transcriptionKey = SealedSecret(KEY_TRANSCRIPTION_API_KEY, KEY_TRANSCRIPTION_API_KEY_SEALED, "transcription")
     private val extractionKey = SealedSecret(KEY_EXTRACTION_API_KEY, KEY_EXTRACTION_API_KEY_SEALED, "extraction")
 
+    /** The last API key written could not be stored securely; it is held in memory only. */
+    val secretSaveFailed: Boolean get() = transcriptionKey.lastSaveFailed || extractionKey.lastSaveFailed
+
     init {
         // Sync once had its own address and token. It now uses the connected account, so the old
         // values (including a sealed secret) are removed rather than left behind unused.
@@ -125,6 +138,9 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
         _configRevision.value += 1
     }
 
+    /** For changes that happen outside these settings, like the speech model finishing its download. */
+    fun notifyConfigChanged() = configChanged()
+
     // --- Processing enable / disable -----------------------------------------------
 
     private val _processingEnabled = MutableStateFlow(prefs.getBoolean(KEY_PROCESSING_ENABLED, true))
@@ -137,14 +153,18 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
 
     // --- Transcription provider ----------------------------------------------------
 
+    // Anything but the person's own key means the phone's free model, including the "disabled"
+    // that earlier versions stored for "not set up".
     private val _transcriptionProvider = MutableStateFlow(
-        prefs.getString(KEY_TRANSCRIPTION_PROVIDER, PROVIDER_DISABLED) ?: PROVIDER_DISABLED,
+        normalizeTranscriptionProvider(prefs.getString(KEY_TRANSCRIPTION_PROVIDER, null)),
     )
     val transcriptionProvider: StateFlow<String> = _transcriptionProvider.asStateFlow()
 
     fun setTranscriptionProvider(provider: String) {
-        prefs.edit { putString(KEY_TRANSCRIPTION_PROVIDER, provider) }
-        _transcriptionProvider.value = provider
+        val normalized = normalizeTranscriptionProvider(provider)
+        prefs.edit { putString(KEY_TRANSCRIPTION_PROVIDER, normalized) }
+        _transcriptionProvider.value = normalized
+        configChanged()
     }
 
     var transcriptionApiKey: String?
@@ -214,6 +234,7 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
             keyPresent = !extractionApiKey.isNullOrBlank(),
         ),
         extractionModelPresent = !extractionModel.isNullOrBlank(),
+        onDeviceModelReady = onDeviceModelReady(),
     )
 
     // --- Audio cleanup -------------------------------------------------------------
@@ -268,8 +289,15 @@ class ProcessingSettings(private val prefs: SharedPreferences, private val aead:
     companion object {
         const val FILE_NAME = "processing_settings"
 
+        /** Transcription on the phone with the free downloadable model (the default). */
+        const val PROVIDER_ON_DEVICE = "on-device"
+
+        /** Summaries off: the person keeps a transcript only (the default). */
         const val PROVIDER_DISABLED = "disabled"
         const val PROVIDER_USER_API = "user-api"
+
+        private fun normalizeTranscriptionProvider(stored: String?): String =
+            if (stored == PROVIDER_USER_API) PROVIDER_USER_API else PROVIDER_ON_DEVICE
 
         private const val KEY_PROCESSING_ENABLED = "processing_enabled"
         private const val KEY_TRANSCRIPTION_PROVIDER = "transcription_provider"

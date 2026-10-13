@@ -19,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
@@ -36,6 +37,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 
 /** What the first-run walkthrough hands back when it ends. */
@@ -63,82 +65,122 @@ private enum class Page(
  * at every step; nothing here is required, and every choice is changeable later in Settings.
  */
 @Composable
-fun OnboardingScreen(onFinish: (OnboardingResult) -> Unit) {
+fun OnboardingScreen(permissions: Permissions? = null, onFinish: (OnboardingResult) -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     var index by rememberSaveable { mutableIntStateOf(0) }
     var connect by rememberSaveable { mutableStateOf(false) }
     val page = Page.entries[index]
+    // The guide asks for the permissions itself, on the step that explains them, and waits for both.
+    val permissionState = permissions?.let { rememberPermissionState(it, autoRequest = page == Page.ALLOW) }
+    val waitingForPermissions = page == Page.ALLOW && permissionState?.allGranted == false
     val last = index == Page.entries.lastIndex
     val finish = { onFinish(if (connect) OnboardingResult.CONNECT_ACCOUNT else OnboardingResult.STAY_OFFLINE) }
 
     // Back steps through the walkthrough instead of leaving the app on page two.
     BackHandler(enabled = index > 0) { index-- }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(horizontal = spacing.xxl, vertical = spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(spacing.lg),
+    // Outside a Scaffold nothing supplies a text color, so the screen brings its own surface.
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                text = stringResource(R.string.onboarding_step, index + 1, Page.entries.size),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = spacing.md),
-            )
-            if (!last) {
-                TextButton(
-                    onClick = { onFinish(OnboardingResult.STAY_OFFLINE) },
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.onboarding_skip)) }
-            }
-        }
         Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(horizontal = spacing.xxl, vertical = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            Text(
-                text = stringResource(page.title),
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(text = stringResource(page.body), style = MaterialTheme.typography.bodyLarge)
-            when (page) {
-                Page.WHERE -> WhereChoice(connect = connect, onChange = { connect = it })
-                Page.ALLOW -> Text(
-                    text = stringResource(R.string.onboarding_allow_detail),
-                    style = MaterialTheme.typography.bodyMedium,
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = stringResource(R.string.onboarding_step, index + 1, Page.entries.size),
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.md),
                 )
-                else -> Unit
+                if (!last) {
+                    TextButton(
+                        onClick = { onFinish(OnboardingResult.STAY_OFFLINE) },
+                        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                    ) { Text(stringResource(R.string.onboarding_skip)) }
+                }
             }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (index > 0) {
-                TextButton(
-                    onClick = { index-- },
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.nav_back)) }
-            }
-            Button(
-                onClick = { if (last) finish() else index++ },
-                modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
+            Column(
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.lg),
             ) {
                 Text(
-                    stringResource(
-                        when {
-                            !last -> R.string.onboarding_next
-                            connect -> R.string.onboarding_finish_connect
-                            else -> R.string.onboarding_finish
-                        },
-                    ),
+                    text = stringResource(page.title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.semantics { heading() },
                 )
+                Text(text = stringResource(page.body), style = MaterialTheme.typography.bodyLarge)
+                when (page) {
+                    Page.WHERE -> WhereChoice(connect = connect, onChange = { connect = it })
+                    Page.ALLOW -> {
+                        Text(
+                            text = stringResource(R.string.onboarding_allow_detail),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (permissionState != null) {
+                            PermissionNeed(R.string.permission_mic_title, R.string.permission_mic_body, permissionState.micGranted)
+                            PermissionNeed(
+                                R.string.permission_notifications_title,
+                                R.string.permission_notifications_body,
+                                permissionState.notificationsGranted,
+                            )
+                            if (!permissionState.allGranted) {
+                                if (permissionState.needsSettings) {
+                                    Text(
+                                        text = stringResource(R.string.permission_settings_body),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                Button(
+                                    onClick = if (permissionState.needsSettings) permissionState.openSettings else permissionState.allow,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            if (permissionState.needsSettings) R.string.action_open_settings else R.string.permission_gate_allow,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (index > 0) {
+                    TextButton(
+                        onClick = { index-- },
+                        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                    ) { Text(stringResource(R.string.nav_back)) }
+                }
+                Button(
+                    onClick = { if (last) finish() else index++ },
+                    enabled = !waitingForPermissions,
+                    modifier = Modifier.weight(1f).heightIn(min = spacing.minTouchTarget),
+                ) {
+                    Text(
+                        stringResource(
+                            when {
+                                !last -> R.string.onboarding_next
+                                connect -> R.string.onboarding_finish_connect
+                                else -> R.string.onboarding_finish
+                            },
+                        ),
+                    )
+                }
             }
         }
     }

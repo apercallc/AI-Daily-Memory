@@ -6,7 +6,8 @@ import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.processing.ProviderPresets
 import com.apercallc.aidailymemory.recording.server.HostedServer
-import com.apercallc.aidailymemory.recording.server.ServerMode
+import com.apercallc.aidailymemory.ondevice.ModelState
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.ui.settings.AccountUi
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import kotlin.test.assertEquals
@@ -80,18 +81,22 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `processing is on by default and offline until an account is connected`() = withViewModel { vm ->
+    fun `processing is on by default, on the phone, waiting only for the free speech model`() = withViewModel { vm ->
         assertTrue(vm.processing.value.enabled)
-        assertEquals(ServerMode.OFFLINE, vm.processing.value.mode)
-        assertFalse(vm.processing.value.ownProvider)
+        assertFalse(vm.processing.value.transcriptionOwnKey)
+        assertFalse(vm.processing.value.summaries)
+        assertEquals(ModelState.NotInstalled, vm.processing.value.modelState)
+        assertEquals(listOf(ConfigGap.TRANSCRIPTION_MODEL), vm.processing.value.configGaps)
         assertTrue(vm.sync.value.enabled)
         assertFalse(vm.sync.value.connected)
     }
 
     @Test
-    fun `using your own provider reports what is missing until it is fully configured`() = withViewModel { vm ->
-        vm.processingActions.onOwnProviderChange(true)
-        assertTrue(vm.processing.value.ownProvider)
+    fun `using your own services reports what is missing until they are fully configured`() = withViewModel { vm ->
+        vm.processingActions.onTranscriptionOwnKeyChange(true)
+        vm.processingActions.onSummariesChange(true)
+        assertTrue(vm.processing.value.transcriptionOwnKey)
+        assertTrue(vm.processing.value.summaries)
         assertTrue(vm.processing.value.configGaps.isNotEmpty())
 
         vm.processingActions.onTranscriptionApiUrlChange("https://asr.example/v1")
@@ -101,8 +106,12 @@ class SettingsViewModelTest {
         vm.processingActions.onExtractionModelChange("model-x")
 
         assertEquals(emptyList(), vm.processing.value.configGaps)
-        vm.processingActions.onOwnProviderChange(false)
-        assertFalse(vm.processing.value.ownProvider)
+        vm.processingActions.onTranscriptionOwnKeyChange(false)
+        vm.processingActions.onSummariesChange(false)
+        assertFalse(vm.processing.value.transcriptionOwnKey)
+        assertFalse(vm.processing.value.summaries)
+        // Back on the phone's own model, which still has to be downloaded.
+        assertEquals(listOf(ConfigGap.TRANSCRIPTION_MODEL), vm.processing.value.configGaps)
     }
 
     @Test
@@ -110,8 +119,8 @@ class SettingsViewModelTest {
         vm.processingActions.onEnableChange(false)
         vm.processingActions.onEnableChange(true)
 
-        assertEquals("disabled", vm.processing.value.transcriptionProvider)
-        assertEquals("disabled", vm.processing.value.extractionProvider)
+        assertFalse(vm.processing.value.transcriptionOwnKey)
+        assertFalse(vm.processing.value.summaries)
     }
 
     @Test
@@ -142,8 +151,9 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `turning on your own provider pre-fills a provider and model for each stage`() = withViewModel { vm ->
-        vm.processingActions.onOwnProviderChange(true)
+    fun `turning on your own services pre-fills a provider and model for each stage`() = withViewModel { vm ->
+        vm.processingActions.onTranscriptionOwnKeyChange(true)
+        vm.processingActions.onSummariesChange(true)
 
         assertEquals("deepgram", vm.processing.value.transcriptionPresetId)
         assertEquals("nova-3", vm.processing.value.transcriptionModel)
@@ -156,7 +166,7 @@ class SettingsViewModelTest {
     @Test
     fun `an address the person already set is not overwritten by the pre-fill`() = withViewModel { vm ->
         vm.processingActions.onExtractionApiUrlChange("https://llm.example/v1")
-        vm.processingActions.onOwnProviderChange(true)
+        vm.processingActions.onSummariesChange(true)
 
         assertEquals("https://llm.example/v1", container.processingSettings.extractionApiUrl)
         assertEquals(ProviderPresets.CUSTOM_ID, vm.processing.value.extractionPresetId)

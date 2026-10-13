@@ -179,25 +179,38 @@ class LinkStore(private val prefs: SharedPreferences, private val aead: () -> Ae
     fun pendingRevokes(): Map<String, ServerLink> {
         val entries = readRevokes()
         val pending = mutableMapOf<String, ServerLink>()
+        val kept = JSONArray()
+        var dropped = false
         for (i in 0 until entries.length()) {
-            val entry = entries.getJSONObject(i)
-            val id = entry.getString("id")
-            if (EndpointUrl.parse(entry.getString("url")) !is EndpointUrl.Valid) {
-                // A token is never sent to an address that is not https.
-                logFailure(TAG, "revoke_invalid_server", IllegalStateException("not_https"), warning = true)
-                revokeDone(id)
-                markRevokeManual()
+            val entry = entries.optJSONObject(i)
+            val id = entry?.optString("id").orEmpty()
+            val url = entry?.optString("url").orEmpty()
+            if (id.isEmpty() || EndpointUrl.parse(url) !is EndpointUrl.Valid) {
+                // A damaged entry, or one for an address that is not https: a token is never
+                // sent there. Dropped, and the person is told to revoke it on the server.
+                logFailure(TAG, "revoke_entry_invalid", IllegalStateException("invalid_entry"), warning = true)
+                dropped = true
                 continue
             }
             try {
-                val token = aead().decrypt(Base64.decode(entry.getString("token"), Base64.NO_WRAP), REVOKE_AD)
-                pending[id] = ServerLink(entry.getString("url"), token.toString(Charsets.UTF_8))
+                val token = aead().decrypt(Base64.decode(entry!!.getString("token"), Base64.NO_WRAP), REVOKE_AD)
+                pending[id] = ServerLink(url, token.toString(Charsets.UTF_8))
+                kept.put(entry)
             } catch (e: GeneralSecurityException) {
                 // Unreadable here, but possibly still valid on the server: tell the user.
                 logFailure(TAG, "revoke_unreadable", e, warning = true)
-                revokeDone(id)
-                markRevokeManual()
+                dropped = true
+            } catch (e: JSONException) {
+                logFailure(TAG, "revoke_entry_invalid", e, warning = true)
+                dropped = true
+            } catch (e: IllegalArgumentException) {
+                logFailure(TAG, "revoke_entry_invalid", e, warning = true)
+                dropped = true
             }
+        }
+        if (dropped) {
+            writeRevokes(kept)
+            markRevokeManual()
         }
         return pending
     }

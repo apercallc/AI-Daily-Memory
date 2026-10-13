@@ -7,7 +7,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Short, timed partial wake locks while an automatic recovery retry is pending. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Uploads to the user's own account backend (HTTPS only; cleartext is disabled). -->
+    <!-- Sign-in, note sync and the one-time speech model download (HTTPS only; cleartext is disabled).
+         Audio is never sent anywhere. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Self-update: the app downloads its own APK from GitHub Releases and hands it to the
@@ -44,6 +45,18 @@
             android:foregroundServiceType="microphone" />
 
         <!-- On-device processing job (ADR-0020): transcribes + extracts while charging. -->
+        <!-- Quick Settings tile: shows Recording / Paused / Interrupted and pauses on tap. -->
+        <service
+            android:name=".service.RecordingTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_recording"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".processing.ProcessingJobService"
             android:exported="false"

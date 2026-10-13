@@ -14,6 +14,7 @@ a second device or a partial resync never wipes what it did not send. The day's 
 is merged the same way (see `app.reports.synced` for how it is read back).
 """
 
+import logging
 import re
 import uuid
 from datetime import date
@@ -21,7 +22,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Text, cast, delete, select
+from sqlalchemy import Text, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
@@ -31,14 +32,19 @@ from app.db.models import (
     CommitmentDirection,
     Confidence,
     DailyReportRow,
+    DeletedNote,
     MemoryItem,
     MemoryItemKind,
+    Note,
     ProcessingJob,
 )
 from app.errors import ErrorResponse
+from app.notes import SessionContent, forget_transcripts, upsert_note
 from app.reports.daily import ZoneName
 from app.reports.synced import is_phone_document
 from app.storage import ObjectStore
+
+logger = logging.getLogger("app.sync")
 
 router = APIRouter(tags=["sync"])
 
@@ -97,6 +103,18 @@ class SyncTranscriptLineIn(BaseModel):
     text: str = Field(min_length=1, max_length=5_000)
 
 
+class SyncSessionIn(BaseModel):
+    """What the phone knows about one session besides its words: the name the person gave it and
+    exactly when it started. Declaring a session lets the server own it even when no transcript or
+    item is sent for it (transcript sync off)."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    session_id: uuid.UUID = Field(alias="sessionId")
+    title: str | None = Field(default=None, max_length=120)
+    started_at_epoch_ms: int | None = Field(default=None, alias="startedAtEpochMs", ge=0)
+
+
 class SyncReportIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -105,6 +123,7 @@ class SyncReportIn(BaseModel):
     headline: str = Field(max_length=280)
     summary: str = Field(max_length=1_680)
     items: list[SyncItemIn] = Field(max_length=2_000)
+    sessions: list[SyncSessionIn] = Field(default_factory=list, max_length=500)
     transcript_lines: list[SyncTranscriptLineIn] | None = Field(
         default=None,
         alias="transcriptLines",
@@ -152,7 +171,8 @@ async def sync_memory(
     and any server-held clips, transcripts and sealed deliveries. Repeating an id is a no-op.
     """
     store: ObjectStore | None = getattr(request.app.state, "object_store", None)
-    await _purge_deleted_sessions(session, store, writer.user_id, payload.deleted_sessions)
+    await purge_sessions(session, store, writer.user_id, payload.deleted_sessions)
+    await _drop_removed_sessions(session, writer.user_id, payload)
 
     total_items = 0
     for report in payload.reports:
@@ -163,6 +183,42 @@ async def sync_memory(
         items=total_items,
         deletedSessions=len(payload.deleted_sessions),
     )
+
+
+async def _drop_removed_sessions(
+    session: AsyncSession, user_id: uuid.UUID, payload: SyncPayloadIn
+) -> None:
+    """Takes out of the payload every session the person removed from their account on the web,
+    so a phone that still holds its own copy cannot bring the note back."""
+    mentioned: set[uuid.UUID] = set()
+    for report in payload.reports:
+        mentioned |= {i.session_id for i in report.items}
+        mentioned |= {s.session_id for s in report.sessions}
+        mentioned |= {
+            u for line in report.transcript_lines or [] if (u := _uuid_or_none(line.session_id))
+        }
+    if not mentioned:
+        return
+    gone = set(
+        (
+            await session.scalars(
+                select(DeletedNote.session_id).where(
+                    DeletedNote.user_id == user_id, DeletedNote.session_id.in_(mentioned)
+                )
+            )
+        ).all()
+    )
+    if not gone:
+        return
+    for report in payload.reports:
+        report.items = [i for i in report.items if i.session_id not in gone]
+        report.sessions = [s for s in report.sessions if s.session_id not in gone]
+        if report.transcript_lines is not None:
+            report.transcript_lines = [
+                line
+                for line in report.transcript_lines
+                if _uuid_or_none(line.session_id) not in gone
+            ]
 
 
 def _uuid_or_none(value: str) -> uuid.UUID | None:
@@ -181,10 +237,18 @@ async def _upsert_report(
     payload: SyncPayloadIn,
 ) -> int:
     memory_day = report.memory_day
+    # Two first syncs for one day (two phones, or a retry racing the original) would both insert
+    # the day's row; serialize them for the length of this transaction instead.
+    await session.execute(
+        select(
+            func.pg_advisory_xact_lock(func.hashtextextended(f"sync:{user_id}:{memory_day}", 0))
+        ),
+    )
     item_sessions = {str(item.session_id) for item in report.items}
     line_sessions = {line.session_id for line in report.transcript_lines or []}
     # The sessions this payload speaks for. Everything else stored for the day is left alone.
-    owned_strings = item_sessions | line_sessions
+    declared = {str(s.session_id) for s in report.sessions}
+    owned_strings = item_sessions | line_sessions | declared
     owned_uuids = {u for s in owned_strings if (u := _uuid_or_none(s)) is not None}
 
     if owned_uuids:
@@ -213,6 +277,9 @@ async def _upsert_report(
             ),
         )
     await session.flush()
+    if not payload.include_transcripts:
+        await forget_transcripts(session, user_id, memory_day)
+    await _refresh_notes(session, user_id, report, payload)
 
     existing = await session.scalar(
         select(DailyReportRow)
@@ -232,21 +299,26 @@ async def _upsert_report(
         "extractionModel": report.extraction_model,
         "extractionVersion": report.extraction_version,
     }
+    # With transcript sync on, lines of sessions this payload does not carry stay and the carried
+    # sessions' lines are replaced. With it off the day keeps no lines at all: the person turned
+    # it off, so what was synced before goes too (the note texts are cleared the same way).
+    transcript_lines: list[Any] = []
     if payload.include_transcripts:
         old_lines = (
             existing.report.get("transcriptLines")
             if existing is not None and is_phone_document(existing.report)
             else None
         )
-        kept_lines = [
+        transcript_lines = [
             line
             for line in (old_lines if isinstance(old_lines, list) else [])
             if isinstance(line, dict) and line.get("sessionId") not in owned_strings
         ]
-        report_json["transcriptLines"] = [
-            *kept_lines,
-            *(line.model_dump(by_alias=True) for line in report.transcript_lines or []),
+        transcript_lines += [
+            line.model_dump(by_alias=True) for line in report.transcript_lines or []
         ]
+    if transcript_lines:
+        report_json["transcriptLines"] = transcript_lines
     if existing is not None:
         existing.report = report_json
         existing.status = "complete"
@@ -262,6 +334,30 @@ async def _upsert_report(
             ),
         )
     return len(report.items)
+
+
+async def _refresh_notes(
+    session: AsyncSession, user_id: uuid.UUID, report: SyncReportIn, payload: SyncPayloadIn
+) -> None:
+    """One note per session in this payload, rebuilt from what the payload carries."""
+    sessions: dict[uuid.UUID, SessionContent] = {}
+
+    def content(session_id: uuid.UUID) -> SessionContent:
+        return sessions.setdefault(session_id, SessionContent(session_id, report.memory_day))
+
+    for item in report.items:
+        content(item.session_id).items.append((item.kind, item.text, item.evidence_epoch_ms))
+    if payload.include_transcripts:
+        for line in report.transcript_lines or []:
+            if (session_id := _uuid_or_none(line.session_id)) is not None:
+                content(session_id).lines.append((line.start_epoch_ms, line.text))
+    for declared in report.sessions:
+        note = content(declared.session_id)
+        note.phone_title = declared.title
+        note.started_ms = declared.started_at_epoch_ms
+        note.declared = True
+    for note in sessions.values():
+        await upsert_note(session, user_id, note)
 
 
 async def _items_to_keep(
@@ -359,7 +455,7 @@ def _session(entry: object, key: str) -> object:
     return entry.get(key) if isinstance(entry, dict) else None
 
 
-async def _purge_deleted_sessions(
+async def purge_sessions(
     session: AsyncSession,
     store: ObjectStore | None,
     user_id: uuid.UUID,
@@ -394,6 +490,10 @@ async def _purge_deleted_sessions(
             try:
                 await store.delete(key)
             except Exception as error:
+                logger.error(
+                    "sync_session_delete_failed",
+                    extra={"error_type": type(error).__name__, "session_count": len(ids)},
+                )
                 raise HTTPException(
                     status_code=503,
                     detail="Deleting stored audio failed. Retry later.",
@@ -413,6 +513,11 @@ async def _purge_deleted_sessions(
     # Memory item evidence cascades from memory_items.
     await session.execute(
         delete(MemoryItem).where(MemoryItem.user_id == user_id, MemoryItem.session_id.in_(ids))
+    )
+    await session.execute(delete(Note).where(Note.user_id == user_id, Note.session_id.in_(ids)))
+    # Gone from the phone as well: nothing is left that could come back, so forget the marker.
+    await session.execute(
+        delete(DeletedNote).where(DeletedNote.user_id == user_id, DeletedNote.session_id.in_(ids))
     )
 
     # Only this user's reports that mention a deleted id (ids are canonical UUID strings, so

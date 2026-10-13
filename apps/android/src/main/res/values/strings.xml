@@ -4,6 +4,7 @@
     <string name="sentry_dsn">https://559258c22138d64370262bdc425ba58d@o4508955926396928.ingest.us.sentry.io/4512245212315648</string>
     <string name="tagline">Capture what matters. Recall it later.</string>
 
+    <string name="tile_label">Recording</string>
     <string name="status_ready">Ready</string>
     <string name="status_start_failed">Couldn\'t start recording</string>
     <string name="status_starting">Starting…</string>
@@ -23,7 +24,7 @@
     <string name="detail_quiet_time">Your schedule paused recording. The microphone is off and it resumes by itself when quiet time ends.</string>
 
     <string name="problem_permission_denied">Microphone permission is off. Allow it in Settings to record.</string>
-    <string name="problem_microphone_unavailable">Another app or the system is using the microphone.</string>
+    <string name="problem_microphone_unavailable">Another app or the system is using the microphone. Recording continues when it is free.</string>
     <string name="problem_phone_call">Paused for a phone call. Recording continues when the call ends.</string>
     <string name="problem_foreground_start_not_allowed">Open the app to start recording. Android doesn\'t allow starting from the background.</string>
     <string name="problem_storage_low">Storage is almost full. Free up space to keep recording.</string>
@@ -39,7 +40,7 @@
     <string name="issue_storage_critical">Storage is full. Recording will stop to protect saved audio.</string>
     <string name="issue_storage_low">Storage is getting low.</string>
     <string name="issue_storage_unknown">Free storage couldn\'t be checked.</string>
-    <string name="issue_upload_backlog">A lot of audio is waiting to upload. It is only on this phone.</string>
+    <string name="issue_upload_backlog">A lot of audio is waiting to be transcribed. It is only on this phone.</string>
     <string name="issue_watch_disconnected">Watch disconnected. Recording on the phone is unaffected.</string>
 
     <string name="blocker_device_locked">Unlock your phone to start recording.</string>
@@ -81,6 +82,11 @@
     <string name="permission_mic_body">AI Daily Memory records your day so you can recall decisions and promises later. Audio stays encrypted on this phone. You can pause or stop from the notification at any time.</string>
     <string name="permission_notifications_title">Allow notifications</string>
     <string name="permission_notifications_body">While recording, a notification always shows that the microphone is on, with Pause and Stop. Recording never happens without it.</string>
+    <string name="permission_gate_title">Allow microphone and notifications</string>
+    <string name="permission_gate_body">AI Daily Memory can\'t record without these two. Allow both to continue.</string>
+    <string name="permission_gate_allow">Allow</string>
+    <string name="permission_gate_needed">Needed</string>
+    <string name="permission_gate_allowed">Allowed</string>
     <string name="permission_settings_title">Permission needed</string>
     <string name="permission_settings_body">Android won\'t ask again. Open Settings, choose Permissions, and allow it there.</string>
 
@@ -150,7 +156,7 @@
     <string name="transcript_title">Transcript</string>
     <string name="session_rename">Rename</string>
     <string name="transcript_empty_title">No transcript yet</string>
-    <string name="transcript_empty">Speech is transcribed while your phone charges on Wi-Fi, once your account is connected.</string>
+    <string name="transcript_empty">Speech is turned into text on this phone while it charges. Download the free speech model in Settings if you haven\'t yet.</string>
     <!-- A speaker label from transcription, e.g. "Speaker A". -->
     <string name="transcript_speaker">Speaker %1$s</string>
     <string name="part_early_morning">Early morning</string>
@@ -218,7 +224,7 @@
     <string name="quiet_every_day">Every day</string>
     <string name="quiet_weekdays">Weekdays</string>
     <string name="audio_section">Recorded audio</string>
-    <string name="audio_explainer">Your transcripts are what\'s kept. Audio is only needed until it has been transcribed. Audio sent for transcription is always deleted from the cloud afterwards.</string>
+    <string name="audio_explainer">Your transcripts are what\'s kept. Audio is only needed until it has been transcribed, and it never leaves this phone.</string>
     <string name="retention_transcript">Transcripts only (recommended)</string>
     <string name="retention_7">Keep audio on this phone for 7 days</string>
     <string name="retention_30">Keep audio on this phone for 30 days</string>
@@ -233,7 +239,7 @@
     <string name="schedule_unreadable">Your previous schedule couldn\'t be read, so none is active. Set it again below.</string>
     <!-- Account link (Phase 1 uploads) -->
     <string name="account_title">Account &amp; server</string>
-    <string name="account_processing_disclosure">Connecting sends only the parts of your day where someone is talking, over an encrypted connection, to aidailymem.apercallc.com. Nothing else leaves your phone. Recording works without an account.</string>
+    <string name="account_processing_disclosure">Connecting syncs your notes (summaries and, if you choose, transcripts) to aidailymem.apercallc.com over an encrypted connection so you can read them on the web and through the API. Audio never leaves your phone. Recording works without an account.</string>
     <string name="account_rejected">Your account connection was signed out. Sign in again to reconnect.</string>
     <string name="account_unreadable">This phone can no longer read its saved connection. Connect again.</string>
     <string name="account_token">Device token</string>
@@ -241,26 +247,14 @@
     <string name="account_token_rejected">The server didn\'t accept this token. Check it or get a new one from the website.</string>
     <string name="account_unreachable">Couldn\'t reach the server. Check your internet connection and try again.</string>
     <string name="account_save_failed">Couldn\'t store the token securely on this phone. Nothing was saved.</string>
-    <string name="account_include_backlog">Also process speech already recorded on this phone</string>
+    <string name="account_include_backlog">Also sync notes made before I connected</string>
     <string name="account_connect">Connect</string>
     <string name="account_checking">Checking…</string>
     <string name="account_connected">Connected to %1$s</string>
-    <string name="account_upload_rules">Speech clips upload while charging on Wi-Fi. Audio stays on this phone until its transcript is stored.</string>
-    <plurals name="account_upload_problems">
-        <item quantity="one">%1$d clip couldn\'t upload. Its audio stays on this phone.</item>
-        <item quantity="other">%1$d clips couldn\'t upload. Their audio stays on this phone.</item>
-    </plurals>
-    <string name="account_retry_uploads">Try again</string>
+    <string name="account_upload_rules">Notes sync to this account. Audio stays on this phone.</string>
     <string name="account_disconnect">Disconnect</string>
     <string name="account_revoke_manual">An old connection couldn\'t be revoked from this phone. Ask for its device token to be revoked on the server.</string>
     <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
-    <string name="storage_mode_title">Where memory lives</string>
-    <string name="storage_mode_load_failed">Couldn\'t load your storage setting. Check your connection and try again.</string>
-    <string name="storage_mode_change_failed">Couldn\'t change the storage setting. Nothing was changed; try again.</string>
-    <string name="storage_mode_retry">Try again</string>
-    <string name="storage_mode_phone_only">Phone only — transcripts stay on this phone</string>
-    <string name="storage_mode_reports_cloud">Reports in the cloud — daily reports are stored on the server; transcripts stay on this phone</string>
-    <string name="storage_mode_full_cloud">Full cloud — transcripts and reports are stored on the server</string>
 
     <string name="settings_screen_unavailable">This device has no screen for that setting. Open it from system Settings instead.</string>
     <string name="permission_denied_feedback">Permission denied. Recording needs it; tap Start to try again.</string>
@@ -292,18 +286,18 @@
     <string name="processing_status_incomplete">Needs setup</string>
     <string name="processing_transcription_url_hint">Your speech-to-text service, like https://api.deepgram.com/v1/listen</string>
     <string name="processing_extraction_url_hint">An OpenAI-compatible chat endpoint, like https://api.openai.com/v1/chat/completions</string>
-    <string name="processing_explainer">Turns your recordings into transcripts and a daily summary. With an account connected this happens on the server you connected to; offline, recordings wait on your phone.</string>
-    <string name="processing_enabled">Process my recordings</string>
-    <string name="processing_disabled_hint">Processing is off. Your audio stays on this phone untouched.</string>
+    <string name="processing_explainer">Your phone turns recordings into text, then deletes the audio. Nothing is sent anywhere unless you add your own service key.</string>
+    <string name="processing_enabled">Transcribe my recordings</string>
+    <string name="processing_disabled_hint">Transcribing is off. Your audio stays on this phone untouched.</string>
     <string name="processing_transcription">Transcription</string>
-    <string name="processing_extraction">Summarization &amp; extraction</string>
-    <string name="processing_incomplete">Fill in the address and key for both services below. Recordings wait until then; nothing is lost.</string>
+    <string name="processing_extraction">Summaries</string>
+    <string name="processing_incomplete">Fill in the key and address above. Recordings wait until then; nothing is lost.</string>
     <string name="processing_api_key">API key</string>
     <string name="processing_api_url">API endpoint URL</string>
     <string name="processing_model">Model name</string>
     <string name="processing_api_key_hint">Your key is stored on this phone only and never sent to us.</string>
     <string name="processing_delete_audio">Delete audio after transcription</string>
-    <string name="processing_delete_audio_body">Frees storage automatically once the transcript is saved. The transcript is kept so you can verify any summary.</string>
+    <string name="processing_delete_audio_body">Frees storage automatically once the transcript is saved. The transcript is kept so you can check any summary.</string>
 
     <!-- Sync (ADR-0020) -->
     <string name="sync_section">Daily reports</string>
@@ -312,17 +306,17 @@
     <string name="advanced_label">Advanced</string>
     <string name="settings_expand">Show</string>
     <string name="settings_collapse">Hide</string>
-    <string name="sync_explainer">Sends each day\'s summary and memory items to your account so you can read them on other devices. Never sends audio. Does nothing while you are offline.</string>
+    <string name="sync_explainer">Sends each day\'s notes to your account so you can read and search them on the web and through the API. Never sends audio. Does nothing while you are offline.</string>
     <string name="sync_enabled">Send daily reports to my account</string>
-    <string name="sync_failed">The last sync failed. New reports are waiting to upload; use Test connection in Account &amp; server.</string>
+    <string name="sync_failed">The last sync failed. New notes are waiting to sync; use Test connection in Account &amp; server.</string>
     <string name="url_must_be_https">Enter a full https:// address with a valid host. Plain http is not allowed.</string>
     <string name="sync_include_transcripts">Also sync full transcripts</string>
 
     <!-- Daily memory / report UI -->
     <string name="memory_title">Today\'s Memory</string>
     <string name="memory_empty_title">No memory yet</string>
-    <string name="memory_empty">Record a session, then connect an account so it can be processed. Decisions, actions and ideas from your day appear here.</string>
-    <string name="memory_empty_action">Connect an account</string>
+    <string name="memory_empty">Record a session and let your phone transcribe it. Decisions, actions and ideas from your day appear here once you turn on summaries.</string>
+    <string name="memory_empty_action">Open settings</string>
     <string name="memory_load_error">Memory could not be loaded. Your saved data is unchanged.</string>
     <string name="memory_retry">Try again</string>
     <string name="memory_decisions">Decisions</string>
@@ -339,8 +333,8 @@
     <!-- Account: one hosted server, offline or connected -->
     <string name="account_offline_status">Offline. Nothing leaves this phone.</string>
     <string name="account_steps">To connect: 1) Choose Create account or Sign in. 2) Enter your email and password. 3) Tap the button. The app checks the connection and saves it, so there is no address or token to copy.</string>
-    <string name="account_processing_disclosure_custom">Connecting sends only the parts of your day where someone is talking, over an encrypted connection, to %1$s, the server you chose. Nothing else leaves your phone. Recording works without an account.</string>
-    <string name="account_server_credentials_warning">Your email and password, or a pasted token, go to %1$s, not to %2$s. Only continue if you run that server. It will also receive the speech clips you choose to process.</string>
+    <string name="account_processing_disclosure_custom">Connecting syncs your notes to %1$s, the server you chose, over an encrypted connection. Audio never leaves your phone. Recording works without an account.</string>
+    <string name="account_server_credentials_warning">Your email and password, or a pasted token, go to %1$s, not to %2$s. Only continue if you run that server. It will also receive the notes you choose to sync.</string>
     <string name="account_server_default">Server: %1$s (default)</string>
     <string name="account_server_custom">Server: %1$s (your own)</string>
     <string name="account_server_use_own">Use my own server</string>
@@ -364,6 +358,8 @@
     <string name="account_use_token">I have a connect token instead</string>
     <string name="account_use_email">Use email and password instead</string>
     <string name="account_paste">Paste from clipboard</string>
+    <string name="account_server_error">The server had a problem. Try again in a few minutes.</string>
+    <string name="account_wrong_server">That address answered, but it isn\'t an AI Daily Memory server. Check the server address under Use my own server.</string>
     <string name="account_other_server">This phone\'s saved server address could not be used, so the connection was removed from this phone. Its address was not a valid https address; connect below or stay offline. To invalidate the old token, revoke it on that server.</string>
     <string name="test_connection">Test connection</string>
     <string name="test_running">Testing…</string>
@@ -375,17 +371,20 @@
     <string name="connect_success">Connected and saved.</string>
     <string name="connect_failed">Couldn\'t connect. See the message under the form.</string>
     <string name="settings_saved">Saved</string>
-    <string name="processing_mode_connected">Connected: speech clips are processed on the server you connected to while the phone charges on Wi-Fi.</string>
-    <string name="processing_mode_offline">Offline: recordings stay on this phone and wait. Connect an account to process them.</string>
-    <string name="processing_status_connected">On, using your account</string>
-    <string name="processing_status_offline">On, waiting for an account</string>
-    <string name="processing_own_provider">Use my own AI provider</string>
-    <string name="processing_own_provider_body">Advanced. Sends speech to a service you choose, with your own key, instead of the account.</string>
     <string name="processing_provider">Provider</string>
     <string name="processing_custom">Custom</string>
     <string name="processing_model_other">Other…</string>
     <string name="processing_model_name">Model name</string>
     <string name="processing_get_key">Get a %1$s API key</string>
+    <plurals name="processing_failed_sessions">
+        <item quantity="one">%d recording could not be processed. Your audio is kept.</item>
+        <item quantity="other">%d recordings could not be processed. Your audio is kept.</item>
+    </plurals>
+    <string name="processing_retry_failed">Try again</string>
+    <string name="processing_retrying">Trying again in the background.</string>
+    <string name="transcript_unreadable">This line can\'t be read on this device.</string>
+    <string name="marker_failed">Couldn\'t save that mark. Recording is not affected.</string>
+    <string name="key_not_saved">Couldn\'t store the key securely on this phone. It works until the app closes; enter it again after that.</string>
     <string name="processing_save">Done</string>
     <string name="sync_needs_account">Waiting for an account. Nothing is sent while you are offline.</string>
     <string name="sync_status_waiting">On, waiting for an account</string>
@@ -403,16 +402,38 @@
     <string name="onboarding_finish">Get started</string>
     <string name="onboarding_finish_connect">Set up my account</string>
     <string name="onboarding_welcome_title">Your day, remembered</string>
-    <string name="onboarding_welcome_body">AI Daily Memory listens through the day, keeps only the parts where people are talking, and turns them into notes you can search. It always shows when it is recording, and you can pause or stop any time from your phone or your watch.</string>
+    <string name="onboarding_welcome_body">AI Daily Memory listens through the day, keeps only the parts where people are talking, and turns them into text on your phone. It always shows when it is recording, and you can pause or stop any time from your phone or your watch.</string>
     <string name="onboarding_where_title">Where should your memory live?</string>
     <string name="onboarding_where_body">You can change this later in Settings.</string>
     <string name="onboarding_offline_title">Offline</string>
-    <string name="onboarding_offline_body">Nothing leaves your phone. Recordings stay encrypted here. No account needed.</string>
-    <string name="onboarding_connect_title">Connect an account</string>
-    <string name="onboarding_connect_body">An account on aidailymem.apercallc.com turns speech into transcripts, summaries and searchable memory.</string>
+    <string name="onboarding_offline_body">Nothing leaves your phone. Recordings are transcribed here, on the phone. No account needed.</string>
+    <string name="onboarding_connect_title">Sync my notes</string>
+    <string name="onboarding_connect_body">An account on aidailymem.apercallc.com stores your notes so you can read and search them on the web or through the API. Audio never leaves your phone.</string>
     <string name="onboarding_allow_title">Allow what recording needs</string>
     <string name="onboarding_allow_body">When you first tap Start, Android asks for permission to use the microphone and, on newer versions, to show notifications.</string>
     <string name="onboarding_allow_detail">Microphone, to hear the conversation. Notifications, so the recording indicator is always visible. Some phones also close apps to save battery; if that happens, Today shows a card that takes you straight to the right setting.</string>
     <string name="onboarding_ready_title">You\'re ready</string>
-    <string name="onboarding_ready_body">Open the Today tab and tap Start. A paired watch can start, pause and stop the same recording; the phone\'s microphone does the listening, so only one device records at a time.</string>
+    <string name="onboarding_ready_body">Open the Today tab and tap Start. Before the first transcript, download the free speech model in Settings (about 40 MB, once). A paired watch can start, pause and stop the same recording; the phone\'s microphone does the listening, so only one device records at a time.</string>
+    <!-- On-phone speech model and optional own-service keys (ADR-0026) -->
+    <string name="processing_transcription_own">Use my own transcription service</string>
+    <string name="processing_transcription_own_body">Sends audio to a service you choose, with your own key, instead of the free model on this phone.</string>
+    <string name="processing_summaries">Write summaries and find decisions</string>
+    <string name="processing_summaries_body">Sends the transcript text to an AI service you choose, with your own key. Off by default; without it you keep the transcript.</string>
+    <string name="processing_own_key_privacy">Whatever you turn on here goes straight from your phone to that service. It never passes through our server.</string>
+    <string name="processing_model_free">Free speech model, runs on this phone (English, about %1$d MB, downloaded once).</string>
+    <string name="processing_model_download">Download speech model (%1$d MB)</string>
+    <string name="processing_model_downloading">Downloading… %1$d%%</string>
+    <string name="processing_model_ready">Speech model ready. Transcribing happens while the phone charges.</string>
+    <string name="processing_model_remove">Remove speech model</string>
+    <string name="processing_model_failed_offline">Couldn\'t download. Check your connection and try again.</string>
+    <string name="processing_model_failed_server">The download server didn\'t answer. Try again later.</string>
+    <string name="processing_model_failed_corrupt">The download didn\'t match the expected file, so it was thrown away. Try again.</string>
+    <string name="processing_model_failed_storage">Not enough free space. The model needs about 120 MB while installing.</string>
+    <string name="processing_status_model_missing">Needs the speech model</string>
+    <string name="processing_status_phone">On this phone</string>
+    <string name="processing_status_own">Using your own service</string>
+    <string name="speech_model_card_title">Download the free speech model</string>
+    <string name="speech_model_card_body">Your phone turns speech into text on its own, so audio never leaves it. It needs a one-time download of about 40 MB. Recording works without it; transcripts start once it is installed.</string>
+    <string name="speech_model_card_action">Download (40 MB)</string>
+    <string name="speech_model_card_failed">The download didn\'t finish. Check your connection and try again.</string>
 </resources>

@@ -56,6 +56,10 @@ interface DailyReportDao {
 
     @Query("SELECT * FROM daily_report WHERE generated_at_epoch_ms > :sinceEpochMs ORDER BY memory_day")
     suspend fun since(sinceEpochMs: Long): List<DailyReportEntity>
+
+    /** Marks a day's report as changed so the next sync sends it again (a rename, say). */
+    @Query("UPDATE daily_report SET generated_at_epoch_ms = :epochMs WHERE memory_day = :memoryDay")
+    suspend fun touch(memoryDay: String, epochMs: Long): Int
 }
 
 @Dao

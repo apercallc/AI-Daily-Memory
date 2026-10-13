@@ -4,23 +4,61 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Security headers. The page loads one external script (the pinned, SRI-checked Sentry
-    # bundle) and its two own scripts from this origin; there are no inline scripts, so no
-    # script nonce or hash is needed. The inline <style> block needs 'unsafe-inline' for styles
-    # only; img-src data: covers the inline SVG favicon and background texture. connect-src is the
-    # Sentry ingest host from sentry-init.js. If you add another origin to index.html, add it here.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://o4508955926396928.ingest.us.sentry.io; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+    # Security headers. Scripts: this origin plus the pinned, SRI-checked Sentry bundle used by the
+    # home page. No inline scripts, so no nonce or hash is needed. The home page's inline <style>
+    # needs 'unsafe-inline' for styles only; img-src data: covers the inline SVG favicon. connect-src
+    # allows this origin (the app calls /v1, proxied below) and the Sentry ingest host. If you add
+    # another origin, add it here.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://o4508955926396928.ingest.us.sentry.io; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header X-Frame-Options "DENY" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Strict-Transport-Security "max-age=31536000" always;
 
+    server_tokens off;
+
+    # The API, same origin as the site: the web app and every released phone build (which default
+    # to this host) reach it here, so there is no CORS and no second hostname to keep in sync.
+    #
+    # API_UPSTREAM is where the API service listens. On Railway use its private address
+    # (http://api.railway.internal:8080) and set NGINX_RESOLVER to [fd12::10] ipv6=on. The client
+    # address is passed on from the platform edge's X-Real-IP so the API's per-address limits still
+    # see the person, not this proxy. It is a variable so nginx starts even when the API is down.
+    location /v1/ {
+        resolver ${NGINX_RESOLVER} valid=10s;
+        set $api_upstream "${API_UPSTREAM}";
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host ${API_HOST};
+        proxy_set_header X-Real-IP $http_x_real_ip;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_ssl_server_name on;
+        proxy_ssl_name ${API_HOST};
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 35s;
+        client_max_body_size 1m;
+        proxy_buffering off;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+    }
+
+    # The signed-in app: static files, hash-routed, so no server-side route table.
+    location /app/ {
+        add_header Cache-Control "no-cache" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        try_files $uri $uri/ /app/index.html;
+    }
+
     # Single-page static site; everything that is not a file is the page itself.
     location / {
         try_files $uri $uri/ /index.html;
     }
-
-    # No server-side secrets exist here, but never advertise server internals.
-    server_tokens off;
 }

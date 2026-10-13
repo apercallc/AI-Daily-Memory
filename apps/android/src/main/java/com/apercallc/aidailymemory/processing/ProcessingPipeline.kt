@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.processing
 
 import android.util.Log
+import android.database.sqlite.SQLiteException
 import com.apercallc.aidailymemory.capture.SegmentAudioRead
 import com.apercallc.aidailymemory.capture.SegmentStore
 import com.apercallc.aidailymemory.data.ClipDao
@@ -19,6 +20,7 @@ import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.processing.ExtractedItem
+import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.NumberedLine
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
 import com.apercallc.aidailymemory.recording.processing.ProcessingValidation
@@ -30,6 +32,7 @@ import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import java.time.Instant
 import java.time.ZoneId
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -55,11 +58,11 @@ class ProcessingPipeline(
     private val localTranscriptDao: LocalTranscriptDao,
     private val processingStateDao: ProcessingStateDao,
     private val transcriptionProvider: TranscriptionProvider,
-    private val extractionProvider: ExtractionProvider,
+    /** Null = summaries off: the session keeps its transcript and gets no extracted items. */
+    private val extractionProvider: ExtractionProvider?,
     private val settings: ProcessingSettings,
     private val ids: UuidV7Generator,
     private val now: () -> Long = System::currentTimeMillis,
-    private val shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
     /** Non-empty = settings are incomplete: sessions wait instead of failing (see settings UI). */
     private val configGaps: () -> List<ConfigGap> = { emptyList() },
 ) {
@@ -67,7 +70,14 @@ class ProcessingPipeline(
      * Processes up to [limit] sessions, oldest first. Cancellation stops between sessions.
      * Returns immediately if processing is disabled.
      */
-    suspend fun processPending(limit: Int = BATCH): ProcessingRun {
+    suspend fun processPending(limit: Int = BATCH): ProcessingRun = try {
+        run(limit)
+    } finally {
+        // Frees the speech model the run loaded.
+        (transcriptionProvider as? AutoCloseable)?.close()
+    }
+
+    private suspend fun run(limit: Int): ProcessingRun {
         if (!settings.processingEnabled.value) return ProcessingRun(0, 0, 0)
         if (configGaps().isNotEmpty()) {
             // Never run with a placeholder provider: that would mark every session FAILED.
@@ -94,6 +104,15 @@ class ProcessingPipeline(
                 Log.w(TAG, "processing_failed code=${e.code}")
                 failed++
                 updateState(state.sessionId, if (e.retryable) "PENDING" else "FAILED", e.code)
+            } catch (e: IOException) {
+                // Disk or network trouble passes: try again on the next run.
+                logFailure(TAG, "processing_io_error", e, warning = true)
+                failed++
+                updateState(state.sessionId, "PENDING", "io_error")
+            } catch (e: SQLiteException) {
+                logFailure(TAG, "processing_database_error", e, warning = true)
+                failed++
+                updateState(state.sessionId, "PENDING", "database_error")
             } catch (e: Exception) {
                 logFailure(TAG, "processing_exception", e)
                 failed++
@@ -170,19 +189,13 @@ class ProcessingPipeline(
         updateState(sessionId, "TRANSCRIBED", null)
         var audioDeleted = false
         if (settings.deleteAudioAfterTranscription.value) {
-            var audioRetainedForUpload = false
+            // Audio is only ever kept on the phone, so once its words are stored it can go.
             for (segmentId in segmentIds) {
                 val segment = segmentDao.get(segmentId) ?: continue
-                if (shouldKeepAudioForUpload(segment)) {
-                    audioRetainedForUpload = true
-                    continue
-                }
                 segments.deleteSegmentAudio(segment)
             }
-            audioDeleted = !audioRetainedForUpload
-            if (audioDeleted) {
-                updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
-            }
+            audioDeleted = true
+            updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
         }
 
         // Build numbered lines for extraction
@@ -192,13 +205,13 @@ class ProcessingPipeline(
 
         updateState(sessionId, "EXTRACTING", null)
 
-        // Extract memory items
-        val extractionResult = extractionProvider.extract(numberedLines)
+        // Extract memory items; with summaries off there are none and the transcript stands alone.
+        val extractionResult = extractionProvider?.extract(numberedLines) ?: ExtractionResult(emptyList())
         ProcessingValidation.validateExtraction(extractionResult, numberedLines.size)
 
         // Store memory items (replace for session — idempotent by replacement)
         val memoryDay = computeMemoryDay(allLines.first().startEpochMs)
-        val extractionModel = "${extractionProvider.name}:${extractionProvider.model}"
+        val extractionModel = extractionProvider?.let { "${it.name}:${it.model}" } ?: TRANSCRIPT_ONLY
         val nowMs = now()
         val memoryItems = extractionResult.items.map { item ->
             MemoryItemEntity(
@@ -272,5 +285,8 @@ class ProcessingPipeline(
     companion object {
         private const val TAG = "ProcessingPipeline"
         private const val BATCH = 3
+
+        /** Recorded as the report's model when no summary engine ran. */
+        const val TRANSCRIPT_ONLY = "none:transcript-only"
     }
 }

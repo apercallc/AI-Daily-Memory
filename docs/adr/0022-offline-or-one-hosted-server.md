@@ -1,6 +1,7 @@
 # ADR-0022: Offline, or One Hosted Server
 
-- Status: Accepted; decisions 1 and 2 amended by ADR-0023 (own server under Advanced)
+- Status: Accepted; decisions 1 and 2 amended by ADR-0023 (own server under Advanced); the
+  hosted-processing parts (decisions 4 and 5) amended by ADR-0026 (processing runs on the phone)
 - Date: 2026-10-13
 - Amends: ADR-0020 (optional sync to a user-configured endpoint) and the account-linking part of
   ADR-0014. Processing on the phone with the user's own provider keys stays, as an advanced

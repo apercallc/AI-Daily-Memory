@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportEntity
+import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
+import com.apercallc.aidailymemory.data.SessionInfoEntity
 import com.apercallc.aidailymemory.data.SyncDeletionQueueEntity
 import com.apercallc.aidailymemory.net.ServerLink
 import com.apercallc.aidailymemory.recording.server.HostedServer
@@ -191,4 +193,47 @@ class SyncManagerTest {
         assertTrue(manager().syncPending())
         assertEquals(emptyList<String>(), bodies)
     }
+
+    @Test
+    fun `sessions with words or items are listed with the persons own name and start time`() = runTest {
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+        for ((id, title) in listOf("named" to "Standup", "plain" to null, "empty" to "Not yet")) {
+            db.sessions().register(SessionInfoEntity(id, "2026-10-12", "UTC", 1_000L, title))
+        }
+        db.localTranscripts().insertAll(
+            listOf("named", "plain").map { line(it) },
+        )
+
+        assertTrue(manager().syncPending())
+
+        val sessions = Json.parseToJsonElement(bodies.single()).jsonObject["reports"]!!.jsonArray
+            .single().jsonObject["sessions"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("named", "plain"), sessions.map { it["sessionId"]!!.jsonPrimitive.content })
+        assertEquals("Standup", sessions[0]["title"]!!.jsonPrimitive.content)
+        assertFalse(sessions[1].containsKey("title"))
+        assertEquals(1_000L, sessions[0]["startedAtEpochMs"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `a day with no sessions sends no sessions field`() = runTest {
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+
+        assertTrue(manager().syncPending())
+
+        val day = Json.parseToJsonElement(bodies.single()).jsonObject["reports"]!!.jsonArray.single().jsonObject
+        assertFalse(day.containsKey("sessions"))
+    }
+
+    private fun line(session: String) = LocalTranscriptLineEntity(
+        lineId = "line-$session",
+        sessionId = session,
+        segmentId = "seg-$session",
+        startEpochMs = 1_000L,
+        endEpochMs = 2_000L,
+        speaker = null,
+        text = "words",
+        confidence = null,
+        provider = "test",
+        model = "m",
+    )
 }

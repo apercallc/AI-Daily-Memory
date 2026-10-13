@@ -18,7 +18,6 @@ import com.apercallc.aidailymemory.net.LinkProblem
 import com.apercallc.aidailymemory.ui.settings.AccountCallbacks
 import com.apercallc.aidailymemory.ui.settings.AccountSection
 import com.apercallc.aidailymemory.ui.settings.AccountUi
-import com.apercallc.aidailymemory.ui.settings.StorageModeError
 import com.apercallc.aidailymemory.ui.settings.hostOf
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import org.junit.Rule
@@ -61,7 +60,7 @@ class AccountSectionTest {
         compose.onNodeWithText("Email").performScrollTo().performTextInput("me@example.com")
         compose.onNodeWithText("Password").performScrollTo().performTextInput("a-long-enough-password")
         compose.onNodeWithText("Create account and connect").performScrollTo().performClick()
-        compose.onNodeWithText("Also process speech already recorded on this phone").performScrollTo().performClick()
+        compose.onNodeWithText("Also sync notes made before I connected").performScrollTo().performClick()
         compose.onNodeWithText("Create account and connect").performScrollTo().performClick()
 
         assertEquals(
@@ -164,33 +163,6 @@ class AccountSectionTest {
     }
 
     @Test
-    fun `a failed storage mode fetch is shown with a retry, not as endless loading`() {
-        var retries = 0
-        show(
-            AccountUi(host = "aidailymem.apercallc.com", storageModeError = StorageModeError.LOAD_FAILED),
-            AccountCallbacks(onStorageModeRetry = { retries++ }),
-        )
-
-        compose.onNodeWithText("Couldn't load your storage setting. Check your connection and try again.")
-            .assertExists()
-        compose.onNodeWithText("Try again").performScrollTo().performClick()
-        assertEquals(1, retries)
-    }
-
-    @Test
-    fun `a failed storage mode change is explained and keeps the current mode`() {
-        show(
-            AccountUi(
-                host = "aidailymem.apercallc.com",
-                storageMode = "phone_only",
-                storageModeError = StorageModeError.CHANGE_FAILED,
-            ),
-        )
-
-        compose.onNodeWithText("Couldn't change the storage setting. Nothing was changed; try again.").assertExists()
-    }
-
-    @Test
     fun `while checking, connect can't be pressed twice`() {
         show(AccountUi(connecting = true))
 
@@ -257,26 +229,21 @@ class AccountSectionTest {
     }
 
     @Test
-    fun `a connected account shows the host, upload problems with retry, test and disconnect`() {
-        var retried = false
+    fun `a connected account shows the host, test and disconnect`() {
         var disconnected = false
         var tested = 0
         show(
-            AccountUi(host = hostOf("https://aidailymem.apercallc.com/v1"), uploadProblems = 2),
+            AccountUi(host = hostOf("https://aidailymem.apercallc.com/v1")),
             AccountCallbacks(
                 onDisconnect = { disconnected = true },
-                onRetryUploads = { retried = true },
                 onTest = { tested++ },
             ),
         )
 
         compose.onNodeWithText("Connected to aidailymem.apercallc.com").assertExists()
-        compose.onNodeWithText("2 clips couldn't upload. Their audio stays on this phone.").assertExists()
         compose.onNodeWithText("Test connection").performScrollTo().performClick()
-        compose.onNodeWithText("Try again").performScrollTo().performClick()
         compose.onNodeWithText("Disconnect").performScrollTo().performClick()
         assertEquals(1, tested)
-        assertTrue(retried)
         assertTrue(disconnected)
     }
 
@@ -306,71 +273,17 @@ class AccountSectionTest {
     }
 
     @Test
-    fun `the storage mode picker is hidden until the current mode is known`() {
-        show(AccountUi(host = "aidailymem.apercallc.com", storageMode = null))
-
-        compose.onAllNodesWithText("Where memory lives").assertCountEquals(0)
-    }
-
-    @Test
-    fun `picking a different storage mode reports it`() {
-        var changed: String? = null
-        show(
-            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"),
-            AccountCallbacks(onStorageModeChange = { changed = it }),
-        )
-
-        compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
-            .performClick()
-
-        assertEquals("full_cloud", changed)
-    }
-
-    @Test
-    fun `picking the already-selected mode reports nothing`() {
-        var changes = 0
-        show(
-            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"),
-            AccountCallbacks(onStorageModeChange = { changes++ }),
-        )
-
-        compose.onNodeWithText("Phone only — transcripts stay on this phone").performScrollTo().performClick()
-
-        assertEquals(0, changes)
-    }
-
-    @Test
-    fun `the picker is disabled while a change is in flight`() {
-        var changes = 0
-        show(
-            AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only", storageModeUpdating = true),
-            AccountCallbacks(onStorageModeChange = { changes++ }),
-        )
-
-        compose.onNodeWithText("Full cloud — transcripts and reports are stored on the server")
-            .performClick()
-
-        assertEquals(0, changes)
-    }
-
-    @Test
     fun `connection inputs cannot change while their consent is being checked`() {
         show(AccountUi(connecting = true))
         compose.onNodeWithText("Email").assertIsNotEnabled()
         compose.onNodeWithText("Password").assertIsNotEnabled()
-        compose.onNodeWithText("Also process speech already recorded on this phone").assertIsNotEnabled()
-    }
-
-    @Test
-    fun `storage modes expose single selection to accessibility services`() {
-        show(AccountUi(host = "aidailymem.apercallc.com", storageMode = "phone_only"))
-        compose.onNodeWithText("Phone only — transcripts stay on this phone").assertIsSelected()
+        compose.onNodeWithText("Also sync notes made before I connected").assertIsNotEnabled()
     }
 
     @Test
     fun `connecting explains what leaves the phone`() {
         show(AccountUi())
-        compose.onNodeWithText("Connecting sends only the parts of your day where someone is talking", substring = true)
+        compose.onNodeWithText("Connecting syncs your notes", substring = true)
             .assertExists()
     }
 

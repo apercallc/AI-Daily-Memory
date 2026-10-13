@@ -51,7 +51,7 @@ class TranscriptScreenTest {
 
         compose.onNodeWithText("No transcript yet").assertExists()
         compose.onNodeWithText(
-            "Speech is transcribed while your phone charges on Wi-Fi, once your account is connected.",
+            "Speech is turned into text on this phone while it charges. Download the free speech model in Settings if you haven't yet.",
         ).assertExists()
     }
 }

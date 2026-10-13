@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, cast, get_args
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select, text, update
@@ -29,6 +30,7 @@ from app.db import get_session
 from app.db.models import AudioUpload, UploadState, User
 from app.errors import ErrorResponse, error_response
 from app.jobs import enqueue
+from app.plans import limits_for
 from app.retention import PENDING_GRACE
 from app.storage import ObjectStore, audio_key
 
@@ -244,7 +246,8 @@ async def _create(
             AudioUpload.created_at >= since,
         ),
     )
-    if int(used or 0) + body.byte_size > settings.daily_upload_bytes_quota:
+    plan = await session.scalar(select(User.plan).where(User.id == principal.user_id))
+    if int(used or 0) + body.byte_size > limits_for(plan or "free", settings).upload_bytes_per_day:
         await session.rollback()
         return error_response(429, "Daily upload quota reached.", code="quota_exceeded")
 
@@ -284,6 +287,16 @@ async def _owned(session: AsyncSession, upload_id: uuid.UUID, principal: Princip
     return row
 
 
+def _storage_unavailable(error: Exception) -> Response:
+    logger.error("storage_error", extra={"error_type": type(error).__name__})
+    return error_response(
+        503,
+        "Storage is unavailable right now; try again later.",
+        code="storage_unavailable",
+        headers={"Retry-After": "30"},
+    )
+
+
 @router.post("/uploads/{upload_id}/complete", response_model=UploadStatus, responses=_ERRORS)
 async def complete_upload(
     upload_id: uuid.UUID,
@@ -296,7 +309,10 @@ async def complete_upload(
     if row.state != "pending":
         return UploadStatus(upload_id=row.id, state=_state(row))
 
-    stored = await store.stat(row.object_key)
+    try:
+        stored = await store.stat(row.object_key)
+    except (ClientError, BotoCoreError) as error:
+        return _storage_unavailable(error)
     if stored is None:
         return error_response(409, "Upload the clip before completing it.", code="upload_missing")
     if stored.sha256 is None:
@@ -309,7 +325,15 @@ async def complete_upload(
             code="integrity_unverifiable",
         )
     if stored.size != row.byte_size or stored.sha256 != row.sha256:
-        await store.delete(row.object_key)
+        try:
+            await store.delete(row.object_key)
+        except (ClientError, BotoCoreError) as error:
+            # The 409 still goes out: the phone must upload again whether or not the bad
+            # object could be removed. The leftover is logged for the operator.
+            logger.error(
+                "upload_integrity_cleanup_failed",
+                extra={"upload_id": str(row.id), "error_type": type(error).__name__},
+            )
         logger.warning("upload_integrity_failed", extra={"upload_id": str(row.id)})
         return error_response(
             409,

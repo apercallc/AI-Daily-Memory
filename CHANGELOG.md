@@ -5,6 +5,49 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Transcription now runs on the phone with a free model the app downloads once (Vosk small
+  English, 40 MB, pinned by SHA-256). Audio is never uploaded: the clip uploader, delivery
+  receiver, device-key registration and the storage-mode picker are gone. Summaries are off until
+  the person adds their own AI key; without one a day is a transcript only (ADR-0026).
+- Settings: Transcription and Summaries are separate choices, each with an optional own key. Today
+  asks for the speech model until it is installed.
+- Everything is free. Billing stays in the code, off by default; site, privacy and terms say so.
+- Website, privacy page and terms describe the phone-only processing and notes-only sync.
+
+### Added
+
+- Notes library in the web app (ADR-0027): every recording is a note you can rename, star, archive
+  and file in folders; search titles, summaries and transcripts with highlighted snippets; sort by
+  newest, oldest, title or length; select several and move, star or archive them; open a note to
+  read its highlights and a searchable transcript, copy it or download it as text. The app now
+  opens on Notes; the earlier list is "Items". Today lists the day's notes.
+- API: `/v1/notes`, `/v1/notes/{id}`, `/v1/notes/bulk` and `/v1/folders`; folders and note
+  organization are included in the export. Migration `0011`.
+- Web app at `/app/`: create an account or sign in, review each day's memory, search and filter,
+  correct a wording or mark an item not relevant, see evidence, ask questions, manage devices and
+  API keys, change password, download everything, delete the account (ADR-0024).
+- Ask: `POST /v1/ask` answers only from your own memory and says so when there is nothing;
+  evidence-only by default, a model optional (`ASK_PROVIDER`).
+- API: memory browse and correct endpoints, token listing and revoke, API-key management, password
+  change, JSON export, usage metering, `/v1/ready`. Migration `0009`.
+- Password reset and email verification (optional, `MAIL_PROVIDER=resend`), Stripe subscriptions with
+  server-side plan limits (optional), privacy and terms drafts, `adm` command-line client, and
+  `python -m app.admin dead-jobs` / `requeue-job` (ADR-0025).
+- The website's nginx proxies `/v1/` to the API, which also fixes the phone app's default server
+  (see `docs/product/LAUNCH_GAPS.md` for the deploy steps).
+
+### Fixed
+
+- Error handling pass across the app and backend: speech analysis no longer stops at one bad
+  segment; own-provider rate limits and server errors are retried and a rejected key is named;
+  failed sessions and upload limits (daily cap, server trouble, offline) are shown with a retry;
+  sign-in tells a server problem from a network one; unreadable transcript lines are marked
+  instead of hidden; watch and update failures are logged. Backend: database and object-store
+  outages return a retryable 503, provider overload is retried, the extraction call has a hard
+  timeout, concurrent first syncs no longer fail, and `/v1/ready` reports the database.
+
 ## [0.3.0] - 2026-10-13
 
 ### Changed

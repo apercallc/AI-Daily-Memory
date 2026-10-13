@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.ui
 
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -19,7 +20,7 @@ class OnboardingScreenTest {
     private var result: OnboardingResult? = null
 
     private fun show() = compose.setContent {
-        AiDailyMemoryTheme { OnboardingScreen { result = it } }
+        AiDailyMemoryTheme { OnboardingScreen(onFinish = { result = it }) }
     }
 
     @Test
@@ -45,7 +46,7 @@ class OnboardingScreenTest {
         show()
 
         compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("Connect an account").performClick()
+        compose.onNodeWithText("Sync my notes").performClick()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Set up my account").performClick()
@@ -69,10 +70,27 @@ class OnboardingScreenTest {
     fun `skip never connects, even after choosing to`() {
         show()
         compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("Connect an account").performClick()
+        compose.onNodeWithText("Sync my notes").performClick()
 
         compose.onNodeWithText("Skip").performClick()
 
         assertEquals(OnboardingResult.STAY_OFFLINE, result)
+    }
+
+    @Test
+    fun `the permission step waits until the microphone and notifications are allowed`() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        // Robolectric grants what the manifest declares; this phone has allowed nothing yet.
+        org.robolectric.Shadows.shadowOf(app).denyPermissions(
+            android.Manifest.permission.RECORD_AUDIO,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        )
+        val permissions = com.apercallc.aidailymemory.platform.Permissions(app)
+        compose.setContent { AiDailyMemoryTheme { OnboardingScreen(permissions) { result = it } } }
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("Next").performClick()
+
+        compose.onNodeWithText("Allow microphone").assertExists()
+        compose.onNodeWithText("Next").assertIsNotEnabled()
     }
 }

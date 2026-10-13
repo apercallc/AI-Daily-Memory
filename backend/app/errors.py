@@ -6,6 +6,7 @@ Validation errors list *where* the input was wrong, never the rejected values: r
 bodies here can contain transcript text or other private content.
 """
 
+import logging
 from collections.abc import Mapping
 from typing import cast
 
@@ -13,9 +14,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.observability import request_id_var
+
+logger = logging.getLogger("app.errors")
 
 
 class FieldError(BaseModel):
@@ -107,6 +112,20 @@ async def _validation_exception(request: Request, exc: Exception) -> JSONRespons
     )
 
 
+async def _database_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    # A database outage, failover or exhausted pool is the server's problem and passes: tell
+    # clients to retry instead of reporting a bug.
+    logger.error("db_unavailable", extra={"error_type": type(exc).__name__})
+    return error_response(
+        503,
+        "The database is unavailable right now; try again shortly.",
+        code="database_unavailable",
+        headers={"Retry-After": "15"},
+    )
+
+
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_exception)
     app.add_exception_handler(RequestValidationError, _validation_exception)
+    for error_type in (OperationalError, InterfaceError, SQLAlchemyTimeoutError):
+        app.add_exception_handler(error_type, _database_unavailable)

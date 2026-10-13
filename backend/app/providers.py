@@ -24,7 +24,14 @@ logger = logging.getLogger("app.providers")
 # aac-lc-adts is the only capture format the phone produces today (ADR-0007).
 _CONTENT_TYPES = {"aac-lc-adts": "audio/aac"}
 
-_RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504, 529})
+
+
+def _error_code(status: int) -> str:
+    """A bad or rotated API key looks nothing like an outage: name it so the operator can act."""
+    if status in (401, 403):
+        return "provider_auth_failed"
+    return "provider_rate_limited" if status == 429 else "provider_error"
 
 
 class DeepgramProvider:
@@ -93,8 +100,7 @@ class DeepgramProvider:
                 "provider_error_status",
                 extra={"provider": self.name, "status": response.status_code},
             )
-            code = "provider_rate_limited" if response.status_code == 429 else "provider_error"
-            raise JobError(code, retryable=retryable)
+            raise JobError(_error_code(response.status_code), retryable=retryable)
 
         try:
             body = response.json()
@@ -234,8 +240,7 @@ class ClaudeExtractionProvider:
                 "provider_error_status",
                 extra={"provider": self.name, "status": response.status_code},
             )
-            code = "provider_rate_limited" if response.status_code == 429 else "provider_error"
-            raise JobError(code, retryable=retryable)
+            raise JobError(_error_code(response.status_code), retryable=retryable)
 
         try:
             body_json = response.json()

@@ -1,6 +1,7 @@
 package com.apercallc.aidailymemory.processing
 
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
+import com.apercallc.aidailymemory.recording.processing.ProviderStatus
 import com.apercallc.aidailymemory.recording.processing.TranscribedSpan
 import com.apercallc.aidailymemory.recording.processing.TranscriptResult
 import com.apercallc.aidailymemory.recording.processing.TranscriptionProvider
@@ -48,9 +49,7 @@ class ApiKeyTranscriptionProvider(
         try {
             conn.outputStream.use { it.write(audio) }
             val code = conn.responseCode
-            if (code in 500..599) throw ProcessingException("provider_server_error", retryable = true)
-            if (code in 400..499) throw ProcessingException("provider_client_error", retryable = false)
-            if (code != 200) throw ProcessingException("provider_unexpected", retryable = false)
+            ProviderStatus.failureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
             return BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
         } catch (e: java.net.SocketTimeoutException) {
             throw ProcessingException("provider_timeout", retryable = true, cause = e)

@@ -30,14 +30,15 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import IssuedToken, issue_token
+from app.auth import WEB_SCOPES, WEB_TOKEN_TTL, IssuedToken, issue_token
 from app.db.models import Credential, LoginFailure, User
 
 # Deliberately permissive (RFC 5322 is not worth re-implementing here): reject the obviously
@@ -88,8 +89,20 @@ class SignedUp:
     token: IssuedToken
 
 
+def _token_options(client: Literal["device", "web"]) -> dict[str, Any]:
+    """A browser gets the web scopes and an expiry; a phone keeps the device defaults."""
+    if client == "web":
+        return {"scopes": WEB_SCOPES, "expires_at": datetime.now(UTC) + WEB_TOKEN_TTL}
+    return {}
+
+
 async def sign_up(
-    session: AsyncSession, *, email: str, password: str, device_name: str
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    device_name: str,
+    client: Literal["device", "web"] = "device",
 ) -> SignedUp:
     """Creates the user, its credential, and its first device token in one transaction. The
     caller commits; on any failure nothing is persisted (no orphaned `User` row)."""
@@ -111,7 +124,9 @@ async def sign_up(
         await session.flush()
     except IntegrityError as e:
         raise SignupError("email_taken") from e
-    token = await issue_token(session, user.id, kind="device", name=device_name)
+    token = await issue_token(
+        session, user.id, kind="device", name=device_name, **_token_options(client)
+    )
     return SignedUp(user.id, token)
 
 
@@ -168,7 +183,13 @@ async def _record_failure(
 
 
 async def log_in(
-    session: AsyncSession, *, email: str, password: str, device_name: str, source: str
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    device_name: str,
+    source: str,
+    client: Literal["device", "web"] = "device",
 ) -> LoggedIn:
     """`source` is the opaque `hash_source` value for the caller's address."""
     normalized = normalize_email(email)
@@ -198,5 +219,59 @@ async def log_in(
     if failure is not None:
         await session.delete(failure)
     credential.locked_until = None
-    token = await issue_token(session, credential.user_id, kind="device", name=device_name)
+    token = await issue_token(
+        session, credential.user_id, kind="device", name=device_name, **_token_options(client)
+    )
     return LoggedIn(credential.user_id, token)
+
+
+async def user_for_email(session: AsyncSession, email: str) -> uuid.UUID | None:
+    return await session.scalar(
+        select(Credential.user_id).where(Credential.email == normalize_email(email))
+    )
+
+
+async def email_of(session: AsyncSession, user_id: uuid.UUID) -> str | None:
+    return await session.scalar(select(Credential.email).where(Credential.user_id == user_id))
+
+
+async def verify_password(session: AsyncSession, user_id: uuid.UUID, password: str) -> bool:
+    """True when [password] is this account's. An account with no password (provisioned by an
+    operator) never verifies, so a sensitive action can't be confirmed by an empty string."""
+    stored = await session.scalar(
+        select(Credential.password_hash).where(Credential.user_id == user_id)
+    )
+    if stored is None:
+        return False
+    try:
+        await asyncio.to_thread(_hasher.verify, stored, password)
+    except (VerificationError, InvalidHashError):
+        return False
+    return True
+
+
+async def set_password(session: AsyncSession, user_id: uuid.UUID, new: str) -> None:
+    """Replaces the password with no check of the old one (the caller has proved the right to,
+    by the current password or a reset link). The new one must meet the same rules as sign-up."""
+    if not (_MIN_PASSWORD_LENGTH <= len(new) <= _MAX_PASSWORD_LENGTH):
+        raise SignupError("weak_password")
+    new_hash = await asyncio.to_thread(_hasher.hash, new)
+    await session.execute(
+        update(Credential)
+        .where(Credential.user_id == user_id)
+        .values(password_hash=new_hash, failed_attempts=0, locked_until=None)
+    )
+
+
+async def change_password(
+    session: AsyncSession, user_id: uuid.UUID, *, current: str, new: str
+) -> None:
+    """Replaces the password and ends every other sign-in. The caller commits.
+
+    Raises LoginError("invalid_credentials") for a wrong current password and SignupError
+    ("weak_password") for an unusable new one."""
+    if not (_MIN_PASSWORD_LENGTH <= len(new) <= _MAX_PASSWORD_LENGTH):
+        raise SignupError("weak_password")
+    if not await verify_password(session, user_id, current):
+        raise LoginError("invalid_credentials")
+    await set_password(session, user_id, new)

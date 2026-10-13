@@ -6,27 +6,41 @@ DELETE /v1/me              delete this account and its server-side data
 DELETE /v1/tokens/current  revoke the calling token (Disconnect; AGENTS rule 4)
 """
 
+import logging
 from datetime import timedelta
 from typing import Annotated, Literal
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import Principal, require, revoke_token
+from app.auth import Principal, require, revoke_other_browser_sessions, revoke_token
+from app.auth_rate_limit import auth_rate_limit
 from app.config import MAX_UPLOAD_URL_TTL_SECONDS
+from app.credentials import (
+    LoginError,
+    SignupError,
+    change_password,
+    email_of,
+    verify_password,
+)
 from app.db import get_session
-from app.db.models import AudioUpload, DeletedAccountObjectPurge, User
-from app.errors import ErrorResponse
+from app.db.models import AudioUpload, Credential, DeletedAccountObjectPurge, User
+from app.errors import ErrorResponse, error_response
 from app.retention import PENDING_GRACE
 from app.storage import DeleteIncompleteError, ObjectStore, user_prefix
+
+logger = logging.getLogger("app.account")
 
 router = APIRouter(tags=["account"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
-Device = Annotated[Principal, Depends(require("upload:write"))]
+# A phone (upload:write) or a signed-in browser (account:manage) can manage the account.
+Device = Annotated[Principal, Depends(require("upload:write", "account:manage"))]
 _ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s in (401, 403, 503)}
 
 StorageMode = Literal["phone_only", "reports_cloud", "full_cloud"]
@@ -35,6 +49,22 @@ StorageMode = Literal["phone_only", "reports_cloud", "full_cloud"]
 class Me(BaseModel):
     storage_mode: StorageMode
     scopes: list[str]
+    # Shown in the web app header; absent for an account an operator provisioned without a login.
+    email: str | None = None
+    email_verified: bool = False
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class DeleteConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=1, max_length=256)
 
 
 class StorageModeUpdate(BaseModel):
@@ -48,7 +78,18 @@ async def me(session: Session, device: Device) -> Me:
     mode = await session.scalar(select(User.storage_mode).where(User.id == device.user_id))
     # The CHECK constraint on users.storage_mode keeps this inside the Literal; a missing user
     # can't happen for an authenticated device, and validation turns a surprise into an error.
-    return Me.model_validate({"storage_mode": mode, "scopes": sorted(device.scopes)})
+    email = await email_of(session, device.user_id)
+    verified = await session.scalar(
+        select(Credential.email_verified_at).where(Credential.user_id == device.user_id)
+    )
+    return Me.model_validate(
+        {
+            "storage_mode": mode,
+            "scopes": sorted(device.scopes),
+            "email": email,
+            "email_verified": verified is not None,
+        }
+    )
 
 
 @router.put("/me", response_model=Me, responses=_ERRORS)
@@ -65,14 +106,55 @@ async def update_me(body: StorageModeUpdate, session: Session, device: Device) -
     return Me(storage_mode=body.storage_mode, scopes=sorted(device.scopes))
 
 
-@router.delete("/me", status_code=204, responses=_ERRORS)
-async def delete_me(request: Request, session: Session, device: Device) -> Response:
+def _is_browser(principal: Principal) -> bool:
+    return "upload:write" not in principal.scopes
+
+
+@router.post(
+    "/me/password",
+    status_code=204,
+    response_model=None,
+    responses=_ERRORS,
+    dependencies=[Depends(auth_rate_limit("password", limit=5, window_seconds=300))],
+)
+async def change_my_password(body: PasswordChange, session: Session, device: Device) -> Response:
+    """Changes the password and signs every other browser out. Phones keep their tokens: losing
+    the recorder's connection silently is worse than the risk it removes, and a lost phone is
+    revoked from the device list instead."""
+    try:
+        await change_password(
+            session, device.user_id, current=body.current_password, new=body.new_password
+        )
+    except SignupError as e:
+        await session.rollback()
+        return error_response(400, code=e.code)
+    except LoginError as e:
+        await session.rollback()
+        return error_response(401, code=e.code)
+    await revoke_other_browser_sessions(session, device.user_id, keep=device.token_id)
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/me", status_code=204, response_model=None, responses=_ERRORS)
+async def delete_me(
+    request: Request,
+    session: Session,
+    device: Device,
+    confirmation: DeleteConfirmation | None = None,
+) -> Response | JSONResponse:
     """Deletes the user's server-side data and the user's entire object-storage prefix.
 
     Object storage is cleared before the database cascade; if deletion is incomplete, the
     account remains intact so the operation can be retried. The device token is the proof of
     possession and is revoked by the same cascading delete.
     """
+    if _is_browser(device) and (
+        confirmation is None
+        or not await verify_password(session, device.user_id, confirmation.password)
+    ):
+        # A browser session can be left open or stolen; deleting everything needs the password.
+        return error_response(401, "Confirm with your password.", code="password_required")
     # Serialize account deletion with new upload reservations for this user. The upload route
     # takes the same transaction-scoped lock before it touches storage or issues a PUT URL.
     await session.execute(
@@ -92,10 +174,15 @@ async def delete_me(request: Request, session: Session, device: Device) -> Respo
     else:
         try:
             await store.delete_prefix(user_prefix(device.user_id))
-        except DeleteIncompleteError as error:
+        except (DeleteIncompleteError, ClientError, BotoCoreError) as error:
+            logger.error(
+                "account_delete_storage_failed",
+                extra={"error_type": type(error).__name__, "user_id": str(device.user_id)},
+            )
             raise HTTPException(
                 status_code=503,
                 detail="Account data deletion is incomplete. Retry later.",
+                headers={"Retry-After": "60"},
             ) from error
 
     if store is not None:
@@ -115,7 +202,7 @@ async def delete_me(request: Request, session: Session, device: Device) -> Respo
     return Response(status_code=204)
 
 
-@router.delete("/tokens/current", status_code=204, responses=_ERRORS)
+@router.delete("/tokens/current", status_code=204, response_model=None, responses=_ERRORS)
 async def revoke_current(session: Session, device: Device) -> Response:
     await revoke_token(session, device.user_id, device.token_id)
     await session.commit()

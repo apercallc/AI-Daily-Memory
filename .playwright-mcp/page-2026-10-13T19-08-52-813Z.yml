@@ -1,0 +1,20 @@
+- generic [ref=f7e1]:
+  - link "Skip to content" [ref=f7e2] [cursor=pointer]:
+    - /url: "#main"
+  - main [ref=f7e94]:
+    - generic [ref=f7e95]:
+      - heading "AI Daily Memory" [level=1] [ref=f7e96]
+      - paragraph [ref=f7e97]: Review what your day added up to, correct it, and ask it questions.
+      - generic [ref=f7e111]:
+        - generic [ref=f7e112]: Email
+        - textbox "Email" [active] [ref=f7e113]
+        - generic [ref=f7e114]: Password
+        - textbox "Password" [ref=f7e115]
+        - generic [ref=f7e116]:
+          - checkbox "Keep me signed in on this device" [ref=f7e117]
+          - generic [ref=f7e118]: Keep me signed in on this device
+        - alert [ref=f7e120]: That email and password don't match.
+        - generic [ref=f7e121]:
+          - button "Sign in" [ref=f7e122] [cursor=pointer]
+          - button "Create an account" [ref=f7e123] [cursor=pointer]
+      - paragraph [ref=f7e110]: Use the same email on your phone (Settings → Account & server) to connect it. Your recordings stay on your phone unless you choose otherwise.

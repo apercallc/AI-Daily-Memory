@@ -4,6 +4,8 @@
     python -m app.admin issue-device-token --user-id <uuid> --device-name "Pixel 9"
     python -m app.admin list-tokens --user-id <uuid>
     python -m app.admin revoke-token --user-id <uuid> --token-id <uuid>
+    python -m app.admin dead-jobs
+    python -m app.admin requeue-job --job-id <uuid>
 
 The token is printed once and never stored in plaintext; paste it into the app's
 "Connect account" screen. Output goes to stdout only, never to the logs.
@@ -16,12 +18,12 @@ import uuid
 from dataclasses import dataclass
 from typing import TextIO
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from app.auth import issue_token, revoke_token
 from app.config import Settings
 from app.db import Database
-from app.db.models import AccessToken, User
+from app.db.models import AccessToken, ProcessingJob, User
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,37 @@ async def revoke(database: Database, user_id: uuid.UUID, token_id: uuid.UUID) ->
     return revoked
 
 
+async def dead_jobs(database: Database) -> list[ProcessingJob]:
+    """Jobs that gave up, newest first: the operator's view of work that needs a human."""
+    async with database.sessions() as session:
+        rows = await session.scalars(
+            select(ProcessingJob)
+            .where(ProcessingJob.state == "dead")
+            .order_by(ProcessingJob.updated_at.desc())
+            .limit(200)
+        )
+        return list(rows.all())
+
+
+async def requeue_job(database: Database, job_id: uuid.UUID) -> bool:
+    """Puts a dead job back in the queue with a fresh attempt budget. False if it isn't dead."""
+    async with database.sessions() as session:
+        result = await session.execute(
+            update(ProcessingJob)
+            .where(ProcessingJob.id == job_id, ProcessingJob.state == "dead")
+            .values(
+                state="queued",
+                attempts=0,
+                run_after=func.now(),
+                lease_owner=None,
+                lease_expires_at=None,
+                last_error_code=None,
+            )
+        )
+        await session.commit()
+        return result.rowcount > 0  # type: ignore[attr-defined,no-any-return]
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.admin")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +113,9 @@ def _parser() -> argparse.ArgumentParser:
     rev = commands.add_parser("revoke-token")
     rev.add_argument("--user-id", type=uuid.UUID, required=True)
     rev.add_argument("--token-id", type=uuid.UUID, required=True)
+    commands.add_parser("dead-jobs")
+    requeue = commands.add_parser("requeue-job")
+    requeue.add_argument("--job-id", type=uuid.UUID, required=True)
     return parser
 
 
@@ -104,6 +140,19 @@ async def run(argv: list[str], settings: Settings, out: TextIO) -> int:
                 used = row.last_used_at.isoformat() if row.last_used_at else "never"
                 print(f"{row.id}  {row.kind}  {status}  last used {used}  {row.name}", file=out)
             return 0
+        elif args.command == "dead-jobs":
+            for job in await dead_jobs(database):
+                print(
+                    f"{job.id}  {job.kind}  {job.last_error_code or '-'}  "
+                    f"attempts {job.attempts}/{job.max_attempts}  "
+                    f"{job.updated_at.isoformat()}",
+                    file=out,
+                )
+            return 0
+        elif args.command == "requeue-job":
+            done = await requeue_job(database, args.job_id)
+            print("Requeued." if done else "Not found, or not dead.", file=out)
+            return 0 if done else 1
         else:
             done = await revoke(database, args.user_id, args.token_id)
             print("Revoked." if done else "Not found or already revoked.", file=out)

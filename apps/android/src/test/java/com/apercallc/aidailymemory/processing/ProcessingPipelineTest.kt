@@ -26,6 +26,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 class ProcessingPipelineTest {
@@ -71,21 +72,36 @@ class ProcessingPipelineTest {
     }
 
     @Test
-    fun `saved transcript extraction keeps audio while an upload is still eligible`() = runTest {
-        addTranscribedSession(segmentState = "SEALED")
+    fun `with summaries off the transcript is kept and the session completes as transcript only`() = runTest {
+        addTranscribedSession()
 
-        val run = pipeline(
-            extractionProvider = object : ExtractionProvider {
-                override val name = "test"
-                override val model = "test-model"
-                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(emptyList())
-            },
-            shouldKeepAudioForUpload = { true },
-        ).processPending()
+        val run = pipeline(extractionProvider = null).processPending()
 
-        assertEquals(1, run.processed)
-        assertEquals("SEALED", database.segments().get(SEGMENT_ID)?.state)
-        assertFalse(database.processingState().forSession(SESSION_ID)?.audioDeleted == true)
+        assertEquals(ProcessingRun(processed = 1, failed = 0, remaining = 0), run)
+        assertEquals("COMPLETED", database.processingState().forSession(SESSION_ID)?.state)
+        assertTrue(database.memoryItems().forSession(SESSION_ID).isEmpty())
+        val report = database.dailyReports().observeRecent(1).first().single()
+        assertEquals("Transcript only", report.headline)
+        assertEquals(ProcessingPipeline.TRANSCRIPT_ONLY, report.extractionModel)
+    }
+
+    @Test
+    fun `a transcription provider is closed after the run so the speech model is released`() = runTest {
+        addTranscribedSession()
+        var closed = false
+        val provider = object : TranscriptionProvider, AutoCloseable {
+            override val name = "closing"
+            override val model = "m"
+            override suspend fun transcribe(audio: ByteArray, codec: String, sampleRateHz: Int): TranscriptResult =
+                error("saved transcript should avoid transcription")
+            override fun close() {
+                closed = true
+            }
+        }
+
+        pipeline(extractionProvider = null, transcriptionProvider = provider).processPending()
+
+        assertTrue(closed)
     }
 
     @Test
@@ -172,8 +188,16 @@ class ProcessingPipelineTest {
     }
 
     private fun pipeline(
-        extractionProvider: ExtractionProvider,
-        shouldKeepAudioForUpload: suspend (SegmentEntity) -> Boolean = { false },
+        extractionProvider: ExtractionProvider?,
+        transcriptionProvider: TranscriptionProvider = object : TranscriptionProvider {
+            override val name = "unexpected"
+            override val model = "unexpected"
+            override suspend fun transcribe(
+                audio: ByteArray,
+                codec: String,
+                sampleRateHz: Int,
+            ): TranscriptResult = error("saved transcript should avoid transcription")
+        },
         configGaps: () -> List<com.apercallc.aidailymemory.recording.processing.ConfigGap> = { emptyList() },
     ) = ProcessingPipeline(
         segments = SegmentStore(
@@ -193,20 +217,11 @@ class ProcessingPipelineTest {
         dailyReportDao = database.dailyReports(),
         localTranscriptDao = database.localTranscripts(),
         processingStateDao = database.processingState(),
-        transcriptionProvider = object : TranscriptionProvider {
-            override val name = "unexpected"
-            override val model = "unexpected"
-            override suspend fun transcribe(
-                audio: ByteArray,
-                codec: String,
-                sampleRateHz: Int,
-            ): TranscriptResult = error("saved transcript should avoid transcription")
-        },
+        transcriptionProvider = transcriptionProvider,
         extractionProvider = extractionProvider,
         settings = settings,
         ids = UuidV7Generator(),
         now = { 42L },
-        shouldKeepAudioForUpload = shouldKeepAudioForUpload,
         configGaps = configGaps,
     )
 

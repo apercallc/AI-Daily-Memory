@@ -54,10 +54,14 @@ implemented until their checks below and in the phase exit gates pass.
 - [ ] A report request made during a session covers the complete session through Stop,
   including evidence-linked summary and action items. Show pending, partial, complete, and
   failed states; never present a partial result as complete.
-- [ ] Decide and document the transcription/summarization execution mode before enabling it.
-  The requested default is on-device inference with no audio or transcript sent off-device;
-  benchmark model availability, quality, latency, storage, memory, and battery on the target
-  phone. Any cloud fallback requires a separate, explicit opt-in and privacy disclosure.
+- [x] Decide and document the transcription/summarization execution mode before enabling it
+  (ADR-0026: transcription on the phone with a free downloadable model; summaries only with the
+  person's own key; no audio or transcript leaves the phone unless they enter a key or turn sync on).
+- [ ] Benchmark the Vosk small model on the target phone with real recordings: word error rate on
+  quiet and noisy speech, transcription time per recorded hour, peak memory, battery while charging,
+  and install size. Decide from the numbers whether a larger model is needed (ADR-0015 Gate B).
+- [ ] Run the model download and an overnight transcription on a physical phone, including a failed
+  download, a killed process, and low storage.
 - [ ] Exercise offline capture and processing, reconnection, watch disconnect/reconnect,
   denied/revoked microphone permission, phone call/mic contention, process death/reboot,
   low storage, low battery/thermal limits, corrupt or missing audio, and inference failure.
@@ -398,11 +402,11 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 ## Human correction
 
-- [ ] Correct
-- [ ] Edit
+- [x] Correct
+- [x] Edit (your wording, web app)
 - [x] Dismiss / Not a task (memory_items.dismissed_at)
 - [ ] Supersede old decisions
-- [ ] Store correction separately from evidence
+- [x] Store correction separately from evidence (`memory_item_corrections`)
 - [ ] Include confirmed corrections in future retrieval ranking
 
 ## Daily summary / daily report
@@ -529,14 +533,14 @@ Goal: prove reliable Android capture before building AI infrastructure.
 ## CLI
 
 - [x] Directory scaffold
-- [ ] adm ask
-- [ ] adm day
-- [ ] adm search
-- [ ] adm decisions
-- [ ] adm tasks
+- [x] adm ask
+- [x] adm day
+- [x] adm search
+- [x] adm decisions
+- [x] adm tasks
 - [ ] adm highlights
-- [ ] Secure credential storage
-- [ ] Machine-readable JSON mode
+- [x] Secure credential storage (owner-only key file or ADM_API_KEY)
+- [x] Machine-readable JSON mode
 
 ### Phase 5 exit gate
 
@@ -679,11 +683,11 @@ hardened phases, it does not replace them.
 
 ## Billing / subscription
 
-- [ ] ADR: billing provider decision (Google Play Billing for Android + server-side entitlement verification; decide web/stripe path if web sign-up exists)
-- [ ] Server-authoritative entitlement checks (client state is never trusted for gating)
+- [x] ADR: billing provider decision (ADR-0025: Stripe on the web; Play Billing for in-app is future work)
+- [x] Server-authoritative entitlement checks (only the signed Stripe webhook moves a plan)
 - [ ] Entitlement service behind the same API surface as other features
 - [ ] Plan definition: free tier limits, paid tiers, what is metered (recording hours, processing, recall calls, API calls)
-- [ ] Metering recorded per user with auditable counters
+- [x] Metering recorded per user with auditable counters (`usage_counters`; Ask so far)
 - [ ] Grace period / dunning / cancellation behavior defined and tested
 - [ ] Sandbox + production billing test suite (purchase, renew, cancel, refund, restore on reinstall)
 - [ ] Subscription state surfaced honestly in the app (no dark patterns; cancellation as easy as sign-up)
@@ -692,9 +696,9 @@ hardened phases, it does not replace them.
 ## Public API access (user-owned clients)
 
 - [ ] API keys shipped with the public API (scopes, hashing, rotation, rate limits)
-- [ ] API-key management surface: create, list, and revoke keys (backend issues them only via the operator CLI today)
-- [ ] Device-token lifecycle: listing a user's tokens, expiry policy, and remote revocation of a lost device
-- [ ] Password reset and email verification for self-service accounts (signup/login exist; neither does)
+- [x] API-key management surface: create, list, and revoke keys (web app and `/v1/api-keys`)
+- [x] Device-token lifecycle: listing a user's tokens, expiry policy (web sessions 30 days), and remote revocation of a lost device
+- [x] Password reset and email verification for self-service accounts (needs a mail provider configured)
 - [ ] Public API docs with auth, rate limits, and error semantics
 - [ ] Versioned API contract; deprecation policy for breaking changes
 - [ ] API access gated by subscription entitlement
@@ -703,7 +707,7 @@ hardened phases, it does not replace them.
 
 ## Data portability
 
-- [ ] Self-service account export (per Phase 8 checklist)
+- [x] Self-service account export (`GET /v1/export`)
 - [ ] Export covered by terms/privacy policy as a user right (GDPR/CCPA portability)
 - [ ] Export completeness tested against the data inventory
 - [ ] Account deletion covers derived data, embeddings, jobs, and retained objects (SECURITY.md)

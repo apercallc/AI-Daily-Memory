@@ -203,6 +203,18 @@ class LinkStoreTest {
     }
 
     @Test
+    fun `a damaged pending revoke is dropped, never sent, and the person is told`() {
+        val aead = newAead()
+        prefs.edit().putString("pending_revokes", "[{\"id\":\"a\",\"url\":\"http://plain.example\",\"token\":\"x\"},{\"url\":1},7]").commit()
+        val store = reopened(aead)
+
+        assertTrue(store.pendingRevokes().isEmpty())
+
+        assertTrue(store.revokeManual.value)
+        assertFalse(store.revokePending.value)
+    }
+
+    @Test
     fun `the server defaults to hosted, can be set, and resets`() {
         val store = reopened(newAead())
         assertEquals(HostedServer.BASE_URL, store.serverUrl.value)

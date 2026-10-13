@@ -1,5 +1,7 @@
 package com.apercallc.aidailymemory.update
 
+import android.util.Log
+import com.apercallc.aidailymemory.platform.logFailure
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -29,9 +31,15 @@ class UpdateClient(
         val connection = open(releasesApiUrl)
         return try {
             connection.setRequestProperty("Accept", "application/vnd.github+json")
-            if (connection.responseCode !in 200..299) return null
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                // 403/429 is GitHub's rate limit; keep it apart from "no update" in the logs.
+                Log.w(TAG, "update_check_status status=$status")
+                return null
+            }
             connection.inputStream.bufferedReader().use { reader -> reader.readText() }
-        } catch (_: IOException) {
+        } catch (e: IOException) {
+            logFailure(TAG, "update_check_failed", e, warning = true)
             null
         } finally {
             connection.disconnect()
@@ -89,6 +97,7 @@ class UpdateClient(
     }
 
     private companion object {
+        const val TAG = "UpdateClient"
         const val MAX_REDIRECTS = 5
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }

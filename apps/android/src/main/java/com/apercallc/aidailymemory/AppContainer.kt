@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.media.AudioManager
+import android.os.storage.StorageManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -15,16 +16,16 @@ import com.apercallc.aidailymemory.analysis.SpeechAnalysisScheduler
 import com.apercallc.aidailymemory.analysis.SpeechAnalyzer
 import com.apercallc.aidailymemory.net.AccountApi
 import com.apercallc.aidailymemory.net.AccountLinker
-import com.apercallc.aidailymemory.net.DeviceKey
-import com.apercallc.aidailymemory.net.HttpUploadApi
+import com.apercallc.aidailymemory.net.HttpAccountApi
 import com.apercallc.aidailymemory.net.ServerLink
 import com.apercallc.aidailymemory.net.LinkStore
-import com.apercallc.aidailymemory.upload.ClipUploader
-import com.apercallc.aidailymemory.upload.DeliveryReceiver
 import com.apercallc.aidailymemory.upload.UploadScheduler
+import com.apercallc.aidailymemory.ondevice.OnDeviceSpeechModel
+import com.apercallc.aidailymemory.ondevice.OnDeviceTranscriptionProvider
+import com.apercallc.aidailymemory.ondevice.VoskRecognizers
+import com.apercallc.aidailymemory.processing.StubTranscriptionProvider
 import com.apercallc.aidailymemory.processing.ProcessingPipeline
 import com.apercallc.aidailymemory.processing.ProcessingScheduler
-import com.apercallc.aidailymemory.processing.StubTranscriptionProvider
 import com.apercallc.aidailymemory.processing.StubExtractionProvider
 import com.apercallc.aidailymemory.processing.ApiKeyTranscriptionProvider
 import com.apercallc.aidailymemory.processing.ApiKeyExtractionProvider
@@ -89,6 +90,7 @@ import com.apercallc.aidailymemory.service.WatchDataLayerTransport
 import com.apercallc.aidailymemory.service.WatchRevisionWatermark
 import com.apercallc.aidailymemory.service.WatchSnapshotFactory
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -100,7 +102,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * Manual dependency wiring, one instance per process. Deliberately plain: a DI framework is
@@ -129,7 +130,12 @@ class AppContainer(context: Context) {
 
     init {
         // A phone updated from a version that had no walkthrough already knows the app.
-        if (!settings.onboardingRecorded && isUpdatedInstall()) settings.setOnboardingDone(true)
+        // Decided once, on the first start of this install: a restart in the middle of the guide
+        // must not read as "updated" and skip the rest of it.
+        if (!settings.upgradeChecked) {
+            if (!settings.onboardingRecorded && isUpdatedInstall()) settings.setOnboardingDone(true)
+            settings.upgradeChecked = true
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -145,9 +151,27 @@ class AppContainer(context: Context) {
         false
     }
 
+    /** The free speech model for on-device transcription (ADR-0026); downloaded on request. */
+    val speechModel: OnDeviceSpeechModel by lazy {
+        val dir = File(app.noBackupFilesDir, "models").apply { mkdirs() }
+        val storage = app.getSystemService(StorageManager::class.java)
+        OnDeviceSpeechModel(
+            baseDir = dir,
+            freeBytes = {
+                try {
+                    storage.getAllocatableBytes(storage.getUuidForPath(dir))
+                } catch (e: IOException) {
+                    logFailure(TAG, "free_space_unknown", e, warning = true)
+                    0L
+                }
+            },
+        )
+    }
+
     val processingSettings = ProcessingSettings(
         app.getSharedPreferences(ProcessingSettings.FILE_NAME, Context.MODE_PRIVATE),
         aead = { processingAead },
+        onDeviceModelReady = { speechModel.isReady },
     )
     private val processingAead by lazy {
         LinkStore.keystoreAead(
@@ -307,9 +331,9 @@ class AppContainer(context: Context) {
             evaluator = CaptureHealthEvaluator(HealthPolicy.Provisional),
             elapsedRealtimeMs = clock::elapsedRealtimeMs,
             scope = appScope,
-            // With no account connected there is nothing to upload to: hours of local audio
-            // are the design, not a backlog to warn about (private device-test milestone).
-            expectUploads = { links.isLinked },
+            // Audio never leaves the phone (ADR-0026): hours of local audio are the design,
+            // not a backlog to warn about.
+            expectUploads = { false },
         )
     }
 
@@ -374,7 +398,19 @@ class AppContainer(context: Context) {
     }
 
     val sessions: SessionRegistry by lazy {
-        SessionRegistry(database.sessions(), rhythm = { settings.rhythm.value })
+        SessionRegistry(
+            database.sessions(),
+            rhythm = { settings.rhythm.value },
+            // The report is only sent when it changes, so a rename marks its day as changed.
+            onRenamed = { sessionId ->
+                val day = database.sessions().memoryDayForSession(sessionId)
+                if (day != null && database.dailyReports().touch(day, System.currentTimeMillis()) > 0 &&
+                    processingSettings.syncEnabled.value
+                ) {
+                    syncScheduler.schedule()
+                }
+            },
+        )
     }
 
     /** User-requested local deletion; refuses active sessions and audio already copied remotely. */
@@ -382,6 +418,7 @@ class AppContainer(context: Context) {
         SessionDataDeletion(
             sessions = database.sessions(),
             deleteAudio = segments::deleteSessionAudio,
+            // Phones that uploaded under an earlier version may still have audio server-side.
             hasServerSideData = database.clips()::hasUploadRowsForSession,
             isActive = { sessionId ->
                 val state = controller.state.value
@@ -416,9 +453,10 @@ class AppContainer(context: Context) {
     }
     private val linkAead by lazy { LinkStore.keystoreAead(app) }
 
-    private val backend by lazy { HttpUploadApi() }
+    private val backend by lazy { HttpAccountApi() }
     val accountApi: AccountApi get() = backend
 
+    /** Only retries a disconnected token's revoke now; audio is never uploaded (ADR-0026). */
     val uploadScheduler = UploadScheduler(app)
 
     /** Optional API sync (ADR-0020); runs only when sync is enabled and configured. */
@@ -436,6 +474,17 @@ class AppContainer(context: Context) {
     private fun validUrl(raw: String?): String =
         (EndpointUrl.parse(raw.orEmpty()) as? EndpointUrl.Valid)?.value.orEmpty()
 
+    /** Starts the speech-model download so it outlives the settings screen, then queues the wait. */
+    fun downloadSpeechModel() {
+        appScope.launch {
+            speechModel.download()
+            if (speechModel.isReady) {
+                processingSettings.notifyConfigChanged()
+                if (processingSettings.processingEnabled.value) processingScheduler.schedule()
+            }
+        }
+    }
+
     /** Creates providers per job so edits in Settings apply without restarting the app. */
     val processingScheduler = ProcessingScheduler(app)
     val processingPipeline: ProcessingPipeline
@@ -443,23 +492,31 @@ class AppContainer(context: Context) {
             // Incomplete settings never reach the providers: the pipeline waits on configGaps
             // and the settings screen says what is missing. The stubs are unreachable
             // placeholders that satisfy the types.
-            val tp = if (processingSettings.configGaps().isEmpty()) {
-                ApiKeyTranscriptionProvider(
-                    validUrl(processingSettings.transcriptionApiUrl),
-                    processingSettings.transcriptionApiKey.orEmpty(),
-                    "user-model",
+            val ready = processingSettings.configGaps().isEmpty()
+            val tp = when {
+                !ready -> StubTranscriptionProvider()
+                processingSettings.transcriptionProvider.value == ProcessingSettings.PROVIDER_USER_API ->
+                    ApiKeyTranscriptionProvider(
+                        validUrl(processingSettings.transcriptionApiUrl),
+                        processingSettings.transcriptionApiKey.orEmpty(),
+                        "user-model",
+                    )
+                else -> OnDeviceTranscriptionProvider(
+                    decoder = MediaCodecAacDecoder(),
+                    recognizers = VoskRecognizers { speechModel.modelPath.takeIf { speechModel.isReady } },
+                    model = speechModel.spec.id,
+                    language = speechModel.spec.language,
                 )
-            } else {
-                StubTranscriptionProvider()
             }
-            val ep = if (processingSettings.configGaps().isEmpty()) {
+            // Summaries need the person's own key; without one the transcript stands alone.
+            val ep = if (ready && processingSettings.extractionProvider.value == ProcessingSettings.PROVIDER_USER_API) {
                 ApiKeyExtractionProvider(
                     validUrl(processingSettings.extractionApiUrl),
                     processingSettings.extractionApiKey.orEmpty(),
                     processingSettings.extractionModel.orEmpty(),
                 )
             } else {
-                StubExtractionProvider()
+                null
             }
             return ProcessingPipeline(
                 segments = segments,
@@ -475,25 +532,6 @@ class AppContainer(context: Context) {
                 settings = processingSettings,
                 configGaps = processingSettings::configGaps,
                 ids = ids,
-                shouldKeepAudioForUpload = { segment ->
-                    links.ensureLoaded()
-                    val uploadEligible =
-                        links.isLinked && segment.start.occurredAtEpochMs >= links.uploadSinceEpochMs
-                    if (!uploadEligible) {
-                        false
-                    } else {
-                        val clips = database.clips()
-                        val plan = clips.planFor(segment.segmentId)
-                        when (plan?.outcome) {
-                            null, "UNREADABLE" -> true
-                            "PLANNED" -> clips.forSegment(segment.segmentId).let { rows ->
-                                rows.isEmpty() || rows.any { it.state != "RECEIVED" }
-                            }
-                            "NO_SPEECH", "EMPTY" -> false
-                            else -> true
-                        }
-                    }
-                },
             )
         }
 
@@ -542,48 +580,11 @@ class AppContainer(context: Context) {
             links = links,
             api = backend,
             onLinked = {
-                uploadScheduler.schedule()
                 if (processingSettings.syncEnabled.value) syncScheduler.schedule()
             },
-            onUnlinked = {
-                uploadScheduler.cancel()
-                syncScheduler.cancel()
-            },
+            onUnlinked = { syncScheduler.cancel() },
             onRevokePending = uploadScheduler::scheduleRevoke,
-            registerKey = { link -> runBlocking { deliveryReceiver.ensureRegistered(link) } },
             signIn = backend,
-        )
-    }
-
-    /** Phase 1 uploads (ADR-0015); runs only while linked, charging, on unmetered networks. */
-    val clipUploader: ClipUploader by lazy {
-        ClipUploader(
-            store = segments,
-            segments = database.segments(),
-            clips = database.clips(),
-            speech = database.speech(),
-            api = backend,
-            link = { links.link.value },
-            uploadSinceEpochMs = { links.uploadSinceEpochMs },
-            ids = ids,
-        )
-    }
-
-    /** This phone's HPKE key; transcripts for phone storage modes are sealed to it. */
-    private val deviceKey by lazy { DeviceKey.keystore(app) }
-
-    val deliveryReceiver: DeliveryReceiver by lazy {
-        DeliveryReceiver(
-            link = { links.link.value },
-            api = backend,
-            uploads = backend,
-            clips = database.clips(),
-            ids = ids,
-            key = { deviceKey },
-            prefs = app.getSharedPreferences(LinkStore.FILE_NAME, Context.MODE_PRIVATE),
-            transcripts = database.transcripts(),
-            cipher = transcriptCipher,
-            store = segments,
         )
     }
 
@@ -595,9 +596,8 @@ class AppContainer(context: Context) {
         TranscriptCipher { aead }
     }
 
-    /** New speech analysis may have produced clips; upload them on the next good window. */
+    /** New speech analysis may have found speech to transcribe. */
     fun afterSpeechAnalysis() {
-        if (links.isLinked) uploadScheduler.schedule()
         if (processingSettings.processingEnabled.value) processingScheduler.schedule()
     }
 
@@ -605,7 +605,6 @@ class AppContainer(context: Context) {
     fun onLinkRejected(link: ServerLink) {
         if (links.clearIfCurrent(link)) {
             Log.w(TAG, "account_link_rejected")
-            uploadScheduler.cancel()
         }
     }
 
@@ -637,8 +636,9 @@ class AppContainer(context: Context) {
         appScope.launch {
             controller.awaitRestored()
             val snapshot = currentWatchSnapshot()
-            WatchDataLayerTransport.publishSnapshot(app, snapshot)
-            watchRevisions.published(snapshot.revision)
+            WatchDataLayerTransport.publishSnapshot(app, snapshot) {
+                watchRevisions.published(snapshot.revision)
+            }
         }
     }
 
@@ -648,6 +648,7 @@ class AppContainer(context: Context) {
     /** Restores the journal and makes any open session visible without a running service. */
     fun restoreOnProcessStart() {
         controller.restore()
+        uploadScheduler.cancelLegacyUpload()
         appScope.launch {
             // The watermark loads on first access (see `watchRevisions`): whichever path
             // touches it first — this collector, or `currentWatchSnapshot` from the service —
@@ -664,8 +665,9 @@ class AppContainer(context: Context) {
             }
                 .distinctUntilChanged()
                 .collect { snapshot ->
-                    WatchDataLayerTransport.publishSnapshot(app, snapshot)
-                    watchRevisions.published(snapshot.revision)
+                    WatchDataLayerTransport.publishSnapshot(app, snapshot) {
+                        watchRevisions.published(snapshot.revision)
+                    }
                 }
         }
         // Keystore work off the main thread; the settings screen shows it once loaded.

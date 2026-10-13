@@ -1,6 +1,6 @@
 # ADR-0023: Hosted Server by Default, Your Own Server Optional
 
-- Status: Accepted
+- Status: Accepted; the server no longer receives speech clips (ADR-0026)
 - Date: 2026-10-13
 - Amends: ADR-0022 decision 1 and 2 (no server-address field). Everything else in ADR-0022
   stands: Offline or Connected, sign-up and sign-in in the app, sync through the connected

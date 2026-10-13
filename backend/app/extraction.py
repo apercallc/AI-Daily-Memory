@@ -11,6 +11,7 @@ Extraction never rewrites a transcript (ADR-0004): it only ever inserts `memory_
 that cite `transcript_segments` by id.
 """
 
+import asyncio
 import logging
 import uuid
 from collections import defaultdict
@@ -129,9 +130,13 @@ class ExtractHandler:
         provider: ExtractionProvider,
         *,
         version: int = 1,
+        timeout_seconds: float = 300.0,
     ) -> None:
         self.sessions = sessions
         self.provider = provider
+        # A hard ceiling around the whole provider call (httpx's timeout is per phase), so a slow
+        # response cannot outlive the job lease and be claimed twice.
+        self.timeout_seconds = timeout_seconds
         # Bumping this forces every future rebuild to regenerate its report even without new
         # evidence (TODO.md "Regenerate when extraction version changes"); it does not
         # retroactively re-run past sessions on its own.
@@ -193,7 +198,11 @@ class ExtractHandler:
         if not lines:
             raise JobError("nothing_transcribed_yet", retryable=False)
 
-        result = await self.provider.extract(tuple(lines))
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                result = await self.provider.extract(tuple(lines))
+        except TimeoutError as e:
+            raise JobError("provider_timeout", retryable=True) from e
         validate(result, len(segments))
 
         async with self.sessions() as db:

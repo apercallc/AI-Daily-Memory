@@ -54,7 +54,7 @@ import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.DailyWindow
 import com.apercallc.aidailymemory.recording.schedule.QuietWindow
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
-import com.apercallc.aidailymemory.recording.server.ServerMode
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.ui.TimeText
@@ -115,11 +115,12 @@ fun RhythmSettingsScreen(
             title = R.string.processing_section,
             summary = when {
                 !processing.enabled -> R.string.processing_status_off
-                processing.ownProvider && processing.configGaps.isNotEmpty() -> R.string.processing_status_incomplete
-                processing.mode == ServerMode.CONNECTED -> R.string.processing_status_connected
-                else -> R.string.processing_status_offline
+                ConfigGap.TRANSCRIPTION_MODEL in processing.configGaps -> R.string.processing_status_model_missing
+                processing.configGaps.isNotEmpty() -> R.string.processing_status_incomplete
+                processing.transcriptionOwnKey -> R.string.processing_status_own
+                else -> R.string.processing_status_phone
             },
-            initiallyExpanded = processing.enabled && processing.ownProvider && processing.configGaps.isNotEmpty(),
+            initiallyExpanded = processing.enabled && processing.configGaps.isNotEmpty(),
         ) {
             ProcessingSettingsSection(
                 processing = processing,

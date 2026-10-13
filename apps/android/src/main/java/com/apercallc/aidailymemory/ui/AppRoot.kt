@@ -104,12 +104,14 @@ fun AppRoot(
     val sessionOpen = capture.uiState.collectAsStateWithLifecycle().value.model.canStop
     // Never while a session is open: the recording indicator and controls must stay reachable.
     if (!onboardingDone && !sessionOpen) {
-        OnboardingScreen { result ->
+        OnboardingScreen(permissions) { result ->
             onOnboardingFinished()
             if (result == OnboardingResult.CONNECT_ACCOUNT) screen = AppScreen.SETTINGS
         }
         return
     }
+    // After the walkthrough: nothing else until the microphone and notifications are allowed.
+    if (showPermissionGate(permissions, sessionOpen)) return
     var openSession by rememberSaveable { mutableStateOf<String?>(null) }
     var openTitle by rememberSaveable { mutableStateOf("") }
     val back = {
@@ -270,10 +272,7 @@ private fun SettingsRoute(
                     onLogIn = viewModel::logIn,
                     onEdit = viewModel::clearConnectError,
                     onDisconnect = viewModel::disconnect,
-                    onRetryUploads = viewModel::retryUploads,
                     onTest = viewModel::testConnection,
-                    onStorageModeChange = viewModel::changeStorageMode,
-                    onStorageModeRetry = viewModel::reloadStorageMode,
                     onOpenWebsite = { openLink(uriHandler, context, HostedServer.WEBSITE_URL) },
                     onServerChange = viewModel::changeServer,
                     clipboardText = { clipboardText(context) },

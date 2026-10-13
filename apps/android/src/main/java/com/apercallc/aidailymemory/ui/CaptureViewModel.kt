@@ -26,6 +26,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import com.apercallc.aidailymemory.ondevice.ModelState
+import com.apercallc.aidailymemory.settings.ProcessingSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +82,22 @@ class CaptureViewModel(
         CaptureUiState(initialModel(), overview = null, stopDecisionSessionId = null),
     )
 
+    /**
+     * The free speech model, while transcribing on the phone is wanted but the model isn't
+     * installed yet; null when there is nothing to ask for.
+     */
+    val speechModelPrompt: StateFlow<ModelState?> = combine(
+        container.speechModel.state,
+        container.processingSettings.processingEnabled,
+        container.processingSettings.transcriptionProvider,
+    ) { model, enabled, provider ->
+        model.takeIf {
+            enabled && provider == ProcessingSettings.PROVIDER_ON_DEVICE && it != ModelState.Installed
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    fun downloadSpeechModel() = container.downloadSpeechModel()
+
     private val _messages = Channel<Int>(Channel.BUFFERED)
 
     /** One-shot user feedback (string resources), shown as snackbars. */
@@ -127,7 +145,16 @@ class CaptureViewModel(
 
     fun mark(kind: MarkerKind) {
         viewModelScope.launch {
-            _messages.send(messageFor(container.placeMarker(kind)))
+            val message = try {
+                messageFor(container.placeMarker(kind))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A database failure must not crash the app mid-recording; the mark is not saved.
+                logFailure(TAG, "marker_failed", e)
+                R.string.marker_failed
+            }
+            _messages.send(message)
         }
     }
 

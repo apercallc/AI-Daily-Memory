@@ -126,6 +126,8 @@ def test_me_reports_the_storage_mode_so_connect_can_verify_a_token(
     assert response.json() == {
         "storage_mode": "reports_cloud",
         "scopes": ["memory:read", "upload:write"],
+        "email": None,
+        "email_verified": False,
     }
     assert client.get("/v1/me").status_code == 401
 

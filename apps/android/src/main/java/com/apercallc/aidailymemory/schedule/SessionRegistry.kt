@@ -26,6 +26,8 @@ class SessionRegistry(
     private val rhythm: () -> DailyRhythm,
     private val now: () -> Instant = Instant::now,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
+    /** Called after a rename is saved, so the new name can reach the account. */
+    private val onRenamed: suspend (sessionId: String) -> Unit = {},
 ) {
     /**
      * Registers on every state change, not only the first: the insert is idempotent, and a
@@ -70,7 +72,16 @@ class SessionRegistry(
             TitleInput.TooLong -> return RenameResult.TOO_LONG
             TitleInput.InvalidCharacters -> return RenameResult.INVALID_CHARACTERS
         }
-        return if (dao.setTitle(sessionId, title) == 1) result else RenameResult.UNKNOWN_SESSION
+        if (dao.setTitle(sessionId, title) != 1) return RenameResult.UNKNOWN_SESSION
+        try {
+            onRenamed(sessionId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The rename itself is saved; a failed hook only delays the server learning of it.
+            logFailure(TAG, "session_rename_hook_failed", e)
+        }
+        return result
     }
 
     private companion object {

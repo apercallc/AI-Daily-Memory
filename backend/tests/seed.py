@@ -18,6 +18,11 @@ USER_TABLES = (
     "memory_items",
     "memory_item_evidence",
     "daily_reports",
+    "memory_item_corrections",
+    "usage_counters",
+    "note_folders",
+    "notes",
+    "deleted_notes",
 )
 
 
@@ -125,6 +130,36 @@ def seed_user_data(
                 "transcript_segment_id) VALUES (:id, :u, :i, :seg)"
             ),
             {"id": uuid.uuid4(), "u": user_id, "i": ids["item"], "seg": ids["segment"]},
+        )
+        c.execute(
+            text(
+                "INSERT INTO memory_item_corrections (id, user_id, memory_item_id, text) "
+                "VALUES (:id, :u, :i, 'mine')"
+            ),
+            {"id": uuid.uuid4(), "u": user_id, "i": ids["item"]},
+        )
+        folder = uuid.uuid4()
+        c.execute(
+            text("INSERT INTO note_folders (id, user_id, name) VALUES (:id, :u, :n)"),
+            {"id": folder, "u": user_id, "n": f"Seeded {folder.hex[:8]}"},
+        )
+        c.execute(
+            text(
+                "INSERT INTO notes (id, user_id, session_id, memory_day, auto_title, folder_id) "
+                "VALUES (:id, :u, :s, :d, 'Seeded note', :f)"
+            ),
+            {"id": uuid.uuid4(), "u": user_id, "s": session_id, "d": now.date(), "f": folder},
+        )
+        c.execute(
+            text("INSERT INTO deleted_notes (user_id, session_id) VALUES (:u, :s)"),
+            {"u": user_id, "s": uuid.uuid4()},
+        )
+        c.execute(
+            text(
+                "INSERT INTO usage_counters (user_id, day, kind, count) VALUES (:u, :d, 'ask', 1) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"u": user_id, "d": now.date()},
         )
         c.execute(
             text(
