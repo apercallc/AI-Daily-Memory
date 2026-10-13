@@ -12,6 +12,7 @@ correct password.
 import asyncio
 import re
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -114,6 +115,10 @@ async def log_in(session: AsyncSession, *, email: str, password: str, device_nam
         await asyncio.to_thread(_hasher.hash, password)
         raise LoginError("invalid_credentials")
     if credential.locked_until is not None and credential.locked_until > now:
+        # Same hashing cost as an unlocked attempt, so response time doesn't reveal the lock.
+        # The outcome is discarded: a locked account rejects even the right password.
+        with suppress(VerificationError, InvalidHashError):
+            await asyncio.to_thread(_hasher.verify, credential.password_hash, password)
         raise LoginError("account_locked")
     try:
         await asyncio.to_thread(_hasher.verify, credential.password_hash, password)

@@ -1,15 +1,42 @@
 """Bounded process-local sliding-window limits for public authentication routes."""
 
+import logging
 import math
+import os
 import time
 from collections import OrderedDict, deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from ipaddress import ip_address
 
 from fastapi import HTTPException, Request
 
 from app.config import Settings
+
+logger = logging.getLogger("app.auth_rate_limit")
+
+
+def warn_if_client_ips_collapse(
+    settings: Settings, environ: Mapping[str, str] | None = None
+) -> bool:
+    """Logs an error at startup when every client would share one rate-limit bucket.
+
+    Behind a managed platform's proxy (it injects `PORT`) the socket peer is the proxy, so
+    with `TRUST_RAILWAY_X_REAL_IP` off all signups and logins count against one address: one
+    abusive client locks everyone out of the public auth routes. Failing the boot would break
+    deploys, so it is a loud log line instead; returns whether the warning fired."""
+    env = os.environ if environ is None else environ
+    if (
+        env.get("PORT")
+        and not settings.trust_railway_x_real_ip
+        and settings.app_env in ("staging", "production")
+    ):
+        logger.error(
+            "auth_rate_limit_shared_proxy_bucket",
+            extra={"fix": "set TRUST_RAILWAY_X_REAL_IP=true behind Railway's public edge"},
+        )
+        return True
+    return False
 
 
 class AuthRateLimiter:

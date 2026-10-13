@@ -12,7 +12,7 @@ from app.api.reports import router as reports_router
 from app.api.signup import router as signup_router
 from app.api.sync import router as sync_router
 from app.api.uploads import router as uploads_router
-from app.auth_rate_limit import AuthRateLimiter
+from app.auth_rate_limit import AuthRateLimiter, warn_if_client_ips_collapse
 from app.config import Settings, get_settings
 from app.db import Database
 from app.errors import ErrorResponse, install_error_handlers
@@ -70,6 +70,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        warn_if_client_ips_collapse(settings)
         owned = None
         db = database
         if db is None and settings.database_url is not None:

@@ -182,3 +182,35 @@ async def test_a_correct_password_clears_the_failed_attempt_counter(database: Da
                 device_name="b",
             )
         assert caught.value.code == "invalid_credentials"
+
+
+async def test_a_locked_account_still_pays_the_hashing_cost(
+    database: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.credentials as credentials_module
+
+    await _sign_up(database, email="timing@example.com", password="x" * 12, device_name="a")
+    for _ in range(MAX_FAILED_ATTEMPTS):
+        with pytest.raises(LoginError):
+            await _log_in(
+                database,
+                email="timing@example.com",
+                password="wrong-pw12",  # noqa: S106
+                device_name="b",
+            )
+
+    verified: list[str] = []
+    real = credentials_module._hasher
+
+    class CountingHasher:
+        def verify(self, hash_: str, password: str) -> bool:
+            verified.append(password)
+            return real.verify(hash_, password)
+
+    monkeypatch.setattr(credentials_module, "_hasher", CountingHasher())
+    with pytest.raises(LoginError) as locked:
+        await _log_in(database, email="timing@example.com", password="x" * 12, device_name="b")
+
+    # The right password is rejected, but only after the same verify work as an open account.
+    assert locked.value.code == "account_locked"
+    assert verified == ["x" * 12]
