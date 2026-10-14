@@ -57,6 +57,6 @@ export function authView({ onSignedIn }) {
     h("p", { class: "lede" }, "Review what your day added up to, correct it, and ask it questions."),
     form, forgot,
     h("p", { class: "faint mt18" },
-      "Use the same email on your phone (Settings → Account & server) to connect it. Audio stays on your phone. You choose whether transcript text syncs with this account."),
+      "Use the same email on your phone (Settings → Account & server) to connect it. Sync never includes audio. You choose whether transcript text syncs with this account; a transcription service you choose receives audio directly."),
   ));
 }

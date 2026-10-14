@@ -184,9 +184,12 @@ export async function notesView() {
     }
     if (state.view === "all" && state.range === "all") {
       return h("div", { class: "card empty" }, h("h3", null, "Your notes will appear here"),
-        h("p", null, "Each recording from your phone becomes a note you can rename, file in a folder, star and search."),
-        h("p", null, "On your phone, connect this account and leave Sync on (Settings → Daily reports). Audio never leaves the phone; only the words do, and only the parts you choose to sync."),
-        h("p", null, h("a", { href: "#/account" }, "How to connect your phone")));
+        h("p", null, "Your first phone recording becomes a note here. Audio is never included in account sync."),
+        h("ol", { class: "olist" },
+          h("li", null, "Install the Android app on your phone."),
+          h("li", null, "In Settings → Account & server, sign in with this account."),
+          h("li", null, "Leave Sync on in Settings → Daily reports. Full transcript sync is optional.")),
+        h("p", null, h("a", { class: "btn", href: "#/account?section=phone" }, "Set up phone sync")));
     }
     const messages = {
       starred: ["Nothing starred yet", "Tap the star on a note to keep it here."],

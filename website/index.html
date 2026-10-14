@@ -71,9 +71,10 @@ a { color: inherit; }
   display: flex; align-items: center; gap: 9px;
 }
 .wordmark .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); flex: none; }
-.topnav { display: flex; align-items: center; gap: 26px; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.topnav { display: flex; align-items: center; gap: 22px; margin-left: auto; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; }
 .topnav a { text-decoration: none; color: var(--ink-soft); }
 .topnav a:hover { color: var(--red); }
+.top-actions { display: flex; align-items: center; flex: none; }
 .btn {
   font-family: var(--mono); font-size: 12.5px; font-weight: 500;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -354,8 +355,11 @@ footer { background: var(--paper-deep); border-top: 1px solid var(--rule); paddi
   section { padding: 72px 0; }
   .hero { padding: 64px 0 60px; }
   .movements, .personas { grid-template-columns: 1fr; }
-  .topbar .wrap { align-items: flex-start; }
-  .topnav { width: 100%; gap: 4px 20px; }
+  .topbar .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; }
+  .topbar .wordmark { grid-column: 1; grid-row: 1; white-space: nowrap; }
+  .top-actions { grid-column: 2; grid-row: 1; }
+  .top-actions .btn { padding-inline: 16px; }
+  .topnav { grid-column: 1 / -1; grid-row: 2; width: 100%; justify-content: space-between; gap: 4px 14px; margin-left: 0; font-size: 11.5px; }
   .foot-links { gap: 32px; }
 }
 :focus-visible { outline: 2.5px solid var(--red); outline-offset: 3px; border-radius: 4px; }
@@ -364,7 +368,7 @@ body { overflow-wrap: anywhere; }
 .wrap { padding-inline: clamp(20px, 4vw, 28px); }
 .topnav { flex-wrap: wrap; }
 .topnav a, .foot-links a { display: inline-flex; align-items: center; min-height: 48px; }
-.topnav .btn { color: #fff; }
+.top-actions .btn { color: #fff; }
 .btn { min-height: 48px; max-width: 100%; }
 .hero-grid > *, .day-mock > *, .priv-grid > *, .dl-card > * { min-width: 0; }
 .health-card { width: 100%; }
@@ -427,14 +431,14 @@ main:focus { outline: none; }
   <div class="wrap">
     <a class="wordmark" href="#top"><span class="dot" aria-hidden="true"></span>AI Daily Memory</a>
     <nav class="topnav" aria-label="Main navigation">
-      <a href="#what">The idea</a>
+      <a href="#what">How it works</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
-          <a href="/privacy.html">Privacy policy</a>
-          <a href="/terms.html">Terms</a>
       <a href="/app/">Sign in</a>
-      <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download</a>
     </nav>
+    <div class="top-actions">
+      <a class="btn btn-red js-apk-dl" href="https://github.com/apercallc/AI-Daily-Memory/releases/latest/download/ai-daily-memory-phone.apk" download>Download</a>
+    </div>
   </div>
 </header>
 
@@ -601,7 +605,7 @@ main:focus { outline: none; }
           </ul>
         </div>
       </div>
-      <div class="flow-note"><strong>No account? Everything still works.</strong> Recording, transcription and notes all happen on the phone, and audio never leaves it. An account only syncs your notes (never audio) so you can read and search them on the web and through the API. Our server does no transcription or summarizing, and no AI provider is called from it unless you turn on a setting yourself.</div>
+      <div class="flow-note"><strong>No account? Everything still works.</strong> By default, recording, transcription and notes stay on the phone. If you choose your own transcription service, the phone sends audio directly to it. An account syncs your notes (never audio) so you can read and search them on the web and through the API. Our server does no transcription or summarizing; your phone contacts an AI provider only after you enable it.</div>
     </div>
   </section>
 
@@ -623,7 +627,7 @@ main:focus { outline: none; }
           </div>
           <div class="priv-item">
             <span class="n">3</span>
-            <div><h3>Audio never leaves your phone</h3><p>Speech is turned into text on the phone and the audio is deleted afterwards. There is no audio upload in the app and no server endpoint it could go to.</p></div>
+            <div><h3>Audio stays on your phone by default</h3><p>With on-phone transcription, speech is turned into text on the phone and the audio is deleted afterwards. The app does not upload audio to our server. If you enable your own transcription service, the phone sends audio directly to that provider.</p></div>
           </div>
           <div class="priv-item">
                       <span class="n">4</span>
@@ -643,8 +647,8 @@ main:focus { outline: none; }
           <p class="modes-sub">Your choice, changeable in settings.</p>
           <div class="mode">
             <div class="mode-name">On this phone <span class="badge">Default</span></div>
-            <p>Audio, transcripts and any summaries stay on the phone. Nothing is sent to our server, and no account is needed.</p>
-            <div class="leak off-cloud">→ nothing leaves the phone</div>
+            <p>By default, audio, transcripts and summaries stay on the phone. No account or server sync is needed. A transcription or AI service you choose receives the data needed for that service directly from your phone.</p>
+            <div class="leak off-cloud">→ nothing syncs to our server</div>
           </div>
           <div class="mode">
             <div class="mode-name">Synced to my account</div>
@@ -670,7 +674,7 @@ main:focus { outline: none; }
             <li>Sleep schedule, quiet times, and memory days</li>
             <li>Sessions with automatic titles and transcripts view</li>
             <li>Watch remote control: start, pause, resume, stop, highlight, Quick Note</li>
-            <li>Nightly speech analysis while charging (nothing leaves the phone)</li>
+            <li>Nightly on-phone speech processing by default (your own services receive only the data you choose to send)</li>
             <li>Account sign-in and note sync when connected</li>
             <li>Free on-phone transcription (English), new and still being tested on real phones</li>
           </ul>
@@ -776,6 +780,11 @@ main:focus { outline: none; }
           <a href="https://github.com/apercallc/AI-Daily-Memory" target="_blank" rel="noopener">GitHub</a>
           <a href="https://github.com/apercallc/AI-Daily-Memory/releases" target="_blank" rel="noopener">Releases</a>
           <a href="https://github.com/apercallc/AI-Daily-Memory/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+        </div>
+        <div>
+          <span class="fh">Legal</span>
+          <a href="/privacy.html">Privacy policy</a>
+          <a href="/terms.html">Terms</a>
         </div>
       </div>
     </div>

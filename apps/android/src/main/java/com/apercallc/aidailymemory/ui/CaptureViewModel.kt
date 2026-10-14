@@ -9,6 +9,7 @@ import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.capture.CaptureOverview
 import com.apercallc.aidailymemory.capture.SessionDataDeletionResult
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.marker.MarkerDecision
 import com.apercallc.aidailymemory.recording.marker.MarkerKind
 import com.apercallc.aidailymemory.recording.presentation.CaptureStatusModel
@@ -95,6 +96,30 @@ class CaptureViewModel(
             enabled && provider == ProcessingSettings.PROVIDER_ON_DEVICE && it != ModelState.Installed
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    private val summaryConfigGaps = setOf(
+        ConfigGap.EXTRACTION_URL,
+        ConfigGap.EXTRACTION_KEY,
+        ConfigGap.EXTRACTION_MODEL,
+    )
+
+    /** Whether the optional extraction service has all settings needed to create summaries. */
+    val summariesConfigured: StateFlow<Boolean> = combine(
+        container.processingSettings.extractionProvider,
+        container.processingSettings.configRevision,
+    ) { provider, _ -> summariesAreConfigured(provider) }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+        initialValue = summariesAreConfigured(),
+    )
+
+    private fun summariesAreConfigured(
+        provider: String = container.processingSettings.extractionProvider.value,
+    ): Boolean {
+        if (provider != ProcessingSettings.PROVIDER_USER_API) return false
+        val configGaps = container.processingSettings.configGaps()
+        return summaryConfigGaps.none(configGaps::contains)
+    }
 
     fun downloadSpeechModel() = container.downloadSpeechModel()
 

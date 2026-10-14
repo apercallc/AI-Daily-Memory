@@ -61,7 +61,6 @@
     <string name="action_not_now">Not now</string>
     <string name="action_open_settings">Open settings</string>
     <string name="action_ok">OK</string>
-    <string name="action_battery_settings">Open battery settings</string>
 
     <string name="stat_captured">Saved audio</string>
     <string name="stat_pending">Only on this phone</string>
@@ -79,7 +78,7 @@
     <string name="duration_under_minute">Under 1 min</string>
 
     <string name="permission_mic_title">Allow microphone</string>
-    <string name="permission_mic_body">AI Daily Memory records your day so you can recall decisions and promises later. Audio stays encrypted on this phone. You can pause or stop from the notification at any time.</string>
+    <string name="permission_mic_body">AI Daily Memory records your day so you can recall decisions and promises later. Audio is encrypted on this phone. If you choose a transcription service, it receives audio directly. You can pause or stop from the notification at any time.</string>
     <string name="permission_notifications_title">Allow notifications</string>
     <string name="permission_notifications_body">While recording, a notification always shows that the microphone is on, with Pause and Stop. Recording never happens without it.</string>
     <string name="permission_gate_title">Allow microphone and notifications</string>
@@ -99,7 +98,7 @@
     <string name="battery_body">Many phones quietly shut down background apps to save battery. If that happens here, your day stops being recorded without a warning.</string>
     <string name="battery_steps_samsung">On Samsung phones: open Battery for this app and choose Unrestricted. Then go to Settings, Battery, Background usage limits, and make sure AI Daily Memory is not under Sleeping apps or Deep sleeping apps. Turn off \"Put unused apps to sleep\" if it keeps coming back.</string>
     <string name="action_app_battery_settings">App battery settings</string>
-    <string name="battery_steps">Fix: open battery settings, choose AI Daily Memory, and set it to Unrestricted or Don\'t optimize.</string>
+    <string name="battery_steps">Open App battery settings below. On the app info screen, open Battery and allow background activity or choose Unrestricted. Settings labels vary by phone.</string>
 
     <string name="marker_highlighted">Highlighted the last 30 seconds</string>
     <string name="marker_quick_note">Quick note started. Speak now; the next minute is flagged as a note.</string>
@@ -224,7 +223,7 @@
     <string name="quiet_every_day">Every day</string>
     <string name="quiet_weekdays">Weekdays</string>
     <string name="audio_section">Recorded audio</string>
-    <string name="audio_explainer">Your transcripts are what\'s kept. Audio is only needed until it has been transcribed, and it never leaves this phone.</string>
+    <string name="audio_explainer">This controls how long audio is kept on this phone. If you choose a transcription service, it receives audio directly from your phone.</string>
     <string name="retention_transcript">Transcripts only (recommended)</string>
     <string name="retention_7">Keep audio on this phone for 7 days</string>
     <string name="retention_30">Keep audio on this phone for 30 days</string>
@@ -239,7 +238,7 @@
     <string name="schedule_unreadable">Your previous schedule couldn\'t be read, so none is active. Set it again below.</string>
     <!-- Account link (Phase 1 uploads) -->
     <string name="account_title">Account &amp; server</string>
-    <string name="account_processing_disclosure">Connecting syncs your notes (summaries and, if you choose, transcripts) to aidailymem.apercallc.com over an encrypted connection so you can read them on the web and through the API. Audio never leaves your phone. Recording works without an account.</string>
+    <string name="account_processing_disclosure">Connecting syncs your notes (summaries and, if you choose, transcripts) to aidailymem.apercallc.com over an encrypted connection so you can read them on the web and through the API. Sync does not include audio; a transcription service you choose receives audio directly. Recording works without an account.</string>
     <string name="account_rejected">Your account connection was signed out. Sign in again to reconnect.</string>
     <string name="account_unreadable">This phone can no longer read its saved connection. Connect again.</string>
     <string name="account_token">Device token</string>
@@ -251,7 +250,7 @@
     <string name="account_connect">Connect</string>
     <string name="account_checking">Checking…</string>
     <string name="account_connected">Connected to %1$s</string>
-    <string name="account_upload_rules">Notes sync to this account. Audio stays on this phone.</string>
+    <string name="account_upload_rules">Notes sync to this account. Audio is not included in sync.</string>
     <string name="account_disconnect">Disconnect</string>
     <string name="account_revoke_manual">An old connection couldn\'t be revoked from this phone. Ask for its device token to be revoked on the server.</string>
     <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
@@ -286,7 +285,7 @@
     <string name="processing_status_incomplete">Needs setup</string>
     <string name="processing_transcription_url_hint">Your speech-to-text service, like https://api.deepgram.com/v1/listen</string>
     <string name="processing_extraction_url_hint">An OpenAI-compatible chat endpoint, like https://api.openai.com/v1/chat/completions</string>
-    <string name="processing_explainer">Your phone turns recordings into text, then deletes the audio. Nothing is sent anywhere unless you add your own service key.</string>
+    <string name="processing_explainer">By default, your phone transcribes recordings and then deletes the audio. If you add your own transcription or summary key, selected audio or transcript text goes directly to that provider.</string>
     <string name="processing_enabled">Transcribe my recordings</string>
     <string name="processing_disabled_hint">Transcribing is off. Your audio stays on this phone untouched.</string>
     <string name="processing_transcription">Transcription</string>
@@ -315,8 +314,11 @@
     <!-- Daily memory / report UI -->
     <string name="memory_title">Today\'s Memory</string>
     <string name="memory_empty_title">No memory yet</string>
-    <string name="memory_empty">Record a session and let your phone transcribe it. Decisions, actions and ideas from your day appear here once you turn on summaries.</string>
-    <string name="memory_empty_action">Open settings</string>
+    <string name="memory_empty">Record a session. By default, your phone transcribes recordings. Decision and action summaries are optional and need an AI service you choose. Transcript text goes directly from your phone to that service only after you turn summaries on.</string>
+    <string name="memory_empty_action">Set up summaries</string>
+    <string name="memory_setup_title">Get decision and action summaries</string>
+    <string name="memory_setup_body">Choose an AI service and add your own key in Settings. When enabled, transcript text goes directly from your phone to that service. You can keep recording without summaries; transcription can use the free phone model or a service you choose.</string>
+    <string name="memory_setup_action">Set up summaries</string>
     <string name="memory_load_error">Memory could not be loaded. Your saved data is unchanged.</string>
     <string name="memory_retry">Try again</string>
     <string name="memory_decisions">Decisions</string>
@@ -333,7 +335,7 @@
     <!-- Account: one hosted server, offline or connected -->
     <string name="account_offline_status">Offline. Nothing leaves this phone.</string>
     <string name="account_steps">To connect: 1) Choose Create account or Sign in. 2) Enter your email and password. 3) Tap the button. The app checks the connection and saves it, so there is no address or token to copy.</string>
-    <string name="account_processing_disclosure_custom">Connecting syncs your notes to %1$s, the server you chose, over an encrypted connection. Audio never leaves your phone. Recording works without an account.</string>
+    <string name="account_processing_disclosure_custom">Connecting syncs your notes to %1$s, the server you chose, over an encrypted connection. Sync does not include audio; a transcription service you choose receives audio directly. Recording works without an account.</string>
     <string name="account_server_credentials_warning">Your email and password, or a pasted token, go to %1$s, not to %2$s. Only continue if you run that server. It will also receive the notes you choose to sync.</string>
     <string name="account_server_default">Server: %1$s (default)</string>
     <string name="account_server_custom">Server: %1$s (your own)</string>
@@ -405,15 +407,15 @@
     <string name="onboarding_welcome_body">AI Daily Memory listens through the day, keeps only the parts where people are talking, and turns them into text on your phone. It always shows when it is recording, and you can pause or stop any time from your phone or your watch.</string>
     <string name="onboarding_where_title">Where should your memory live?</string>
     <string name="onboarding_where_body">You can change this later in Settings.</string>
-    <string name="onboarding_offline_title">Offline</string>
-    <string name="onboarding_offline_body">Nothing leaves your phone. Recordings are transcribed here, on the phone. No account needed.</string>
+    <string name="onboarding_offline_title">Keep notes on this phone</string>
+    <string name="onboarding_offline_body">No account is needed, and notes stay on this phone. By default, recordings are transcribed here. If you choose your own transcription service in Settings, that service receives the audio.</string>
     <string name="onboarding_connect_title">Sync my notes</string>
-    <string name="onboarding_connect_body">An account on aidailymem.apercallc.com stores your notes so you can read and search them on the web or through the API. Audio never leaves your phone.</string>
+    <string name="onboarding_connect_body">After this walkthrough, sign in to your account in Settings. Synced notes can be read on the web. Full transcripts are a separate choice. By default, audio stays on your phone; if you choose a transcription service, it receives audio directly.</string>
     <string name="onboarding_allow_title">Allow what recording needs</string>
-    <string name="onboarding_allow_body">When you first tap Start, Android asks for permission to use the microphone and, on newer versions, to show notifications.</string>
-    <string name="onboarding_allow_detail">Microphone, to hear the conversation. Notifications, so the recording indicator is always visible. Some phones also close apps to save battery; if that happens, Today shows a card that takes you straight to the right setting.</string>
+    <string name="onboarding_allow_body">Android asks for microphone access and, on newer versions, notification access on this step. Allowing them prepares the app; it does not start recording. If you skip, a permission screen appears before Today. Recording needs both permissions.</string>
+    <string name="onboarding_allow_detail">Microphone access lets the phone hear the conversation. Notifications keep the recording indicator visible. Recording never starts until you tap Start. Some phones also close apps to save battery; if that happens, Today shows a card linking to the app's battery settings.</string>
     <string name="onboarding_ready_title">You\'re ready</string>
-    <string name="onboarding_ready_body">Open the Today tab and tap Start. Before the first transcript, download the free speech model in Settings (about 40 MB, once). A paired watch can start, pause and stop the same recording; the phone\'s microphone does the listening, so only one device records at a time.</string>
+    <string name="onboarding_ready_body">Open Today and tap Start. On-phone transcription uses a free speech model (about 40 MB, once); Today shows a card to download it. If you choose your own transcription service in Settings, that service receives audio instead. Decision and action summaries are optional and use an AI service you choose. A paired watch controls the phone\'s microphone; it does not record by itself.</string>
     <!-- On-phone speech model and optional own-service keys (ADR-0026) -->
     <string name="processing_transcription_own">Use my own transcription service</string>
     <string name="processing_transcription_own_body">Sends audio to a service you choose, with your own key, instead of the free model on this phone.</string>

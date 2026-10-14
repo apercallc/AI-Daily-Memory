@@ -128,7 +128,22 @@ async function render() {
   if (mine !== renderToken) return;
   main.append(view);
   main.classList.add("page-enter");
-  if (mine === renderToken) main.focus({ preventScroll: true });
+  const [routePath, routeQuery = ""] = location.hash.replace(/^#\/?/, "").split("?");
+  const section = routePath === "account" ? new URLSearchParams(routeQuery).get("section") : null;
+  const target = section === "phone" ? document.getElementById("settings-phone") : null;
+  if (target) {
+    target.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+    const heading = target.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
+  } else if (mine === renderToken) {
+    main.focus({ preventScroll: true });
+  }
 }
 
 window.addEventListener("hashchange", render);

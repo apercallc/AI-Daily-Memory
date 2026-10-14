@@ -18,6 +18,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,10 +36,13 @@ import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -87,8 +92,28 @@ fun RhythmSettingsScreen(
     processingActions: ProcessingActions = ProcessingActions(),
     sync: SyncUi = SyncUi(),
     syncActions: SyncActions = SyncActions(),
+    processingExpandRequest: Int = 0,
+    accountFocusRequest: Int = 0,
+    onProcessingExpandConsumed: () -> Unit = {},
+    onAccountFocusConsumed: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
+    val processingBringIntoView = remember { BringIntoViewRequester() }
+    val accountBringIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(processingExpandRequest) {
+        if (processingExpandRequest > 0) {
+            // Let the card expand before asking the scroll container to reveal it.
+            withFrameNanos { }
+            processingBringIntoView.bringIntoView()
+            onProcessingExpandConsumed()
+        }
+    }
+    LaunchedEffect(accountFocusRequest) {
+        if (accountFocusRequest > 0) {
+            accountBringIntoView.bringIntoView()
+            onAccountFocusConsumed()
+        }
+    }
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
@@ -109,10 +134,13 @@ fun RhythmSettingsScreen(
         // One server, and only one: the account first, then what it does for the phone.
         GroupLabel(R.string.settings_group_account)
         account?.let {
-            GroupCard { AccountSection(account = it, callbacks = accountCallbacks) }
+            GroupCard(modifier = Modifier.bringIntoViewRequester(accountBringIntoView)) {
+                AccountSection(account = it, callbacks = accountCallbacks)
+            }
         }
         ExpandableCard(
             title = R.string.processing_section,
+            modifier = Modifier.bringIntoViewRequester(processingBringIntoView),
             summary = when {
                 !processing.enabled -> R.string.processing_status_off
                 ConfigGap.TRANSCRIPTION_MODEL in processing.configGaps -> R.string.processing_status_model_missing
@@ -121,6 +149,7 @@ fun RhythmSettingsScreen(
                 else -> R.string.processing_status_phone
             },
             initiallyExpanded = processing.enabled && processing.configGaps.isNotEmpty(),
+            expandRequest = processingExpandRequest,
         ) {
             ProcessingSettingsSection(
                 processing = processing,
@@ -206,10 +235,10 @@ private fun GroupLabel(@StringRes text: Int) {
 
 /** A rounded surface that holds one settings topic. */
 @Composable
-private fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
+private fun GroupCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
@@ -232,10 +261,14 @@ private fun ExpandableCard(
     modifier: Modifier = Modifier,
     @StringRes label: Int? = null,
     initiallyExpanded: Boolean = false,
+    expandRequest: Int = 0,
     content: @Composable () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    LaunchedEffect(expandRequest) {
+        if (expandRequest > 0) expanded = true
+    }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(spacing.cardCorner),

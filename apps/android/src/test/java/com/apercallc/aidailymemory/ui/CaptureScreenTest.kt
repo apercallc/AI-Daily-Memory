@@ -1,5 +1,7 @@
 package com.apercallc.aidailymemory.ui
 
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -74,7 +76,7 @@ class CaptureScreenTest {
                     onRetry = { actions += "retry" },
                     onStop = { actions += "stop" },
                     onMark = { actions += "mark:$it" },
-                    onBatterySettings = { actions += "battery" },
+                    onAppBatterySettings = { actions += "app-battery" },
                 )
               }
             }
@@ -187,8 +189,16 @@ class CaptureScreenTest {
         show(RecordingStatus.IDLE, batteryRestricted = true)
 
         compose.onNodeWithText("Recording may stop in the background").assertExists()
-        compose.onNodeWithText("Open battery settings").performClick()
-        assertEquals(listOf("battery"), actions)
+        compose.onNodeWithText("App battery settings").performClick()
+        assertEquals(listOf("app-battery"), actions)
+    }
+
+    @Test
+    fun `battery settings intent opens this app info page`() {
+        val intent = appBatterySettingsIntent("com.example.memory")
+
+        assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, intent.action)
+        assertEquals(Uri.fromParts("package", "com.example.memory", null), intent.data)
     }
 
     @Test

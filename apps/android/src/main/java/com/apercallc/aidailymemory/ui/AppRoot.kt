@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -106,13 +107,23 @@ fun AppRoot(
     onOnboardingFinished: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.CAPTURE) }
+    var processingExpandRequest by rememberSaveable { mutableIntStateOf(0) }
+    var accountFocusRequest by rememberSaveable { mutableIntStateOf(0) }
+    val summariesConfigured by capture.summariesConfigured.collectAsStateWithLifecycle()
+    val openProcessingSettings = {
+        processingExpandRequest++
+        screen = AppScreen.SETTINGS
+    }
     // A fresh install starts with the walkthrough; finishing (or skipping) it is remembered.
     val sessionOpen = capture.uiState.collectAsStateWithLifecycle().value.model.canStop
     // Never while a session is open: the recording indicator and controls must stay reachable.
     if (!onboardingDone && !sessionOpen) {
         OnboardingScreen(permissions) { result ->
             onOnboardingFinished()
-            if (result == OnboardingResult.CONNECT_ACCOUNT) screen = AppScreen.SETTINGS
+            if (result == OnboardingResult.CONNECT_ACCOUNT) {
+                accountFocusRequest++
+                screen = AppScreen.SETTINGS
+            }
         }
         return
     }
@@ -170,6 +181,8 @@ fun AppRoot(
                                     viewModel = capture,
                                     updates = updates(),
                                     permissions = permissions,
+                                    summariesConfigured = summariesConfigured,
+                                    onOpenProcessingSettings = openProcessingSettings,
                                     onOpenSettings = { screen = AppScreen.SETTINGS },
                                 )
                                 AppScreen.SESSIONS -> SessionsRoute(sessions(), onStartRecording = { screen = AppScreen.CAPTURE }) { id, title ->
@@ -177,8 +190,16 @@ fun AppRoot(
                                     openTitle = title
                                     screen = AppScreen.TRANSCRIPT
                                 }
-                                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = { screen = AppScreen.SETTINGS })
-                                AppScreen.SETTINGS -> SettingsRoute(settings(), updates(), onBack = back)
+                                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = openProcessingSettings)
+                                AppScreen.SETTINGS -> SettingsRoute(
+                                    settings(),
+                                    updates(),
+                                    onBack = back,
+                                    processingExpandRequest = processingExpandRequest,
+                                    accountFocusRequest = accountFocusRequest,
+                                    onProcessingExpandConsumed = { processingExpandRequest = 0 },
+                                    onAccountFocusConsumed = { accountFocusRequest = 0 },
+                                )
                                 AppScreen.TRANSCRIPT -> {
                                     val id = openSession
                                     if (id != null) {
@@ -282,6 +303,10 @@ private fun SettingsRoute(
     viewModel: SettingsViewModel,
     updates: UpdateViewModel,
     onBack: () -> Unit,
+    processingExpandRequest: Int,
+    accountFocusRequest: Int,
+    onProcessingExpandConsumed: () -> Unit,
+    onAccountFocusConsumed: () -> Unit,
 ) {
     val rhythm by viewModel.rhythm.collectAsStateWithLifecycle()
     val retention by viewModel.retention.collectAsStateWithLifecycle()
@@ -333,11 +358,15 @@ private fun SettingsRoute(
             onUpdateDownload = updates::download,
             onUpdateInstall = updates::install,
             processing = processing,
+            processingExpandRequest = processingExpandRequest,
+            onProcessingExpandConsumed = onProcessingExpandConsumed,
             processingActions = remember(viewModel, uriHandler, context) {
                 viewModel.processingActions.copy(onOpenLink = { openLink(uriHandler, context, it) })
             },
             sync = sync,
             syncActions = viewModel.syncActions,
+            accountFocusRequest = accountFocusRequest,
+            onAccountFocusConsumed = onAccountFocusConsumed,
             modifier = modifier,
         )
     }

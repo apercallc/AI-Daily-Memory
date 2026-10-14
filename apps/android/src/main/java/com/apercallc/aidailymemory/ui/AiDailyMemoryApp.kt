@@ -128,6 +128,8 @@ fun AiDailyMemoryApp(
     updates: UpdateViewModel,
     permissions: Permissions,
     onOpenSettings: () -> Unit = {},
+    summariesConfigured: Boolean = false,
+    onOpenProcessingSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val speechModelPrompt by viewModel.speechModelPrompt.collectAsStateWithLifecycle()
@@ -201,6 +203,8 @@ fun AiDailyMemoryApp(
         batteryRestricted = batteryRestricted,
         speechModel = speechModelPrompt,
         onDownloadSpeechModel = viewModel::downloadSpeechModel,
+        summariesConfigured = summariesConfigured,
+        onOpenProcessingSettings = onOpenProcessingSettings,
         indicator = indicator,
         onNotificationSettings = {
             open(
@@ -220,14 +224,8 @@ fun AiDailyMemoryApp(
         onRetry = { viewModel.send(RecordingService.ACTION_RESUME) },
         onStop = { viewModel.send(RecordingService.ACTION_STOP) },
         onMark = viewModel::mark,
-        onBatterySettings = {
-            open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-        },
         onAppBatterySettings = {
-            open(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    .setData(Uri.fromParts("package", context.packageName, null)),
-            )
+            open(appBatterySettingsIntent(context.packageName))
         },
         vendor = remember { BatteryGuidance.vendorOf(Build.MANUFACTURER) },
     )
@@ -358,17 +356,19 @@ fun CaptureScreen(
     onRetry: () -> Unit,
     onStop: () -> Unit,
     onMark: (MarkerKind) -> Unit,
-    onBatterySettings: () -> Unit,
+    onAppBatterySettings: () -> Unit,
     modifier: Modifier = Modifier,
-    onAppBatterySettings: () -> Unit = {},
     vendor: DeviceVendor = DeviceVendor.OTHER,
     indicator: IndicatorVisibility = IndicatorVisibility.VISIBLE,
     onNotificationSettings: () -> Unit = {},
     origin: RecordingOrigin? = null,
     speechModel: ModelState? = null,
     onDownloadSpeechModel: () -> Unit = {},
+    summariesConfigured: Boolean = false,
+    onOpenProcessingSettings: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
+    var setupDismissed by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -404,9 +404,8 @@ fun CaptureScreen(
             }
             // Above the status card on purpose: it is the one setting that silently ends a day
             // of recording, so it must not hide below the fold.
-            if (batteryRestricted) BatteryCard(vendor, onBatterySettings, onAppBatterySettings)
+            if (batteryRestricted) BatteryCard(vendor, onAppBatterySettings)
             speechModel?.let { SpeechModelCard(it, onDownloadSpeechModel) }
-
             CaptureStatusCard(model = model, overview = overview)
             // Only while a session is open: it says whose button started the recording.
             if (origin != null && model.canStop) {
@@ -457,6 +456,13 @@ fun CaptureScreen(
                     ),
                     onClick = onStop,
                 ) { Text(stringResource(R.string.action_end_session)) }
+            }
+
+            if (!summariesConfigured && !setupDismissed && !model.canStop) {
+                MemorySetupCard(
+                    onSetup = onOpenProcessingSettings,
+                    onDismiss = { setupDismissed = true },
+                )
             }
         }
     }
@@ -777,9 +783,42 @@ private fun SpeechModelCard(state: ModelState, onDownload: () -> Unit) {
 }
 
 @Composable
+private fun MemorySetupCard(onSetup: () -> Unit, onDismiss: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.memory_setup_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(text = stringResource(R.string.memory_setup_body))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                Button(
+                    onClick = onSetup,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.memory_setup_action)) }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.action_not_now)) }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BatteryCard(
     vendor: DeviceVendor,
-    onBatterySettings: () -> Unit,
     onAppBatterySettings: () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
@@ -811,17 +850,17 @@ private fun BatteryCard(
             )
             Button(
                 modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                onClick = onBatterySettings,
-            ) { Text(stringResource(R.string.action_battery_settings)) }
-            if (vendor == DeviceVendor.SAMSUNG) {
-                OutlinedButton(
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                    onClick = onAppBatterySettings,
-                ) { Text(stringResource(R.string.action_app_battery_settings)) }
-            }
+                onClick = onAppBatterySettings,
+            ) { Text(stringResource(R.string.action_app_battery_settings)) }
         }
     }
 }
+
+internal fun appBatterySettingsIntent(packageName: String): Intent =
+    Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", packageName, null),
+    )
 
 private const val MS_PER_MINUTE = 60_000L
 private const val MINUTES_PER_HOUR = 60L
