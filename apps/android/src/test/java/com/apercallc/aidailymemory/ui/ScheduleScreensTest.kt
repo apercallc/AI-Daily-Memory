@@ -77,7 +77,7 @@ class ScheduleScreensTest {
             }
         }
         compose.onNodeWithText("No memory yet").assertExists()
-        compose.onNodeWithText("Open settings").performClick()
+        compose.onNodeWithText("Set up summaries").performClick()
         assertEquals(1, opened)
     }
 
