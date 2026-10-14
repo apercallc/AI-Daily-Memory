@@ -19,7 +19,7 @@ playServicesWearable = "20.0.1"
 serialization = "1.11.0"
 sentry = "8.60.0"
 vosk = "0.3.75"
-jna = "5.13.0"
+jna = "5.19.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
