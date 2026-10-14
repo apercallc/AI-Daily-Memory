@@ -31,8 +31,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalTranscriptLineEntity::class,
         ProcessingStateEntity::class,
         SyncDeletionQueueEntity::class,
+        ProviderUsageEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -48,6 +49,7 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun localTranscripts(): LocalTranscriptDao
     abstract fun processingState(): ProcessingStateDao
     abstract fun syncDeletions(): SyncDeletionDao
+    abstract fun providerUsage(): ProviderUsageDao
 
     companion object {
         const val NAME = "capture.db"
@@ -55,7 +57,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         /** Every migration, in order. Tests open old databases with exactly this list. */
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-            MIGRATION_6_7,
+            MIGRATION_6_7, MIGRATION_7_8,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -234,6 +236,30 @@ abstract class CaptureDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `sync_deletion_queue` (" +
                         "`session_id` TEXT NOT NULL, `queued_at_epoch_ms` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`session_id`))",
+                )
+            }
+        }
+
+        /** Content-free local provider usage for cost estimates; removed with session data. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `provider_usage` (" +
+                        "`request_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, " +
+                        "`stage` TEXT NOT NULL, `provider_id` TEXT, `model` TEXT NOT NULL, " +
+                        "`request_audio_ms` INTEGER NOT NULL, `session_audio_ms` INTEGER NOT NULL, " +
+                        "`input_tokens` INTEGER, `output_tokens` INTEGER, " +
+                        "`recorded_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`request_id`), " +
+                        "FOREIGN KEY(`session_id`) REFERENCES `session_info`(`session_id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_provider_usage_recorded_at_epoch_ms` " +
+                        "ON `provider_usage` (`recorded_at_epoch_ms`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_provider_usage_session_id` " +
+                        "ON `provider_usage` (`session_id`)",
                 )
             }
         }

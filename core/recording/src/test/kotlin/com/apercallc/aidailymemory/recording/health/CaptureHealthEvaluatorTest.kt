@@ -124,13 +124,21 @@ class CaptureHealthEvaluatorTest {
     }
 
     @Test
-    fun `watch problems alone are informational and unpaired watches are not issues`() {
+    fun `watch problems alone are informational and unavailable watches are not issues`() {
         assertEquals(
             HealthLevel.INFO,
             evaluator.evaluate(inputs(watch = WatchLink.DISCONNECTED)).level,
         )
-        assertEquals(HealthLevel.OK, evaluator.evaluate(inputs(watch = WatchLink.NOT_PAIRED)).level)
+        assertEquals(HealthLevel.OK, evaluator.evaluate(inputs(watch = WatchLink.UNAVAILABLE)).level)
         assertEquals(HealthLevel.OK, evaluator.evaluate(inputs(pendingUploadMs = 3_600_000)).level)
+    }
+
+    @Test
+    fun `watch capability errors stay unknown while unavailable and disconnected are distinct`() {
+        assertEquals(WatchLink.UNKNOWN, watchLinkFromCapabilityState(null, null))
+        assertEquals(WatchLink.UNAVAILABLE, watchLinkFromCapabilityState(false, false))
+        assertEquals(WatchLink.DISCONNECTED, watchLinkFromCapabilityState(true, false))
+        assertEquals(WatchLink.CONNECTED, watchLinkFromCapabilityState(true, true))
     }
 
     @Test

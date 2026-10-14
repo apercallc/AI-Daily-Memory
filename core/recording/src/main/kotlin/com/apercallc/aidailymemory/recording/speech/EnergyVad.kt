@@ -16,8 +16,8 @@ fun interface FrameSink {
  * sets it within a second or two and a long conversation barely lifts it.
  *
  * It over-counts steady noise (a café, a car) as speech, which suits both of its jobs: the
- * shadow measurement it feeds gives an upper bound on transcription cost, and as a fallback
- * gate it errs toward uploading more rather than less.
+ * shadow measurement it feeds gives an upper bound on transcription work, and as a fallback
+ * gate it keeps more audio eligible for transcription rather than risking missed speech.
  *
  * Allocation-free per call. Not thread-safe; use one instance per stream.
  */

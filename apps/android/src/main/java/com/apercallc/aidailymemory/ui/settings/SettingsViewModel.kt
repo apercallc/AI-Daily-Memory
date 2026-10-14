@@ -7,10 +7,16 @@ import androidx.lifecycle.viewModelScope
 import android.os.Build
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.ondevice.ModelState
+import com.apercallc.aidailymemory.processing.ProviderHealthCheck
+import com.apercallc.aidailymemory.processing.ProviderHealthResult
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.processing.EndpointUrl
 import com.apercallc.aidailymemory.recording.processing.ProviderPresets
+import com.apercallc.aidailymemory.recording.processing.ProviderCostEstimate
+import com.apercallc.aidailymemory.recording.processing.ProviderCostEstimator
+import com.apercallc.aidailymemory.recording.processing.ProviderUsageSample
 import com.apercallc.aidailymemory.recording.server.ConnectLink
 import com.apercallc.aidailymemory.recording.server.ServerAddress
 import com.apercallc.aidailymemory.recording.server.ConnectionCheck
@@ -39,6 +45,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,6 +54,14 @@ import kotlinx.coroutines.withContext
 private data class UrlDrafts(
     val transcription: String? = null,
     val extraction: String? = null,
+)
+
+private data class ProcessingDiagnostics(
+    val modelState: ModelState,
+    val failedSessions: Int,
+    val failureCode: String?,
+    val providerHealth: Pair<ProviderHealthResult, ProviderHealthResult>,
+    val costEstimate: ProviderCostEstimate,
 )
 
 /** The next thing the schedule will do, for the "Next: …" line. */
@@ -134,6 +149,36 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Text the user typed that is not a valid endpoint yet; shown as typed, never stored. */
     private val urlDrafts = MutableStateFlow(UrlDrafts())
+    private val providerHealth = MutableStateFlow(
+        ProviderHealthResult.IDLE to ProviderHealthResult.IDLE,
+    )
+    private val emptyCostEstimate = ProviderCostEstimator.estimate(emptyList(), System.currentTimeMillis())
+    private val costEstimate: StateFlow<ProviderCostEstimate> = container.database.providerUsage()
+        .observeSince(System.currentTimeMillis() - USAGE_WINDOW_MS)
+        .map { rows ->
+            ProviderCostEstimator.estimate(
+                rows.mapNotNull { row ->
+                    val stage = when (row.stage) {
+                        "TRANSCRIPTION" -> ProviderUsageSample.Stage.TRANSCRIPTION
+                        "SUMMARY" -> ProviderUsageSample.Stage.SUMMARY
+                        else -> return@mapNotNull null
+                    }
+                    ProviderUsageSample(
+                        sessionId = row.sessionId,
+                        stage = stage,
+                        providerId = row.providerId,
+                        model = row.model,
+                        requestAudioMs = row.requestAudioMs,
+                        sessionAudioMs = row.sessionAudioMs,
+                        inputTokens = row.inputTokens,
+                        outputTokens = row.outputTokens,
+                        recordedAtEpochMs = row.recordedAtEpochMs,
+                    )
+                },
+                System.currentTimeMillis(),
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyCostEstimate)
 
     val processing: StateFlow<ProcessingUi> = combine(
         pSettings.processingEnabled,
@@ -144,16 +189,26 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         combine(
             pSettings.configRevision,
             container.speechModel.state,
-            // Starts at 0 so the section renders before the database has answered.
-            container.database.processingState().observeFailedCount().onStart { emit(0) },
-        ) { _, model, failed -> model to failed },
-    ) { enabled, tp, deleteAudio, drafts, (modelState, failedSessions) ->
+            combine(
+                combine(
+                    // Start with empty diagnostics so the section renders before Room answers.
+                    container.database.processingState().observeFailedCount().onStart { emit(0) },
+                    container.database.processingState().observeMostRecentFailedError().onStart { emit(null) },
+                    ::Pair,
+                ),
+                combine(providerHealth, costEstimate, ::Pair),
+                ::Pair,
+            ),
+        ) { _, model, (failure, healthAndCost) ->
+            ProcessingDiagnostics(model, failure.first, failure.second, healthAndCost.first, healthAndCost.second)
+        },
+    ) { enabled, tp, deleteAudio, drafts, diagnostics ->
         val transcriptionPreset = ProviderPresets.match(ProviderPresets.transcription, pSettings.transcriptionApiUrl)
         ProcessingUi(
             enabled = enabled,
             transcriptionOwnKey = tp == ProcessingSettings.PROVIDER_USER_API,
             summaries = pSettings.extractionProvider.value == ProcessingSettings.PROVIDER_USER_API,
-            modelState = modelState,
+            modelState = diagnostics.modelState,
             modelSizeMb = (container.speechModel.spec.zipBytes / BYTES_PER_MB).toInt(),
             transcriptionApiKey = pSettings.transcriptionApiKey ?: "",
             transcriptionApiUrl = drafts.transcription ?: pSettings.transcriptionApiUrl ?: "",
@@ -168,7 +223,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             extractionPresetId = ProviderPresets.match(ProviderPresets.summary, pSettings.extractionApiUrl)?.id
                 ?: ProviderPresets.CUSTOM_ID,
             deleteAudioAfterTranscription = deleteAudio,
-            failedSessions = failedSessions,
+            failedSessions = diagnostics.failedSessions,
+            failureCode = diagnostics.failureCode,
+            transcriptionHealth = diagnostics.providerHealth.first,
+            extractionHealth = diagnostics.providerHealth.second,
+            costEstimate = diagnostics.costEstimate,
             configGaps = pSettings.configGaps(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
@@ -288,6 +347,31 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         onSaveProvider = {
             onProcessingSettingsChanged()
             say(R.string.settings_saved)
+        },
+        onTestTranscriptionProvider = {
+            providerHealth.value = ProviderHealthResult.CHECKING to providerHealth.value.second
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    ProviderHealthCheck().checkTranscription(
+                        pSettings.transcriptionApiUrl.orEmpty(),
+                        pSettings.transcriptionApiKey.orEmpty(),
+                    )
+                }
+                providerHealth.value = result to providerHealth.value.second
+            }
+        },
+        onTestExtractionProvider = {
+            providerHealth.value = providerHealth.value.first to ProviderHealthResult.CHECKING
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    ProviderHealthCheck().checkSummary(
+                        pSettings.extractionApiUrl.orEmpty(),
+                        pSettings.extractionApiKey.orEmpty(),
+                        pSettings.extractionModel.orEmpty(),
+                    )
+                }
+                providerHealth.value = providerHealth.value.first to result
+            }
         },
     )
 
@@ -456,6 +540,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private const val TAG = "SettingsViewModel"
         private const val STOP_TIMEOUT_MS = 5_000L
         private const val BYTES_PER_MB = 1_000_000L
+        private const val USAGE_WINDOW_MS = 7L * 24L * 60L * 60L * 1_000L
         private const val HTTP_UNAUTHORIZED = 401
 
         fun nextChange(rhythm: DailyRhythm, now: Instant, zone: ZoneId): NextChange? =

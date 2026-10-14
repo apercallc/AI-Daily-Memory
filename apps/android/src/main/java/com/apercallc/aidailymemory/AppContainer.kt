@@ -87,6 +87,7 @@ import com.apercallc.aidailymemory.service.SessionOrigins
 import com.apercallc.aidailymemory.service.WatchCommandBridge
 import com.apercallc.aidailymemory.service.restoreAcknowledgements
 import com.apercallc.aidailymemory.service.WatchDataLayerTransport
+import com.apercallc.aidailymemory.service.WatchConnectivityMonitor
 import com.apercallc.aidailymemory.service.WatchRevisionWatermark
 import com.apercallc.aidailymemory.service.WatchSnapshotFactory
 import java.io.File
@@ -326,13 +327,14 @@ class AppContainer(context: Context) {
         CaptureHealthTracker(
             controller = controller,
             engineHealth = engine.health,
+            watchLink = WatchConnectivityMonitor.observe(app),
             segments = database.segments(),
             storage = storage,
             evaluator = CaptureHealthEvaluator(HealthPolicy.Provisional),
             elapsedRealtimeMs = clock::elapsedRealtimeMs,
             scope = appScope,
-            // Audio never leaves the phone (ADR-0026): hours of local audio are the design,
-            // not a backlog to warn about.
+            // Local audio is the default (ADR-0026): hours kept on this phone are not a backlog
+            // to warn about. A user-selected provider receives audio directly.
             expectUploads = { false },
         )
     }
@@ -438,7 +440,7 @@ class AppContainer(context: Context) {
         )
     }
 
-    /** Charging-time speech analysis (ADR-0015); shadow mode until Phase 1 uploads. */
+    /** Charging-time speech analysis (ADR-0015); shadow mode until local VAD quality gates pass. */
     val speechAnalyzer: SpeechAnalyzer by lazy {
         SpeechAnalyzer(segments, database.speech(), MediaCodecAacDecoder())
     }
@@ -499,7 +501,8 @@ class AppContainer(context: Context) {
                     ApiKeyTranscriptionProvider(
                         validUrl(processingSettings.transcriptionApiUrl),
                         processingSettings.transcriptionApiKey.orEmpty(),
-                        "user-model",
+                        com.apercallc.aidailymemory.recording.processing.ProviderPresets
+                            .modelInUrl(processingSettings.transcriptionApiUrl) ?: "user-model",
                     )
                 else -> OnDeviceTranscriptionProvider(
                     decoder = MediaCodecAacDecoder(),
@@ -527,6 +530,7 @@ class AppContainer(context: Context) {
                 dailyReportDao = database.dailyReports(),
                 localTranscriptDao = database.localTranscripts(),
                 processingStateDao = database.processingState(),
+                providerUsageDao = database.providerUsage(),
                 transcriptionProvider = tp,
                 extractionProvider = ep,
                 settings = processingSettings,

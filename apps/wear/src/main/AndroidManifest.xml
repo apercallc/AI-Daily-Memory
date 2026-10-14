@@ -12,6 +12,9 @@
         android:usesCleartextTraffic="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules">
+        <meta-data
+            android:name="com.google.android.wearable.capabilities"
+            android:resource="@array/wearable_capabilities" />
         <!-- Controller only: the watch app depends on the phone app for capture state. -->
         <meta-data
             android:name="com.google.android.wearable.standalone"

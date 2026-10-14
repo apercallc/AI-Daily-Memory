@@ -2,6 +2,7 @@ package com.apercallc.aidailymemory.capture
 
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.platform.StorageMonitor
+import com.apercallc.aidailymemory.recording.RecordingState
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.health.CaptureHealth
 import com.apercallc.aidailymemory.recording.health.CaptureHealthEvaluator
@@ -41,6 +42,13 @@ data class CaptureOverview(
 
 /** Sealed segment rows of one session, reduced to what health needs. */
 private data class SessionSegments(val summary: CaptureSummary, val gaps: List<CaptureGap>)
+private data class HealthSources(
+    val state: RecordingState,
+    val statusSinceElapsedMs: Long,
+    val engine: EngineHealth,
+    val session: SessionSegments,
+    val storage: StorageHealth,
+)
 
 /**
  * The pending-upload duration the health evaluator should judge, given whether an account is
@@ -59,6 +67,7 @@ internal fun backlogPendingMs(summary: CaptureSummary, uploadsExpected: Boolean)
 class CaptureHealthTracker(
     controller: RecordingController,
     engineHealth: StateFlow<EngineHealth>,
+    watchLink: Flow<WatchLink>,
     segments: SegmentDao,
     storage: StorageMonitor,
     evaluator: CaptureHealthEvaluator,
@@ -113,34 +122,37 @@ class CaptureHealthTracker(
         combine(segments.observePendingBytes(), ticks) { pending, _ -> storage.evaluate(pending) }
             .flowOn(Dispatchers.IO)
 
-    val overview: StateFlow<CaptureOverview?> = combine(
+    private val healthSources: Flow<HealthSources> = combine(
         controller.state,
         controller.statusSinceElapsedMs,
         engineHealth,
         sessionSegments,
         storageHealth,
     ) { state, since, engine, session, storageNow ->
+        HealthSources(state, since, engine, session, storageNow)
+    }
+
+    val overview: StateFlow<CaptureOverview?> = combine(healthSources, watchLink) { sources, watch ->
         val now = elapsedRealtimeMs()
-        val summary = session.summary
+        val summary = sources.session.summary
         val health = evaluator.evaluate(
             CaptureHealthInputs(
-                state = state,
+                state = sources.state,
                 nowElapsedMs = now,
-                statusSinceElapsedMs = since,
-                lastSealedSegmentEndElapsedMs = engine.lastSealedElapsedMs,
-                storage = storageNow,
-                microphoneSilent = engine.microphoneSilent,
+                statusSinceElapsedMs = sources.statusSinceElapsedMs,
+                lastSealedSegmentEndElapsedMs = sources.engine.lastSealedElapsedMs,
+                storage = sources.storage,
+                microphoneSilent = sources.engine.microphoneSilent,
                 pendingUploadMs = backlogPendingMs(summary, expectUploads()),
-                // Phase 3 wires the Data Layer; until then there is no watch to report.
-                watch = WatchLink.NOT_PAIRED,
+                watch = watch,
             ),
         )
         CaptureOverview(
             health = health,
             summary = summary,
-            storage = storageNow,
-            gaps = session.gaps,
-            lastSavedAgoMs = engine.lastSealedElapsedMs?.let { now - it },
+            storage = sources.storage,
+            gaps = sources.session.gaps,
+            lastSavedAgoMs = sources.engine.lastSealedElapsedMs?.let { now - it },
         )
     }.stateIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 

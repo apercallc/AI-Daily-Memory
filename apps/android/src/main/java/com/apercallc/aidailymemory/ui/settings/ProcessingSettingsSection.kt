@@ -27,6 +27,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import com.apercallc.aidailymemory.recording.processing.ProviderPreset
 import com.apercallc.aidailymemory.recording.processing.ProviderPresets
+import com.apercallc.aidailymemory.processing.ProviderHealthResult
+import com.apercallc.aidailymemory.recording.processing.ProviderCostEstimate
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -70,8 +72,13 @@ data class ProcessingUi(
     val modelState: ModelState = ModelState.NotInstalled,
     /** Download size of the speech model, in whole megabytes. */
     val modelSizeMb: Int = 40,
-    /** Sessions whose processing gave up; their audio and transcripts are kept and can be retried. */
+    /** Sessions whose processing gave up and can be retried from locally retained evidence. */
     val failedSessions: Int = 0,
+    /** Safe, machine-classified reason for the most recent failed session. */
+    val failureCode: String? = null,
+    val transcriptionHealth: ProviderHealthResult = ProviderHealthResult.IDLE,
+    val extractionHealth: ProviderHealthResult = ProviderHealthResult.IDLE,
+    val costEstimate: ProviderCostEstimate? = null,
 )
 
 /** State for the daily-report sync section. */
@@ -103,6 +110,8 @@ data class ProcessingActions(
     /** Opens a web page (where to get an API key). */
     val onOpenLink: (String) -> Unit = {},
     val onSaveProvider: () -> Unit = {},
+    val onTestTranscriptionProvider: () -> Unit = {},
+    val onTestExtractionProvider: () -> Unit = {},
 )
 
 /** Events from the sync settings section. */
@@ -131,6 +140,9 @@ fun ProcessingSettingsSection(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        processing.costEstimate?.let { estimate ->
+            ProviderUsageCard(estimate, actions)
+        }
         SettingsCard {
             ToggleRow(
                 label = stringResource(R.string.processing_enabled),
@@ -148,16 +160,27 @@ fun ProcessingSettingsSection(
         }
 
         if (processing.failedSessions > 0) {
-            Text(
-                text = pluralStringResource(
-                    R.plurals.processing_failed_sessions,
-                    processing.failedSessions,
-                    processing.failedSessions,
-                ),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
+            Column(
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
+            ) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.processing_failed_sessions,
+                        processing.failedSessions,
+                        processing.failedSessions,
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (processing.failureCode != null) {
+                    Text(
+                        text = stringResource(processingFailureMessageResource(processing.failureCode)),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             OutlinedButton(
                 onClick = actions.onRetryFailed,
                 modifier = Modifier.heightIn(min = spacing.minTouchTarget),
@@ -207,6 +230,12 @@ fun ProcessingSettingsSection(
                         )
                     }
                     ApiKeyField(processing.transcriptionApiKey, actions.onTranscriptionApiKeyChange)
+                    ProviderHealthButton(
+                        label = R.string.processing_test_transcription,
+                        result = processing.transcriptionHealth,
+                        enabled = !processing.transcriptionApiUrlInvalid && processing.transcriptionApiKey.isNotBlank(),
+                        onClick = actions.onTestTranscriptionProvider,
+                    )
                 }
             }
         }
@@ -245,12 +274,24 @@ fun ProcessingSettingsSection(
                         )
                     }
                     ApiKeyField(processing.extractionApiKey, actions.onExtractionApiKeyChange)
+                    ProviderHealthButton(
+                        label = R.string.processing_test_summary,
+                        result = processing.extractionHealth,
+                        enabled = !processing.extractionApiUrlInvalid &&
+                            processing.extractionApiKey.isNotBlank() && processing.extractionModel.isNotBlank(),
+                        onClick = actions.onTestExtractionProvider,
+                    )
                 }
             }
         }
         if (processing.transcriptionOwnKey || processing.summaries) {
             Text(
                 text = stringResource(R.string.processing_own_key_privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.processing_provider_test_disclaimer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -268,6 +309,141 @@ fun ProcessingSettingsSection(
             ) { Text(stringResource(R.string.processing_save)) }
         }
     }
+}
+
+@Composable
+private fun ProviderUsageCard(estimate: ProviderCostEstimate, actions: ProcessingActions) {
+    val spacing = AiDailyMemoryTheme.spacing
+    SettingsCard {
+        Column(
+            modifier = Modifier.padding(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Text(stringResource(R.string.processing_usage_title), style = MaterialTheme.typography.titleSmall)
+            if (estimate.requestCount == 0) {
+                Text(
+                    stringResource(R.string.processing_usage_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+            Text(
+                pluralStringResource(
+                    R.plurals.processing_usage_counts,
+                    estimate.requestCount,
+                    estimate.requestCount,
+                    estimate.audioMs / 60_000,
+                    estimate.inputTokens?.toString() ?: stringResource(R.string.processing_usage_unknown_value),
+                    estimate.outputTokens?.toString() ?: stringResource(R.string.processing_usage_unknown_value),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            val totalUsd = estimate.totalUsd
+            if (estimate.pricingUnknown || totalUsd == null) {
+                Text(
+                    stringResource(R.string.processing_usage_unknown_cost),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    stringResource(
+                        R.string.processing_usage_estimate,
+                        formatUsd(totalUsd),
+                        formatUsd(estimate.averageDailyUsd ?: 0.0),
+                        estimate.usdPerAudioHour?.let(::formatUsd)
+                            ?: stringResource(R.string.processing_usage_hour_unavailable),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            estimate.pricingAsOf?.let { date ->
+                Text(
+                    stringResource(R.string.processing_usage_disclaimer, date),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            estimate.pricingSourceUrls.forEach { url ->
+                val host = runCatching { java.net.URL(url).host }.getOrNull() ?: url
+                TextButton(
+                    onClick = { actions.onOpenLink(url) },
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) {
+                    Text(stringResource(R.string.processing_usage_pricing_source, host))
+                }
+            }
+        }
+    }
+}
+
+private fun formatUsd(amount: Double): String =
+    java.lang.String.format(java.util.Locale.getDefault(), "\$%.4f", amount)
+
+internal fun processingFailureMessageResource(code: String): Int = when (code) {
+    "provider_quota_exhausted" -> R.string.processing_provider_quota_exhausted
+    "provider_rate_limited" -> R.string.processing_provider_rate_limited
+    "provider_auth_failed" -> R.string.processing_provider_auth_failed
+    else -> R.string.processing_provider_failed_hint
+}
+
+@Composable
+private fun ProviderHealthButton(
+    @StringRes label: Int,
+    result: ProviderHealthResult,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled && result != ProviderHealthResult.CHECKING,
+            modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+        ) {
+            Text(
+                stringResource(
+                    if (result == ProviderHealthResult.CHECKING) {
+                        R.string.processing_provider_testing
+                    } else {
+                        label
+                    },
+                ),
+            )
+        }
+        val message = providerHealthMessageResource(result)
+        if (message != null) {
+            val isError = result in setOf(
+                ProviderHealthResult.AUTH_FAILED,
+                ProviderHealthResult.QUOTA_EXHAUSTED,
+                ProviderHealthResult.MODEL_UNAVAILABLE,
+                ProviderHealthResult.INVALID_CONFIGURATION,
+                ProviderHealthResult.ENDPOINT_ERROR,
+                ProviderHealthResult.UNSUPPORTED_CHECK,
+            )
+            Text(
+                text = stringResource(message),
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
+@StringRes
+private fun providerHealthMessageResource(result: ProviderHealthResult): Int? = when (result) {
+    ProviderHealthResult.IDLE -> null
+    ProviderHealthResult.CHECKING -> R.string.processing_provider_testing
+    ProviderHealthResult.CONNECTED -> R.string.processing_provider_connected
+    ProviderHealthResult.AUTH_FAILED -> R.string.processing_provider_auth_failed
+    ProviderHealthResult.QUOTA_EXHAUSTED -> R.string.processing_provider_quota_exhausted
+    ProviderHealthResult.RATE_LIMITED -> R.string.processing_provider_rate_limited
+    ProviderHealthResult.MODEL_UNAVAILABLE -> R.string.processing_provider_model_unavailable
+    ProviderHealthResult.INVALID_CONFIGURATION -> R.string.processing_provider_test_invalid
+    ProviderHealthResult.UNSUPPORTED_CHECK -> R.string.processing_provider_test_unsupported
+    ProviderHealthResult.ENDPOINT_ERROR -> R.string.processing_provider_test_error
 }
 
 /** Provider list followed by whatever fields that provider needs. */

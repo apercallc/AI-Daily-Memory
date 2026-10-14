@@ -37,6 +37,22 @@ class ApiKeyProvidersTest {
     }
 
     @Test
+    fun `current reasoning model uses non-reasoning chat mode without temperature`() {
+        val root = Json.parseToJsonElement(extraction("gpt-6-luna").requestBody("prompt")).jsonObject
+
+        assertEquals("none", root["reasoning_effort"]?.jsonPrimitive?.content)
+        assertFalse(root.containsKey("temperature"))
+    }
+
+    @Test
+    fun `gpt 6 point 1 uses its supported low reasoning effort`() {
+        val root = Json.parseToJsonElement(extraction("gpt-6.1-sol").requestBody("prompt")).jsonObject
+
+        assertEquals("low", root["reasoning_effort"]?.jsonPrimitive?.content)
+        assertFalse(root.containsKey("temperature"))
+    }
+
+    @Test
     fun `prompt numbers lines and includes the speaker`() {
         val prompt = extraction().buildPrompt(listOf(NumberedLine(0, "A", "hello"), NumberedLine(1, null, "bye")))
         assertTrue(prompt.contains("0: [A] hello"))
@@ -91,6 +107,31 @@ class ApiKeyProvidersTest {
     @Test
     fun `extraction rejects a response without choices`() {
         assertFailsWith<ProcessingException> { extraction().parseResponse("""{"x":1}""") }
+    }
+
+    @Test
+    fun `extraction keeps token usage without storing request content`() {
+        val response = chat("[]").dropLast(1) + ",\"usage\":{\"prompt_tokens\":125,\"completion_tokens\":31}}"
+
+        val result = extraction().parseResult(response)
+
+        assertEquals(125L, result.tokenUsage?.inputTokens)
+        assertEquals(31L, result.tokenUsage?.outputTokens)
+    }
+
+    @Test
+    fun `missing or malformed token usage remains unknown`() {
+        assertNull(extraction().parseResult(chat("[]")).tokenUsage)
+        val malformed = chat("[]").dropLast(1) + ",\"usage\":{\"prompt_tokens\":\"unknown\",\"completion_tokens\":1}}"
+        assertNull(extraction().parseResult(malformed).tokenUsage)
+    }
+
+    @Test
+    fun `provider identities require an exact allowlisted host`() {
+        assertEquals("deepgram", ProviderBillingIdentity.fromUrl("https://api.deepgram.com/v1/listen"))
+        assertEquals("openai", ProviderBillingIdentity.fromUrl("https://api.openai.com/v1/chat/completions"))
+        assertNull(ProviderBillingIdentity.fromUrl("https://api.openai.com.attacker.example/v1/chat"))
+        assertNull(ProviderBillingIdentity.fromUrl("not an endpoint"))
     }
 
     @Test

@@ -25,7 +25,15 @@ enum class HealthIssue(val level: HealthLevel) {
     WATCH_DISCONNECTED(HealthLevel.INFO),
 }
 
-enum class WatchLink { NOT_PAIRED, CONNECTED, DISCONNECTED }
+enum class WatchLink { UNKNOWN, UNAVAILABLE, CONNECTED, DISCONNECTED }
+
+/** Maps capability discovery without treating an API failure as an offline watch. */
+fun watchLinkFromCapabilityState(installed: Boolean?, reachable: Boolean?): WatchLink = when {
+    reachable == true -> WatchLink.CONNECTED
+    installed == null || (installed && reachable == null) -> WatchLink.UNKNOWN
+    installed -> WatchLink.DISCONNECTED
+    else -> WatchLink.UNAVAILABLE
+}
 
 data class CaptureHealthInputs(
     val state: RecordingState,

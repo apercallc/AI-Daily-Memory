@@ -23,10 +23,10 @@ import kotlin.math.sqrt
  * Decisions look a second ahead, so [process] only collects features and [finish] emits one
  * decision per frame in order. One instance per segment; not thread-safe.
  *
- * These are rules of thumb, not a trained model: they are meant to remove the bulk of
- * non-voice audio before transcription costs money, and they err toward keeping a doubtful
- * second (a missed sentence is worse than a few seconds of extra upload). Tune on labeled
- * audio before trusting the numbers.
+ * These are rules of thumb, not a trained model: they are meant to reduce non-voice audio before
+ * transcription, once validated, and they err toward keeping a doubtful second (a missed sentence
+ * is worse than a few seconds of extra audio eligible for transcription). Tune on labeled audio
+ * before trusting the numbers.
  */
 class VoiceVad(
     private val sampleRateHz: Int,

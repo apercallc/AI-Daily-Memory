@@ -35,8 +35,9 @@ data class AnalysisRun(val analyzed: Int, val failed: Int, val remaining: Int)
  * Silence, background noise, instruments and nature sounds are not speech and are left out, so
  * only voices are ever cut into clips for transcription.
  *
- * Phase 0 runs this in shadow mode: nothing is uploaded; the totals feed the Gate B
- * per-user-day cost model. Phase 1 will cut upload clips from the same regions.
+ * This remains shadow-only: it does not suppress or upload audio. The totals support local
+ * transcription cost and device-performance estimates; VAD must pass labeled-audio and device
+ * quality gates before it can skip any audio.
  */
 class SpeechAnalyzer(
     private val store: SegmentStore,

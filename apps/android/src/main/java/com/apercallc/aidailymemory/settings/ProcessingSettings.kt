@@ -20,7 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * (data_extraction_rules.xml).
  *
  * Transcription runs on the phone with a free downloadable model unless the person supplies their
- * own provider key; summaries are off unless they supply one. Audio never leaves the phone.
+ * own provider key; a selected provider receives audio directly from the phone. Summaries are off
+ * unless the person supplies a key, and receive transcript text rather than audio.
  * Sync is on by default and does nothing without a connected account; it has no address or token
  * of its own.
  *

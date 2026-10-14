@@ -43,7 +43,15 @@ class ProviderPresetsTest {
     @Test
     fun `a summary preset keeps its address whatever the model`() {
         val openai = ProviderPresets.summary.first { it.id == "openai" }
-        assertEquals(openai.endpoint, openai.endpointFor("gpt-4o"))
+        assertEquals(openai.endpoint, openai.endpointFor("gpt-6-luna"))
+    }
+
+    @Test
+    fun `every summary preset uses the wire format supported by the app`() {
+        assertTrue(ProviderPresets.summary.isNotEmpty())
+        ProviderPresets.summary.forEach { preset ->
+            assertTrue(preset.endpoint.endsWith("/v1/chat/completions"), preset.id)
+        }
     }
 
     @Test

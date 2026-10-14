@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="wearable_capabilities">
+        <item>aidailymemory_recording_controller</item>
+    </string-array>
+</resources>

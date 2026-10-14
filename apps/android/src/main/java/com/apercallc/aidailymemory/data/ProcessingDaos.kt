@@ -142,8 +142,39 @@ interface ProcessingStateDao {
     @Query("SELECT COUNT(*) FROM processing_state WHERE state = 'FAILED'")
     fun observeFailedCount(): Flow<Int>
 
+    @Query(
+        "SELECT last_error FROM processing_state WHERE state = 'FAILED' " +
+            "AND last_error IS NOT NULL ORDER BY updated_at_epoch_ms DESC, session_id DESC LIMIT 1",
+    )
+    fun observeMostRecentFailedError(): Flow<String?>
+
     @Query("UPDATE processing_state SET state = 'PENDING', last_error = NULL, updated_at_epoch_ms = :nowEpochMs WHERE state = 'FAILED'")
     suspend fun retryFailed(nowEpochMs: Long): Int
+}
+
+@Dao
+interface ProviderUsageDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRow(sample: ProviderUsageEntity)
+
+    @Query("DELETE FROM provider_usage WHERE recorded_at_epoch_ms < :beforeEpochMs")
+    suspend fun deleteOlderThan(beforeEpochMs: Long)
+
+    @Transaction
+    suspend fun record(sample: ProviderUsageEntity, nowEpochMs: Long) {
+        deleteOlderThan(nowEpochMs - RETENTION_MS)
+        insertRow(sample)
+    }
+
+    @Query("SELECT * FROM provider_usage WHERE recorded_at_epoch_ms >= :sinceEpochMs ORDER BY recorded_at_epoch_ms")
+    fun observeSince(sinceEpochMs: Long): Flow<List<ProviderUsageEntity>>
+
+    @Query("DELETE FROM provider_usage WHERE session_id = :sessionId")
+    suspend fun deleteForSession(sessionId: String)
+
+    companion object {
+        const val RETENTION_MS = 30L * 24L * 60L * 60L * 1_000L
+    }
 }
 
 /**

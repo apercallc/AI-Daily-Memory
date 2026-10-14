@@ -118,6 +118,50 @@ class CaptureDatabaseTest {
     }
 
     @Test
+    fun `processing settings observe the newest failed machine reason`() = runTest {
+        val processing = db.processingState()
+        processing.upsert(
+            ProcessingStateEntity("old-failure", "FAILED", false, "provider_quota_exhausted", 10L),
+        )
+        processing.upsert(
+            ProcessingStateEntity("newer-pending", "PENDING", false, "provider_auth_failed", 30L),
+        )
+        processing.upsert(
+            ProcessingStateEntity("new-failure", "FAILED", false, "provider_rate_limited", 20L),
+        )
+
+        assertEquals("provider_rate_limited", processing.observeMostRecentFailedError().first())
+    }
+
+    @Test
+    fun `provider usage is observed locally and removed with its session`() = runTest {
+        val usage = db.providerUsage()
+        val now = 1_800_000_000_000L
+        db.sessions().register(
+            SessionInfoEntity("usage-session", "2026-10-14", "UTC", now, null),
+        )
+        usage.record(
+            ProviderUsageEntity(
+                requestId = "usage-request",
+                sessionId = "usage-session",
+                stage = "SUMMARY",
+                providerId = "openai",
+                model = "gpt-4o-mini",
+                requestAudioMs = 0,
+                sessionAudioMs = 60_000,
+                inputTokens = 100,
+                outputTokens = 20,
+                recordedAtEpochMs = now,
+            ),
+            now,
+        )
+
+        assertEquals(1, usage.observeSince(now - 7L * 24 * 60 * 60 * 1_000).first().size)
+        db.sessions().deleteSession("usage-session")
+        assertEquals(0, usage.observeSince(now - 7L * 24 * 60 * 60 * 1_000).first().size)
+    }
+
+    @Test
     fun `journal restores the newest transition after a restart`() = runTest {
         val session = SessionId("session-1")
         var state = RecordingState.Initial

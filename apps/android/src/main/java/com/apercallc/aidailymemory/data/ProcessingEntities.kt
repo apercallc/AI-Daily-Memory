@@ -2,6 +2,7 @@ package com.apercallc.aidailymemory.data
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -35,7 +36,7 @@ data class MemoryItemEntity(
     val due: String?,
     val direction: String?,
     val counterpart: String?,
-    /** "provider:model", e.g. "whisper:base.en" or "user-key:deepgram-nova-2". */
+    /** "provider:model", e.g. "whisper:base.en" or "deepgram:nova-2". */
     @ColumnInfo(name = "extraction_model") val extractionModel: String,
     @ColumnInfo(name = "extraction_version") val extractionVersion: Int,
     /** Epoch ms of the primary evidence span, for timeline display. Null if not available. */
@@ -127,4 +128,32 @@ data class ProcessingStateEntity(
     @ColumnInfo(name = "audio_deleted") val audioDeleted: Boolean,
     @ColumnInfo(name = "last_error") val lastError: String?,
     @ColumnInfo(name = "updated_at_epoch_ms") val updatedAtEpochMs: Long,
+)
+
+/** Content-free record of successful provider usage, retained only with its session. */
+@Entity(
+    tableName = "provider_usage",
+    indices = [Index(value = ["recorded_at_epoch_ms"]), Index(value = ["session_id"])],
+    foreignKeys = [
+        ForeignKey(
+            entity = SessionInfoEntity::class,
+            parentColumns = ["session_id"],
+            childColumns = ["session_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class ProviderUsageEntity(
+    @PrimaryKey @ColumnInfo(name = "request_id") val requestId: String,
+    @ColumnInfo(name = "session_id") val sessionId: String,
+    /** TRANSCRIPTION or SUMMARY */
+    val stage: String,
+    /** Strict provider allowlist only; null means custom or unknown. */
+    @ColumnInfo(name = "provider_id") val providerId: String?,
+    val model: String,
+    @ColumnInfo(name = "request_audio_ms") val requestAudioMs: Long,
+    @ColumnInfo(name = "session_audio_ms") val sessionAudioMs: Long,
+    @ColumnInfo(name = "input_tokens") val inputTokens: Long?,
+    @ColumnInfo(name = "output_tokens") val outputTokens: Long?,
+    @ColumnInfo(name = "recorded_at_epoch_ms") val recordedAtEpochMs: Long,
 )

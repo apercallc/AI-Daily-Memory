@@ -1,7 +1,6 @@
 package com.apercallc.aidailymemory.processing
 
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
-import com.apercallc.aidailymemory.recording.processing.ProviderStatus
 import com.apercallc.aidailymemory.recording.processing.TranscribedSpan
 import com.apercallc.aidailymemory.recording.processing.TranscriptResult
 import com.apercallc.aidailymemory.recording.processing.TranscriptionProvider
@@ -29,6 +28,8 @@ class ApiKeyTranscriptionProvider(
 ) : TranscriptionProvider {
 
     override val name: String = "user-key"
+    override val billingProviderId: String? = ProviderBillingIdentity.fromUrl(apiUrl)
+    override val isExternalProvider: Boolean = true
 
     override suspend fun transcribe(audio: ByteArray, codec: String, sampleRateHz: Int): TranscriptResult {
         val response = callApi(audio)
@@ -49,7 +50,7 @@ class ApiKeyTranscriptionProvider(
         try {
             conn.outputStream.use { it.write(audio) }
             val code = conn.responseCode
-            ProviderStatus.failureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
+            conn.providerFailureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
             return BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
         } catch (e: java.net.SocketTimeoutException) {
             throw ProcessingException("provider_timeout", retryable = true, cause = e)

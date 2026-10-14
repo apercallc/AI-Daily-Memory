@@ -14,8 +14,12 @@ import com.apercallc.aidailymemory.ui.settings.ProcessingSettingsSection
 import com.apercallc.aidailymemory.ui.settings.ProcessingUi
 import com.apercallc.aidailymemory.ondevice.ModelFailure
 import com.apercallc.aidailymemory.ondevice.ModelState
+import com.apercallc.aidailymemory.processing.ProviderHealthResult
+import com.apercallc.aidailymemory.recording.processing.ProviderCostEstimate
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import kotlin.test.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -41,7 +45,7 @@ class ProcessingSectionTest {
         transcriptionPresetId = "deepgram",
         transcriptionModel = "nova-3",
         extractionPresetId = "openai",
-        extractionModel = "gpt-4o-mini",
+        extractionModel = "gpt-6-luna",
     )
 
     @Test
@@ -51,7 +55,7 @@ class ProcessingSectionTest {
         compose.onNodeWithText("Provider: Deepgram").assertExists()
         compose.onNodeWithText("Model name: nova-3").assertExists()
         compose.onNodeWithText("Provider: OpenAI").assertExists()
-        compose.onNodeWithText("Model name: gpt-4o-mini").assertExists()
+        compose.onNodeWithText("Model name: gpt-6-luna").assertExists()
         compose.onNodeWithText("API endpoint URL").assertDoesNotExist()
     }
 
@@ -141,5 +145,96 @@ class ProcessingSectionTest {
         show(ProcessingUi(transcriptionOwnKey = true))
 
         compose.onAllNodesWithText("Download speech model", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `provider metadata checks send actions and disclose data and quota limits`() {
+        var transcriptionChecks = 0
+        var summaryChecks = 0
+        show(
+            own.copy(
+                transcriptionApiKey = "local-test-key",
+                extractionApiKey = "local-test-key",
+            ),
+            ProcessingActions(
+                onTestTranscriptionProvider = { transcriptionChecks++ },
+                onTestExtractionProvider = { summaryChecks++ },
+            ),
+        )
+
+        compose.onNodeWithText("Test transcription connection").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText("Test summary connection").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText(
+            "Connection checks use provider metadata only; they send no recorded audio or transcript.",
+            substring = true,
+        ).assertExists()
+
+        assertEquals(1, transcriptionChecks)
+        assertEquals(1, summaryChecks)
+    }
+
+    @Test
+    fun `provider checks show safe status and disabled checks require credentials`() {
+        show(
+            own.copy(
+                transcriptionHealth = ProviderHealthResult.CONNECTED,
+                extractionHealth = ProviderHealthResult.MODEL_UNAVAILABLE,
+            ),
+        )
+
+        compose.onNodeWithText("Endpoint and credentials responded successfully.", substring = true).assertExists()
+        compose.onNodeWithText("The provider did not list this model", substring = true).assertExists()
+        compose.onNodeWithText("Test transcription connection").assertIsNotEnabled()
+        compose.onNodeWithText("Test summary connection").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `usage section shows dated list price estimate and links to its source`() {
+        val opened = mutableListOf<String>()
+        show(
+            ProcessingUi(
+                costEstimate = ProviderCostEstimate(
+                    requestCount = 2,
+                    audioMs = 3_600_000,
+                    inputTokens = 1_000_000,
+                    outputTokens = 1_000_000,
+                    totalUsd = 1.008,
+                    averageDailyUsd = 1.008 / 7,
+                    usdPerAudioHour = 1.008,
+                    pricingUnknown = false,
+                    pricingAsOf = "2026-10-14",
+                    pricingSourceUrls = listOf("https://deepgram.com/pricing"),
+                ),
+            ),
+            ProcessingActions(onOpenLink = opened::add),
+        )
+
+        compose.onNodeWithText("Approximate list-price estimate: \$1.0080 total", substring = true).assertExists()
+        compose.onNodeWithText("Pricing: deepgram.com").performScrollTo().performClick()
+        assertEquals(listOf("https://deepgram.com/pricing"), opened)
+    }
+
+    @Test
+    fun `usage section says when pricing is unknown`() {
+        show(
+            ProcessingUi(
+                costEstimate = ProviderCostEstimate(
+                    requestCount = 1,
+                    audioMs = 0,
+                    inputTokens = null,
+                    outputTokens = null,
+                    totalUsd = null,
+                    averageDailyUsd = null,
+                    usdPerAudioHour = null,
+                    pricingUnknown = true,
+                    pricingAsOf = null,
+                    pricingSourceUrls = emptyList(),
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("Cost estimate unavailable because at least one recent provider", substring = true)
+            .assertExists()
+        compose.onNodeWithText("unknown input and unknown output tokens.", substring = true).assertExists()
     }
 }

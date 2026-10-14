@@ -379,15 +379,40 @@
     <string name="processing_model_name">Model name</string>
     <string name="processing_get_key">Get a %1$s API key</string>
     <plurals name="processing_failed_sessions">
-        <item quantity="one">%d recording could not be processed. Your audio is kept.</item>
-        <item quantity="other">%d recordings could not be processed. Your audio is kept.</item>
+        <item quantity="one">%d recording could not be processed. Your session data is kept on this phone.</item>
+        <item quantity="other">%d recordings could not be processed. Your session data is kept on this phone.</item>
     </plurals>
+    <string name="processing_provider_quota_exhausted">The selected provider reports that its usage limit is exhausted. Update its usage settings or choose another provider in Settings, then try again. The app will not switch providers on its own.</string>
+    <string name="processing_provider_rate_limited">The provider is temporarily rate limiting requests. Wait a little, then try again.</string>
+    <string name="processing_provider_auth_failed">The provider rejected the API key. Check the key and endpoint, then try again.</string>
+    <string name="processing_provider_failed_hint">Check your processing settings or try again. The app will not switch providers on its own.</string>
     <string name="processing_retry_failed">Try again</string>
     <string name="processing_retrying">Trying again in the background.</string>
+    <string name="processing_test_transcription">Test transcription connection</string>
+    <string name="processing_test_summary">Test summary connection</string>
+    <string name="processing_provider_testing">Testing provider…</string>
+    <string name="processing_provider_connected">Endpoint and credentials responded successfully. This does not guarantee future quota or processing access.</string>
+    <string name="processing_provider_model_unavailable">The provider did not list this model for the saved credentials.</string>
+    <string name="processing_provider_test_invalid">Enter a valid HTTPS endpoint, model, and API key first.</string>
+    <string name="processing_provider_test_unsupported">This endpoint has no supported metadata check. The app will not send sample or recorded content.</string>
+    <string name="processing_provider_test_error">The provider endpoint could not be checked. Verify the endpoint and try again.</string>
+    <string name="processing_provider_test_disclaimer">Connection checks use provider metadata only; they send no recorded audio or transcript. They do not confirm remaining quota. Provider terms or request charges may apply.</string>
     <string name="transcript_unreadable">This line can\'t be read on this device.</string>
     <string name="marker_failed">Couldn\'t save that mark. Recording is not affected.</string>
     <string name="key_not_saved">Couldn\'t store the key securely on this phone. It works until the app closes; enter it again after that.</string>
     <string name="processing_save">Done</string>
+    <string name="processing_usage_title">Recent provider usage</string>
+    <string name="processing_usage_empty">No external provider usage recorded in the last 7 days. On-phone transcription is not billed by an AI provider.</string>
+    <string name="processing_usage_unknown_value">unknown</string>
+    <string name="processing_usage_estimate">Approximate list-price estimate: %1$s total, %2$s per day on average, %3$s per audio hour.</string>
+    <string name="processing_usage_hour_unavailable">not available</string>
+    <string name="processing_usage_unknown_cost">Cost estimate unavailable because at least one recent provider price or token count is unknown.</string>
+    <string name="processing_usage_disclaimer">Standard list rates dated %1$s; estimate does not include cached-input discounts or duration rounding. Your bill may differ by plan and provider accounting.</string>
+    <string name="processing_usage_pricing_source">Pricing: %1$s</string>
+    <plurals name="processing_usage_counts">
+        <item quantity="one">Last 7 days: %1$d successful request, %2$d audio minutes sent, %3$s input and %4$s output tokens.</item>
+        <item quantity="other">Last 7 days: %1$d successful requests, %2$d audio minutes sent, %3$s input and %4$s output tokens.</item>
+    </plurals>
     <string name="sync_needs_account">Waiting for an account. Nothing is sent while you are offline.</string>
     <string name="sync_status_waiting">On, waiting for an account</string>
 
@@ -404,7 +429,7 @@
     <string name="onboarding_finish">Get started</string>
     <string name="onboarding_finish_connect">Set up my account</string>
     <string name="onboarding_welcome_title">Your day, remembered</string>
-    <string name="onboarding_welcome_body">AI Daily Memory listens through the day, keeps only the parts where people are talking, and turns them into text on your phone. It always shows when it is recording, and you can pause or stop any time from your phone or your watch.</string>
+    <string name="onboarding_welcome_body">Capture your day and turn speech into searchable text on your phone. Recording stays visible, and you can pause or stop any time from your phone or your watch.</string>
     <string name="onboarding_where_title">Where should your memory live?</string>
     <string name="onboarding_where_body">You can change this later in Settings.</string>
     <string name="onboarding_offline_title">Keep notes on this phone</string>
@@ -435,7 +460,7 @@
     <string name="processing_status_phone">On this phone</string>
     <string name="processing_status_own">Using your own service</string>
     <string name="speech_model_card_title">Download the free speech model</string>
-    <string name="speech_model_card_body">Your phone turns speech into text on its own, so audio never leaves it. It needs a one-time download of about 40 MB. Recording works without it; transcripts start once it is installed.</string>
+    <string name="speech_model_card_body">The on-phone model transcribes audio on your phone. If you choose a transcription service in Settings, audio is sent directly to that provider. The model needs a one-time download of about 40 MB. Recording works without it; transcripts start once it is installed.</string>
     <string name="speech_model_card_action">Download (40 MB)</string>
     <string name="speech_model_card_failed">The download didn\'t finish. Check your connection and try again.</string>
 </resources>

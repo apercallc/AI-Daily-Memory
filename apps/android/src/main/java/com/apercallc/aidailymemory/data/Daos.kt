@@ -96,6 +96,7 @@ interface SessionDao {
         deleteLocalTranscriptLines(sessionId)
         deleteMemoryItems(sessionId)
         deleteProcessingState(sessionId)
+        deleteProviderUsage(sessionId)
         if (memoryDay != null) deleteDailyReport(memoryDay)
         deleteClips(sessionId)
         deleteClipPlans(sessionId)
@@ -124,6 +125,9 @@ interface SessionDao {
 
     @Query("DELETE FROM processing_state WHERE session_id = :sessionId")
     suspend fun deleteProcessingState(sessionId: String)
+
+    @Query("DELETE FROM provider_usage WHERE session_id = :sessionId")
+    suspend fun deleteProviderUsage(sessionId: String)
 
     @Query("DELETE FROM daily_report WHERE memory_day = :memoryDay")
     suspend fun deleteDailyReport(memoryDay: String)

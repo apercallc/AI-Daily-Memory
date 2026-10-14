@@ -49,11 +49,18 @@ data class ExtractedItem(
     val counterpart: String? = null,
 )
 
+/** Token counts reported by a provider response. No transcript or prompt content is retained. */
+data class TokenUsage(
+    val inputTokens: Long,
+    val outputTokens: Long,
+)
+
 /**
  * The full extraction result for one session.
  */
 data class ExtractionResult(
     val items: List<ExtractedItem>,
+    val tokenUsage: TokenUsage? = null,
 )
 
 /**
@@ -87,6 +94,9 @@ class ProcessingException(
 interface TranscriptionProvider {
     val name: String
     val model: String
+    /** Allowlisted billing identity; custom hosts must return null. */
+    val billingProviderId: String? get() = null
+    val isExternalProvider: Boolean get() = false
 
     /**
      * Transcribes [audio] bytes, which are AAC-LC ADTS frames at [sampleRateHz].
@@ -110,6 +120,9 @@ interface TranscriptionProvider {
 interface ExtractionProvider {
     val name: String
     val model: String
+    /** Allowlisted billing identity; custom hosts must return null. */
+    val billingProviderId: String? get() = null
+    val isExternalProvider: Boolean get() = false
 
     /**
      * Extracts memory items from [lines], which are the session's transcript lines in order.

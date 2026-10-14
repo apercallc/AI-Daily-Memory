@@ -52,7 +52,7 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
 
 1. **Turning on server processing.** Transcription (`TRANSCRIPTION_PROVIDER=deepgram`) and
    extraction (`EXTRACTION_PROVIDER=claude`) are off until an operator enables them with keys and
-   completes the cost, terms and consent reviews in TODO.md Gate B. Until then a full-cloud account's
+   completes the cost, terms and consent reviews documented in this launch-gap review and `docs/quality/QUALITY_GATES.md`. Until then a full-cloud account's
    web app stays empty; phone-synced reports still appear.
 2. **Ask with a model.** `ASK_PROVIDER=claude` sends memory text to Anthropic; same consent review.
 3. **Play Billing** for in-app purchase (ADR-0025) and the Play Store listing.
@@ -63,7 +63,7 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
 - **Uptime and alerting.** Sentry is wired; no uptime monitor or status page.
 - **Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).
 - **Single API replica.** The per-address limiter is in-process; scaling out needs a shared limiter.
-- **Cost per user** is unmeasured (TODO Launch readiness).
+- **Cost per user** is unmeasured and needs real provider usage and operating-cost data.
 
 ## Product gaps
 
@@ -74,4 +74,4 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
   Ask is keyword-and-date retrieval, not entity-aware.
 - **Not exercised on real hardware:** the phone and watch flows, voice detection on real speech,
   call and other-app mic interruptions, OEM battery behaviour.
-- **iOS** is deliberately later (Phase 9).
+- **iOS** is deliberately deferred; there is no committed delivery phase for it.

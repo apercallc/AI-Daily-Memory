@@ -121,14 +121,14 @@ A feature is not done until:
 
 ## Known gaps (need product or device work)
 
-Recorded so a green `qualityCheck` is not read as release readiness. Each is tracked as a TODO.md item.
+Recorded so a green `qualityCheck` is not read as release readiness. Device and operator acceptance gates live here and in `docs/performance/`; `TODO.md` tracks implementation and test deliverables.
 
-- Critical phone and Wear OS flows still need instrumentation and physical-device verification, including same-key pairing, TalkBack order, 200% font scaling, low-storage behavior, and workday endurance.
+- Critical phone and Wear OS flows still need instrumentation and physical-device verification, including same-key pairing, TalkBack order, 200% font scaling, low-storage behavior, watch battery, and workday endurance.
 - Macrobenchmark results, Baseline Profiles, and measured performance budgets are not available yet.
 - Public API launch work remains open: generated OpenAPI validation in CI, API contract/versioning, subscription entitlement enforcement for API access, abuse monitoring, and third-party-client terms.
 - Billing launch work remains open: published plan limits and pricing, tested subscription lifecycle and cancellation, and jurisdiction/tax review.
-- Production operations still need verified least-privilege database roles, backup/restore drills and monitoring, late-upload cleanup verification, and configured/verified error reporting with IP-address storage disabled.
-- Recording-consent legal review and production object-storage lifecycle/cost review remain required before enabling cloud audio for non-developer users.
+- Production operations still need verified backend-only database access, least-privilege roles, production secrets and key-rotation procedures, backup encryption/restore drills/monitoring, incident response procedures, late-upload cleanup verification, and configured/verified error reporting with IP-address storage disabled.
+- Recording-consent legal review and production object-storage lifecycle/cost review remain required before enabling cloud audio for non-developer users. Define a minor-user policy and review covert-recording abuse scenarios before broad release. Any future owner-voice feature also needs a separate biometric-consent and privacy review before implementation.
 - GitHub CodeQL currently uses default setup, which attempts an Android release build without the private signing key. `.github/workflows/codeql.yml` defines a manual debug-variant build; repository owners must switch code scanning to advanced setup and confirm its first run uploads results before release.
 
 Implemented account foundations include password reset and email verification flows, device-token listing/expiry/revocation, API-key create/list/revoke, and a self-service export endpoint. These do not close the separate public-launch gates above.

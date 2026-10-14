@@ -52,15 +52,8 @@ object ProviderPresets {
             id = "openai",
             label = "OpenAI",
             endpoint = "https://api.openai.com/v1/chat/completions",
-            models = listOf("gpt-4o-mini", "gpt-4o"),
+            models = listOf("gpt-6-luna", "gpt-6.1-sol"),
             keyUrl = "https://platform.openai.com/api-keys",
-        ),
-        ProviderPreset(
-            id = "anthropic",
-            label = "Anthropic (Claude)",
-            endpoint = "https://api.anthropic.com/v1/chat/completions",
-            models = listOf("claude-haiku-5-5", "claude-sonnet-5-5"),
-            keyUrl = "https://console.anthropic.com/settings/keys",
         ),
         ProviderPreset(
             id = "groq",

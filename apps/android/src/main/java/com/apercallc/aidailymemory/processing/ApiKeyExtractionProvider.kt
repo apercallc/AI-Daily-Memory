@@ -5,7 +5,7 @@ import com.apercallc.aidailymemory.recording.processing.ExtractedItem
 import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
-import com.apercallc.aidailymemory.recording.processing.ProviderStatus
+import com.apercallc.aidailymemory.recording.processing.TokenUsage
 import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -20,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -40,13 +41,27 @@ class ApiKeyExtractionProvider(
 ) : ExtractionProvider {
 
     override val name: String = "user-key"
+    override val billingProviderId: String? = ProviderBillingIdentity.fromUrl(apiUrl)
+    override val isExternalProvider: Boolean = true
 
     override suspend fun extract(lines: List<NumberedLine>): ExtractionResult {
         val prompt = buildPrompt(lines)
         val response = callApi(prompt)
-        val items = parseResponse(response)
+        val result = parseResult(response)
         if (droppedItems > 0) Log.w(TAG, "extraction_items_dropped count=$droppedItems")
-        return ExtractionResult(items)
+        return result
+    }
+
+    internal fun parseResult(response: String): ExtractionResult =
+        ExtractionResult(parseResponse(response), tokenUsage(response))
+
+    private fun tokenUsage(response: String): TokenUsage? {
+        val root = Json.parseToJsonElement(response) as? JsonObject ?: return null
+        val usage = root["usage"] as? JsonObject ?: return null
+        val input = (usage["prompt_tokens"] as? JsonPrimitive)?.longOrNull ?: return null
+        val output = (usage["completion_tokens"] as? JsonPrimitive)?.longOrNull ?: return null
+        if (input < 0 || output < 0) return null
+        return TokenUsage(input, output)
     }
 
     internal fun buildPrompt(lines: List<NumberedLine>): String {
@@ -87,7 +102,7 @@ class ApiKeyExtractionProvider(
         try {
             conn.outputStream.use { it.write(requestBody(prompt).toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
-            ProviderStatus.failureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
+            conn.providerFailureFor(code)?.let { throw ProcessingException(it.code, it.retryable) }
             return BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
         } catch (e: java.net.SocketTimeoutException) {
             throw ProcessingException("provider_timeout", retryable = true, cause = e)
@@ -172,7 +187,13 @@ class ApiKeyExtractionProvider(
                 )
             },
         )
-        put("temperature", 0.1)
+        if (model == "gpt-6.1-sol") {
+            put("reasoning_effort", "low")
+        } else if (model.startsWith("gpt-6")) {
+            put("reasoning_effort", "none")
+        } else {
+            put("temperature", 0.1)
+        }
     }.toString()
 
     companion object {

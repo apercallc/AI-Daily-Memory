@@ -13,6 +13,8 @@ import com.apercallc.aidailymemory.data.MemoryItemDao
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.data.ProcessingStateDao
 import com.apercallc.aidailymemory.data.ProcessingStateEntity
+import com.apercallc.aidailymemory.data.ProviderUsageDao
+import com.apercallc.aidailymemory.data.ProviderUsageEntity
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.data.SegmentEntity
 import com.apercallc.aidailymemory.data.SpeechDao
@@ -57,6 +59,7 @@ class ProcessingPipeline(
     private val dailyReportDao: DailyReportDao,
     private val localTranscriptDao: LocalTranscriptDao,
     private val processingStateDao: ProcessingStateDao,
+    private val providerUsageDao: ProviderUsageDao,
     private val transcriptionProvider: TranscriptionProvider,
     /** Null = summaries off: the session keeps its transcript and gets no extracted items. */
     private val extractionProvider: ExtractionProvider?,
@@ -128,9 +131,10 @@ class ProcessingPipeline(
         // Reuse persisted evidence after an interrupted extraction or sync-window stop. Audio
         // may already be deleted, so load transcripts before deciding there is no work to do.
         val allLines = localTranscriptDao.forSession(sessionId).toMutableList()
-        val segmentIds = segmentDao.forSession(sessionId)
+        val sealedSegments = segmentDao.forSession(sessionId)
             .filter { it.state == SegmentState.SEALED.name }
-            .map { it.segmentId }
+        val segmentIds = sealedSegments.map { it.segmentId }
+        val sessionAudioMs = sealedSegments.sumOf { it.durationMs.coerceAtLeast(0) }
 
         if (segmentIds.isEmpty() && allLines.isEmpty()) {
             updateState(sessionId, "COMPLETED", null)
@@ -157,6 +161,23 @@ class ProcessingPipeline(
                     segment.codec,
                     segment.sampleRateHz,
                 )
+                if (transcriptionProvider.isExternalProvider) {
+                    providerUsageDao.record(
+                        ProviderUsageEntity(
+                            requestId = ids.next().toString(),
+                            sessionId = sessionId,
+                            stage = "TRANSCRIPTION",
+                            providerId = transcriptionProvider.billingProviderId,
+                            model = transcriptionProvider.model,
+                            requestAudioMs = segment.durationMs.coerceAtLeast(0),
+                            sessionAudioMs = sessionAudioMs,
+                            inputTokens = null,
+                            outputTokens = null,
+                            recordedAtEpochMs = now(),
+                        ),
+                        now(),
+                    )
+                }
                 ProcessingValidation.validateTranscript(result, segment.durationMs)
 
                 val segmentStart = segment.start.occurredAtEpochMs
@@ -189,7 +210,8 @@ class ProcessingPipeline(
         updateState(sessionId, "TRANSCRIBED", null)
         var audioDeleted = false
         if (settings.deleteAudioAfterTranscription.value) {
-            // Audio is only ever kept on the phone, so once its words are stored it can go.
+            // Once the transcript is safely stored on-device, local audio may follow the user's
+            // retention setting; configured transcription providers receive audio directly.
             for (segmentId in segmentIds) {
                 val segment = segmentDao.get(segmentId) ?: continue
                 segments.deleteSegmentAudio(segment)
@@ -207,6 +229,23 @@ class ProcessingPipeline(
 
         // Extract memory items; with summaries off there are none and the transcript stands alone.
         val extractionResult = extractionProvider?.extract(numberedLines) ?: ExtractionResult(emptyList())
+        if (extractionProvider?.isExternalProvider == true) {
+            providerUsageDao.record(
+                ProviderUsageEntity(
+                    requestId = ids.next().toString(),
+                    sessionId = sessionId,
+                    stage = "SUMMARY",
+                    providerId = extractionProvider.billingProviderId,
+                    model = extractionProvider.model,
+                    requestAudioMs = 0,
+                    sessionAudioMs = sessionAudioMs,
+                    inputTokens = extractionResult.tokenUsage?.inputTokens,
+                    outputTokens = extractionResult.tokenUsage?.outputTokens,
+                    recordedAtEpochMs = now(),
+                ),
+                now(),
+            )
+        }
         ProcessingValidation.validateExtraction(extractionResult, numberedLines.size)
 
         // Store memory items (replace for session — idempotent by replacement)

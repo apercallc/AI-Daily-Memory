@@ -158,7 +158,7 @@ class SettingsViewModelTest {
         assertEquals("deepgram", vm.processing.value.transcriptionPresetId)
         assertEquals("nova-3", vm.processing.value.transcriptionModel)
         assertEquals("openai", vm.processing.value.extractionPresetId)
-        assertEquals("gpt-4o-mini", vm.processing.value.extractionModel)
+        assertEquals("gpt-6-luna", vm.processing.value.extractionModel)
         // Only the keys are left.
         assertEquals(2, vm.processing.value.configGaps.size)
     }
@@ -186,10 +186,10 @@ class SettingsViewModelTest {
 
     @Test
     fun `switching to a preset keeps a model that belongs to it`() = withViewModel { vm ->
-        vm.processingActions.onExtractionModelChange("gpt-4o")
+        vm.processingActions.onExtractionModelChange("gpt-6.1-sol")
         vm.processingActions.onExtractionPresetChange("openai")
 
-        assertEquals("gpt-4o", container.processingSettings.extractionModel)
+        assertEquals("gpt-6.1-sol", container.processingSettings.extractionModel)
     }
 
     @Test

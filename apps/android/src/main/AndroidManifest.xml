@@ -7,8 +7,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Short, timed partial wake locks while an automatic recovery retry is pending. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Sign-in, note sync and the one-time speech model download (HTTPS only; cleartext is disabled).
-         Audio is never sent anywhere. -->
+    <!-- Sign-in, note sync, the one-time speech model download, and optional provider requests
+         (HTTPS only; cleartext is disabled). Audio is sent only when a transcription provider is selected. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Self-update: the app downloads its own APK from GitHub Releases and hands it to the

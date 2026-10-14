@@ -277,18 +277,21 @@ data rights.
 - ❓ A watch "report" request during capture must be acknowledged by the phone and cover the
   full session through Stop. Disconnection, rejected background start, or a pending report must
   never be shown as completed.
-- ❓ On-device transcription/extraction is a requested direction, but conflicts with ADR-0014's
-  transient cloud-processing design. Decide model/device support and update the ADR before
-  implementation; offline inference failure must keep audio and expose a retryable state.
+- ✅ ADR-0020 and ADR-0026 accept on-device transcription/extraction and supersede ADR-0014's
+  cloud-processing assumption. Production readiness still depends on the Phase 0 model/device,
+  quality, and battery benchmarks; inference failure keeps local audio available for recovery.
 
 ## 13. Error handling (whole-app pass)
 
 | Case | Behaviour | Where | Status |
 | --- | --- | --- | --- |
 | A fault (not just I/O) while analyzing one segment | That segment is marked undecodable and the batch continues; later speech is still analyzed | `SpeechAnalyzer` | ✅ |
-| Own provider answers 401/403, 408/425/429, 5xx | Bad key is named and not retried; rate limit, busy and server errors are retried; one shared rule for both stages | `ProviderStatus`, `ApiKey*Provider` | ✅ |
+| Own provider answers 401/403, 402, 408/425/429, 5xx | Bad key is not retried; 402 or explicit quota exhaustion is terminal; an ordinary 429 is retried; no provider is switched automatically | `ProviderStatus`, `ApiKey*Provider` | ✅ |
 | Processing hits an I/O or database error | Session stays pending and is retried, not failed for good | `ProcessingPipeline` | ✅ |
-| Sessions whose processing gave up | Count with a "Try again" button in Memory processing; audio is kept | `ProcessingSettingsSection` | ✅ |
+| Transcription provider fails before a transcript is saved | Encrypted local audio remains sealed and available for Retry or a user-selected provider change; no automatic provider switch | `ProcessingPipeline`, `SegmentStore` | ✅ |
+| Summary provider fails after transcript persistence | Transcript remains immutable; error reason is shown, Retry reuses it, and turning summaries off before retry produces transcript-only output. Audio retention follows the user's delete-after-transcription setting. | `ProcessingPipeline`, `ProcessingSettingsSection` | ✅ |
+| Provider cost is unknown or the session is deleted | Show usage counts but no fabricated dollar total when list price/token counts are missing; prune usage older than 30 days when recording a new sample and remove it with the session. | `ProviderCostEstimator`, `ProviderUsageDao`, `SessionDao` | ✅ |
+| Sessions whose processing gave up | Count with a "Try again" button in Memory processing; transcript evidence is retained, while audio follows the configured retention setting | `ProcessingSettingsSection` | ✅ |
 | Own provider returns a malformed item, or only malformed items | Dropped items are counted in the log; all-malformed fails visibly instead of producing an empty day | `ApiKeyExtractionProvider` | ✅ |
 | Upload stops for the daily limit, server trouble or no connection | Account screen says which, and clears when a run gets through | `UploadStatusStore`, `AccountSection` | ✅ |
 | Server answers sign-in with 5xx or 404/405 | "Server had a problem" / "not an AI Daily Memory server" instead of "can't reach" | `AccountLinker` | ✅ |
