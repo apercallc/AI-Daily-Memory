@@ -4,6 +4,11 @@ The capture pipeline shipped with provisional parameters. Each row below is a cl
 code makes that has **not** been measured on hardware yet. Record results next to each row
 (device, OS, build, duration, raw numbers) and adjust the parameter in the named file.
 
+The app reports "no speech detected" only after speech analysis covers the closed session and
+suggests checking microphone placement. That result does not prove the room was silent or identify
+muffled audio. Do not claim a muffled-capture diagnosis until a signal and threshold are validated
+on labeled device recordings.
+
 | What to measure | Why it matters | Parameter / code | How |
 | --- | --- | --- | --- |
 | Segment rotation wall time, p50/p99, on a low-end device under I/O load | The writer backlog (5 s) must cover the worst rotation (close + fsync + rename + dir sync + two DB writes) | `CaptureConfig.writerBacklogMs`, `AudioCaptureEngine.write` | Perfetto trace of `audio-writer`; count `audio_writer_backlog_full` logs over 24 h |

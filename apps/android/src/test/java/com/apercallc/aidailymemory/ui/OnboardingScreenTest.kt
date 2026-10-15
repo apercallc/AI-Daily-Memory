@@ -31,6 +31,8 @@ class OnboardingScreenTest {
         compose.onNodeWithText("Your day, remembered").assertExists()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Where should your memory live?").assertExists()
+        compose.onNodeWithText("Notes that have not synced are stored only on this phone.", substring = true)
+            .assertExists()
         compose.onNodeWithText("Keep notes on this phone").assertIsSelected()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Allow what recording needs").assertExists()

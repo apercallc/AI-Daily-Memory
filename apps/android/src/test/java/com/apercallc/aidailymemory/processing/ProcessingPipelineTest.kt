@@ -197,6 +197,62 @@ class ProcessingPipelineTest {
     }
 
     @Test
+    fun `completed segment transcript is saved before a later segment fails`() = runTest {
+        val (segmentStore, _) = encryptedSegmentStore()
+        repeat(2) {
+            val open = segmentStore.begin(
+                SessionId(SESSION_ID),
+                continuesPrevious = it > 0,
+                format = SegmentFormat("aac-lc-adts", 16_000, 1),
+            )
+            open.writeFrame(ByteBuffer.wrap(ByteArray(200) { byte -> byte.toByte() }), 200)
+            segmentStore.seal(open)
+        }
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", false, null, 0L))
+        var calls = 0
+        val provider = object : TranscriptionProvider {
+            override val name = "test"
+            override val model = "test-model"
+            override suspend fun transcribe(audio: ByteArray, codec: String, sampleRateHz: Int): TranscriptResult {
+                calls++
+                if (calls == 2) throw ProcessingException("temporary_provider_error", retryable = true)
+                return TranscriptResult("en", listOf(TranscribedSpan(0, 50, "First segment")))
+            }
+        }
+
+        val run = pipeline(
+            extractionProvider = null,
+            transcriptionProvider = provider,
+            segmentStore = segmentStore,
+        ).processPending()
+
+        assertEquals(1, run.failed)
+        assertEquals(1, database.localTranscripts().countForSession(SESSION_ID))
+        assertEquals("First segment", database.localTranscripts().forSession(SESSION_ID).single().text)
+
+        var resumedCalls = 0
+        val resumedRun = pipeline(
+            extractionProvider = null,
+            transcriptionProvider = object : TranscriptionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun transcribe(audio: ByteArray, codec: String, sampleRateHz: Int): TranscriptResult {
+                    resumedCalls++
+                    return TranscriptResult("en", listOf(TranscribedSpan(0, 50, "Second segment")))
+                }
+            },
+            segmentStore = segmentStore,
+        ).processPending()
+
+        assertEquals(ProcessingRun(processed = 1, failed = 0, remaining = 0), resumedRun)
+        assertEquals(1, resumedCalls)
+        assertEquals(
+            listOf("First segment", "Second segment"),
+            database.localTranscripts().forSession(SESSION_ID).map { it.text },
+        )
+    }
+
+    @Test
     fun `successful external transcription records sent audio without retaining content`() = runTest {
         val (segmentStore, _) = encryptedSegmentStore()
         val open = segmentStore.begin(

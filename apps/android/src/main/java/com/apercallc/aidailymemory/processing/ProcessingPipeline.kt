@@ -66,6 +66,7 @@ class ProcessingPipeline(
     private val settings: ProcessingSettings,
     private val ids: UuidV7Generator,
     private val now: () -> Long = System::currentTimeMillis,
+    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
     /** Non-empty = settings are incomplete: sessions wait instead of failing (see settings UI). */
     private val configGaps: () -> List<ConfigGap> = { emptyList() },
 ) {
@@ -141,10 +142,30 @@ class ProcessingPipeline(
             return
         }
 
-        updateState(sessionId, "TRANSCRIBING", null)
+        val previousState = processingStateDao.forSession(sessionId)
+        val knownTranscriptSegments = allLines.mapTo(mutableSetOf()) { it.segmentId }
+        val inferredCompleted = if (previousState?.audioDeleted == true && allLines.isNotEmpty()) {
+            // Older versions persisted all lines together, then deleted audio only after that
+            // commit. Preserve that invariant when resuming a pre-progress session.
+            segmentIds.size
+        } else {
+            segmentIds.takeWhile { it in knownTranscriptSegments }.size
+        }
+        var completedSegments = maxOf(previousState?.completedSegments ?: 0, inferredCompleted)
+        var processingTimeMs = previousState?.processingTimeMs ?: 0L
+        updateState(
+            sessionId,
+            "TRANSCRIBING",
+            null,
+            completedSegments = completedSegments,
+            totalSegments = segmentIds.size,
+            processingTimeMs = processingTimeMs,
+        )
 
-        if (allLines.isEmpty()) {
-            for (segmentId in segmentIds) {
+        if (segmentIds.isNotEmpty()) {
+            for ((index, segmentId) in segmentIds.withIndex()) {
+                if (index < completedSegments) continue
+                val segmentStartedAt = elapsedRealtimeMs()
                 val segment = segmentDao.get(segmentId) ?: continue
                 val audio = when (val read = segments.readAudioResult(segment)) {
                     is SegmentAudioRead.Audio -> read.bytes
@@ -181,23 +202,37 @@ class ProcessingPipeline(
                 ProcessingValidation.validateTranscript(result, segment.durationMs)
 
                 val segmentStart = segment.start.occurredAtEpochMs
-                for (span in result.spans) {
+                val segmentLines = result.spans.map { span ->
                     val lineId = ids.next().toString()
-                    allLines.add(
-                        LocalTranscriptLineEntity(
-                            lineId = lineId,
-                            sessionId = sessionId,
-                            segmentId = segmentId,
-                            startEpochMs = segmentStart + span.startMs,
-                            endEpochMs = segmentStart + span.endMs,
-                            speaker = span.speaker,
-                            text = span.text,
-                            confidence = span.confidence,
-                            provider = transcriptionProvider.name,
-                            model = transcriptionProvider.model,
-                        ),
+                    LocalTranscriptLineEntity(
+                        lineId = lineId,
+                        sessionId = sessionId,
+                        segmentId = segmentId,
+                        startEpochMs = segmentStart + span.startMs,
+                        endEpochMs = segmentStart + span.endMs,
+                        speaker = span.speaker,
+                        text = span.text,
+                        confidence = span.confidence,
+                        provider = transcriptionProvider.name,
+                        model = transcriptionProvider.model,
                     )
                 }
+                // Commit each segment before moving on so long sessions expose transcript lines
+                // as they finish and an interrupted batch resumes at the next segment.
+                localTranscriptDao.replaceForSegment(segmentId, segmentLines)
+                allLines.removeAll { it.segmentId == segmentId }
+                allLines.addAll(segmentLines)
+                completedSegments = index + 1
+                processingTimeMs = (processingTimeMs + (elapsedRealtimeMs() - segmentStartedAt).coerceAtLeast(0L))
+                    .coerceAtLeast(processingTimeMs)
+                updateState(
+                    sessionId,
+                    "TRANSCRIBING",
+                    null,
+                    completedSegments = completedSegments,
+                    totalSegments = segmentIds.size,
+                    processingTimeMs = processingTimeMs,
+                )
             }
 
             if (allLines.isEmpty()) {
@@ -308,15 +343,21 @@ class ProcessingPipeline(
         state: String,
         error: String?,
         audioDeleted: Boolean = false,
+        completedSegments: Int? = null,
+        totalSegments: Int? = null,
+        processingTimeMs: Long? = null,
     ) {
-        val audioWasDeleted = processingStateDao.forSession(sessionId)?.audioDeleted == true
+        val previous = processingStateDao.forSession(sessionId)
         processingStateDao.upsert(
             ProcessingStateEntity(
                 sessionId = sessionId,
                 state = state,
-                audioDeleted = audioDeleted || audioWasDeleted,
+                audioDeleted = audioDeleted || previous?.audioDeleted == true,
                 lastError = error,
                 updatedAtEpochMs = now(),
+                completedSegments = completedSegments ?: previous?.completedSegments ?: 0,
+                totalSegments = totalSegments ?: previous?.totalSegments ?: 0,
+                processingTimeMs = processingTimeMs ?: previous?.processingTimeMs ?: 0L,
             ),
         )
     }

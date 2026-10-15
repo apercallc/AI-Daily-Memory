@@ -116,6 +116,10 @@ class SessionsViewModel(
             }
             .flowOn(Dispatchers.IO)
 
+    /** Processing progress is observed separately so saved transcript lines appear immediately. */
+    fun processingState(sessionId: String) =
+        container.database.processingState().observeForSession(sessionId)
+
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 

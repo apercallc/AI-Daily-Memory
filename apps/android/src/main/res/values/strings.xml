@@ -149,6 +149,7 @@
     <string name="day_captured">%1$s captured</string>
     <!-- Detected speech in a session, e.g. "42 min of talk". -->
     <string name="session_speech">%1$s of talk</string>
+    <string name="session_no_speech">No speech was detected. If you expected speech, check whether the microphone was covered or too far from the conversation.</string>
     <string name="session_time_range">%1$s – %2$s</string>
     <string name="session_time_open">%1$s – now</string>
     <string name="session_open_hint">Open transcript</string>
@@ -156,6 +157,16 @@
     <string name="session_rename">Rename</string>
     <string name="transcript_empty_title">No transcript yet</string>
     <string name="transcript_empty">Speech is turned into text on this phone while it charges. Download the free speech model in Settings if you haven\'t yet.</string>
+    <string name="processing_session_waiting">Waiting for the phone to charge before transcription starts.</string>
+    <string name="processing_session_progress">Transcribing on this phone. %1$d%% complete, about %2$s left.</string>
+    <plurals name="processing_session_progress_no_eta">
+        <item quantity="one">Transcribing on this phone. %1$d%% complete across %2$d of %3$d segment.</item>
+        <item quantity="other">Transcribing on this phone. %1$d%% complete across %2$d of %3$d segments.</item>
+    </plurals>
+    <string name="processing_session_eta_minutes">%1$d min</string>
+    <string name="processing_session_eta_hours">%1$d hr %2$d min</string>
+    <string name="processing_session_finishing">Transcript ready. Finishing session notes.</string>
+    <string name="processing_session_failed">Processing stopped. Open Settings to check the problem and retry.</string>
     <!-- A speaker label from transcription, e.g. "Speaker A". -->
     <string name="transcript_speaker">Speaker %1$s</string>
     <string name="part_early_morning">Early morning</string>
@@ -307,7 +318,11 @@
     <string name="settings_collapse">Hide</string>
     <string name="sync_explainer">Sends each day\'s notes to your account so you can read and search them on the web and through the API. Never sends audio. Does nothing while you are offline.</string>
     <string name="sync_enabled">Send daily reports to my account</string>
-    <string name="sync_failed">The last sync failed. New notes are waiting to sync; use Test connection in Account &amp; server.</string>
+    <string name="sync_last_success">Last successful notes sync: %1$s</string>
+    <string name="sync_never_succeeded">No successful notes sync yet.</string>
+    <string name="sync_failed">The last sync failed. Unsynced changes remain on this phone and will retry when charging on Wi-Fi.</string>
+    <string name="sync_retry">Retry sync</string>
+    <string name="sync_retry_scheduled">A sync retry is scheduled for the next charging and Wi-Fi window.</string>
     <string name="url_must_be_https">Enter a full https:// address with a valid host. Plain http is not allowed.</string>
     <string name="sync_include_transcripts">Also sync full transcripts</string>
 

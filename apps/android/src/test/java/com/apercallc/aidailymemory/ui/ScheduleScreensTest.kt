@@ -65,6 +65,38 @@ class ScheduleScreensTest {
     }
 
     @Test
+    fun `a fully analyzed session with no detected speech says so explicitly`() {
+        val start = ZonedDateTime.of(2026, 9, 22, 14, 0, 0, 0, zone)
+        val days = listOf(
+            DayGroup(
+                today,
+                listOf(
+                    SessionItem(
+                        sessionId = "s1",
+                        title = SessionTitle.Default(PartOfDay.AFTERNOON, null),
+                        start = start,
+                        end = start.plusHours(1),
+                        capturedMs = 3_600_000,
+                        customTitle = null,
+                        speechMs = 0,
+                    ),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            AiDailyMemoryTheme(dynamicColor = false) {
+                SessionsScreen(days = days, today = today, onRename = { _, _ -> })
+            }
+        }
+
+        compose.onNodeWithText(
+            "No speech was detected. If you expected speech, check whether the microphone was " +
+                "covered or too far from the conversation.",
+        ).assertExists()
+    }
+
+    @Test
     fun `an empty memory points to processing setup`() {
         var opened = 0
         compose.setContent {

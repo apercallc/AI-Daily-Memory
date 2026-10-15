@@ -190,7 +190,11 @@ private fun SessionCard(
                 )
                 session.speechMs?.let { speech ->
                     Text(
-                        text = stringResource(R.string.session_speech, durationText(speech)),
+                        text = if (speech == 0L) {
+                            stringResource(R.string.session_no_speech)
+                        } else {
+                            stringResource(R.string.session_speech, durationText(speech))
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -72,6 +72,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
@@ -79,6 +81,33 @@ jobs:
 
       - name: Install (fails if uv.lock is out of date)
         run: uv sync --locked --extra dev
+
+      - name: Verify generated OpenAPI v1 snapshot
+        run: uv run python -m app.openapi_artifact --check
+
+      - name: Reject breaking OpenAPI changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            baseline_ref="origin/$PR_BASE_REF"
+          else
+            baseline_ref="$EVENT_BEFORE"
+          fi
+          if [[ -z "$baseline_ref" || "$baseline_ref" =~ ^0+$ ]]; then
+            echo "No prior API baseline; skipping compatibility comparison."
+            exit 0
+          fi
+          baseline_file="$RUNNER_TEMP/openapi-v1-baseline.json"
+          if ! git show "${baseline_ref}:docs/api/openapi.v1.json" 2>/dev/null > "$baseline_file"; then
+            echo "No prior OpenAPI snapshot; accepting the initial v1 baseline."
+            exit 0
+          fi
+          uv run python -m app.openapi_compat "$baseline_file" ../docs/api/openapi.v1.json
 
       - name: Ruff lint
         run: uv run ruff check .

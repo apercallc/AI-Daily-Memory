@@ -106,9 +106,9 @@ class SyncJobService : JobService() {
  * user-configured API endpoint. Only structured memory leaves the phone — never audio
  * (ADR-0020). Raw transcript lines are included only when the user opts in.
  *
- * The last successful sync timestamp is tracked in [ProcessingSettings]; reports generated after
- * it are sent. On success the timestamp advances; on failure it stays and the next schedule
- * retries the same reports.
+ * The report cursor and last successful request time are tracked separately in
+ * [ProcessingSettings]. A deletions-only success updates the request time without moving the
+ * report cursor; failures leave both unchanged so the next schedule retries the same changes.
  *
  * Locally deleted sessions are queued (see `sync_deletion_queue`) and sent as
  * [SyncPayload.deletedSessions]; the queue clears only after the target accepted the payload.
@@ -129,6 +129,7 @@ class SyncManager(
      * Transport seam for tests. Null in production, where [post] opens the real connection.
      */
     private val poster: (suspend (url: String, token: String?, body: String) -> Unit)? = null,
+    private val nowEpochMs: () -> Long = System::currentTimeMillis,
 ) {
 
     /**
@@ -154,6 +155,7 @@ class SyncManager(
         val body = json.encodeToString(SyncPayload.serializer(), payload)
         return try {
             if (poster != null) poster.invoke(url, token, body) else post(url, token, body)
+            settings.setLastSyncSucceededAtEpochMs(nowEpochMs())
             // The cursor is the newest generated_at actually sent, never the wall clock: a
             // report generated while the POST was in flight must still be picked up next time.
             // A deletions-only payload leaves it untouched.

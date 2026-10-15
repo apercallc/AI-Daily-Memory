@@ -280,7 +280,17 @@ class ProcessingSettings(
         _syncIncludeTranscripts.value = include
     }
 
-    /** Epoch ms of the last successful sync; null when no sync has completed yet. */
+    private val _lastSyncSucceededAtEpochMs = MutableStateFlow(
+        prefs.getLong(KEY_LAST_SYNC_SUCCEEDED_AT, NONE).takeIf { it != NONE },
+    )
+    val lastSyncSucceededAtEpochMs: StateFlow<Long?> = _lastSyncSucceededAtEpochMs.asStateFlow()
+
+    fun setLastSyncSucceededAtEpochMs(epochMs: Long) {
+        prefs.edit { putLong(KEY_LAST_SYNC_SUCCEEDED_AT, epochMs) }
+        _lastSyncSucceededAtEpochMs.value = epochMs
+    }
+
+    /** Report cursor; independent of the time the last request succeeded. */
     var lastSyncEpochMs: Long?
         get() = prefs.getLong(KEY_LAST_SYNC, NONE).takeIf { it != NONE }
         set(value) = prefs.edit {
@@ -319,6 +329,7 @@ class ProcessingSettings(
         private const val KEY_SYNC_INCLUDE_TRANSCRIPTS = "sync_include_transcripts"
         private const val KEY_LAST_SYNC_FAILED = "last_sync_failed"
         private const val KEY_LAST_SYNC = "last_sync_epoch_ms"
+        private const val KEY_LAST_SYNC_SUCCEEDED_AT = "last_sync_succeeded_at_epoch_ms"
         private const val NONE = Long.MIN_VALUE
     }
 }

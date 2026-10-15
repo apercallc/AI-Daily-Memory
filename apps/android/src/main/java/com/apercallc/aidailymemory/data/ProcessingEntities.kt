@@ -128,6 +128,9 @@ data class ProcessingStateEntity(
     @ColumnInfo(name = "audio_deleted") val audioDeleted: Boolean,
     @ColumnInfo(name = "last_error") val lastError: String?,
     @ColumnInfo(name = "updated_at_epoch_ms") val updatedAtEpochMs: Long,
+    @ColumnInfo(name = "completed_segments", defaultValue = "0") val completedSegments: Int = 0,
+    @ColumnInfo(name = "total_segments", defaultValue = "0") val totalSegments: Int = 0,
+    @ColumnInfo(name = "processing_time_ms", defaultValue = "0") val processingTimeMs: Long = 0,
 )
 
 /** Content-free record of successful provider usage, retained only with its session. */

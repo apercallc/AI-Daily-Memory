@@ -293,8 +293,10 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
 private fun TranscriptRoute(viewModel: SessionsViewModel, sessionId: String, title: String, onBack: () -> Unit) {
     val lines by remember(sessionId) { viewModel.transcript(sessionId) }
         .collectAsStateWithLifecycle(initialValue = null)
+    val processing by remember(sessionId) { viewModel.processingState(sessionId) }
+        .collectAsStateWithLifecycle(initialValue = null)
     SecondaryScreen(title.ifEmpty { stringResource(R.string.transcript_title) }, onBack, snackbar = null) { modifier ->
-        TranscriptScreen(lines = lines, modifier = modifier)
+        TranscriptScreen(lines = lines, processingState = processing, modifier = modifier)
     }
 }
 

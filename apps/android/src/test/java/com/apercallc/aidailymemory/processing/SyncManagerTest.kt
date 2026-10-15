@@ -40,8 +40,10 @@ class SyncManagerTest {
         db = Room.inMemoryDatabaseBuilder(context, CaptureDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        val preferences = context.getSharedPreferences("sync-manager-test", Context.MODE_PRIVATE)
+        preferences.edit().clear().commit()
         settings = ProcessingSettings(
-            context.getSharedPreferences("sync-manager-test", Context.MODE_PRIVATE),
+            preferences,
         ) { com.apercallc.aidailymemory.settings.testAead() }.apply {
             setSyncEnabled(true)
         }
@@ -58,6 +60,7 @@ class SyncManagerTest {
         deviceId = "test-device",
         link = { link },
         notBeforeEpochMs = { notBefore },
+        nowEpochMs = { 42_000L },
         poster = { url, _, body ->
             failWith?.invoke()
             urls.add(url)
@@ -94,6 +97,7 @@ class SyncManagerTest {
         assertEquals(listOf("gone-1"), sentDeletedSessions())
         assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
         assertEquals(null, settings.lastSyncEpochMs)
+        assertEquals(42_000L, settings.lastSyncSucceededAtEpochMs.value)
         assertFalse(settings.lastSyncFailed.value)
     }
 

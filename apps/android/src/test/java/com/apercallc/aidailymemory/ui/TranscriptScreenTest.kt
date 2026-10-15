@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.TranscriptText
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -52,6 +53,29 @@ class TranscriptScreenTest {
         compose.onNodeWithText("No transcript yet").assertExists()
         compose.onNodeWithText(
             "Speech is turned into text on this phone while it charges. Download the free speech model in Settings if you haven't yet.",
+        ).assertExists()
+    }
+
+    @Test
+    fun `transcription status shows measured percent and remaining time`() {
+        val state = ProcessingStateEntity(
+            sessionId = "session",
+            state = "TRANSCRIBING",
+            audioDeleted = false,
+            lastError = null,
+            updatedAtEpochMs = 0L,
+            completedSegments = 1,
+            totalSegments = 4,
+            processingTimeMs = 1_000L,
+        )
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(lines = emptyList(), processingState = state)
+            }
+        }
+
+        compose.onNodeWithText(
+            "Transcribing on this phone. 25% complete, about 1 min left.",
         ).assertExists()
     }
 }

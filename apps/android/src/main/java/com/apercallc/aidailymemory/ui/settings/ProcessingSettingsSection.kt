@@ -86,7 +86,7 @@ data class SyncUi(
     val enabled: Boolean = true,
     val connected: Boolean = false,
     val includeTranscripts: Boolean = false,
-    val lastSyncEpochMs: Long? = null,
+    val lastSyncSucceededAtEpochMs: Long? = null,
     val lastSyncFailed: Boolean = false,
 )
 
@@ -118,6 +118,7 @@ data class ProcessingActions(
 data class SyncActions(
     val onEnableChange: (Boolean) -> Unit = {},
     val onIncludeTranscriptsChange: (Boolean) -> Unit = {},
+    val onRetry: () -> Unit = {},
 )
 
 /**
@@ -665,6 +666,20 @@ fun SyncSettingsSection(
             )
         }
         if (sync.enabled) {
+            val lastSyncTime = remember(sync.lastSyncSucceededAtEpochMs) {
+                sync.lastSyncSucceededAtEpochMs?.let { epochMs ->
+                    java.text.DateFormat.getDateTimeInstance(
+                        java.text.DateFormat.MEDIUM,
+                        java.text.DateFormat.SHORT,
+                    ).format(java.util.Date(epochMs))
+                }
+            }
+            Text(
+                text = lastSyncTime?.let { stringResource(R.string.sync_last_success, it) }
+                    ?: stringResource(R.string.sync_never_succeeded),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (!sync.connected) {
                 Text(
                     text = stringResource(R.string.sync_needs_account),
@@ -679,6 +694,11 @@ fun SyncSettingsSection(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
+                OutlinedButton(
+                    onClick = actions.onRetry,
+                    enabled = sync.connected,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.sync_retry)) }
             }
             SettingsCard {
                 ToggleRow(

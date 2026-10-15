@@ -4,13 +4,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -18,6 +24,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
+import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.TranscriptText
 import com.apercallc.aidailymemory.ui.EmptyState
 import com.apercallc.aidailymemory.ui.LoadingState
@@ -33,10 +40,17 @@ import java.time.ZoneId
  * provider gave them; attributing "me" comes with ADR-0016.
  */
 @Composable
-fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier) {
+fun TranscriptScreen(
+    lines: List<TranscriptText>?,
+    modifier: Modifier = Modifier,
+    processingState: ProcessingStateEntity? = null,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+        processingState?.takeIf { it.state != "COMPLETED" }?.let { state ->
+            item(key = "processing_status") { ProcessingStatusCard(state) }
+        }
         when {
             lines == null -> item { LoadingState(stringResource(R.string.transcript_loading)) }
             lines.isEmpty() -> item {
@@ -79,6 +93,67 @@ fun TranscriptScreen(lines: List<TranscriptText>?, modifier: Modifier = Modifier
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProcessingStatusCard(state: ProcessingStateEntity) {
+    val estimate = ProcessingProgressEstimator.estimate(
+        completedSegments = state.completedSegments,
+        totalSegments = state.totalSegments,
+        processingTimeMs = state.processingTimeMs,
+    )
+    val label = when (state.state) {
+        "PENDING" -> stringResource(R.string.processing_session_waiting)
+        "TRANSCRIBING" -> {
+            if (estimate?.remainingMs != null) {
+                stringResource(
+                    R.string.processing_session_progress,
+                    estimate.percentComplete,
+                    remainingTimeLabel(estimate.remainingMs),
+                )
+            } else {
+                pluralStringResource(
+                    R.plurals.processing_session_progress_no_eta,
+                    state.totalSegments,
+                    estimate?.percentComplete ?: 0,
+                    state.completedSegments,
+                    state.totalSegments,
+                )
+            }
+        }
+        "TRANSCRIBED", "EXTRACTING" -> stringResource(R.string.processing_session_finishing)
+        "FAILED" -> stringResource(R.string.processing_session_failed)
+        else -> return
+    }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { liveRegion = LiveRegionMode.Polite }
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            if (state.state == "TRANSCRIBING" && estimate != null) {
+                LinearProgressIndicator(
+                    progress = { estimate.percentComplete / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun remainingTimeLabel(remainingMs: Long): String {
+    val minutes = ((remainingMs + 59_999L) / 60_000L).coerceAtLeast(1L)
+    val hours = minutes / 60L
+    return if (hours > 0L) {
+        stringResource(R.string.processing_session_eta_hours, hours.toInt(), (minutes % 60L).toInt())
+    } else {
+        stringResource(R.string.processing_session_eta_minutes, minutes.toInt())
     }
 }
 

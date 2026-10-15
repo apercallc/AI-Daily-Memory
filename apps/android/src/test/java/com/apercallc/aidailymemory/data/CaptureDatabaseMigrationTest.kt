@@ -51,7 +51,37 @@ class CaptureDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun `a v8 processing row migrates with empty segment progress`() {
+        helper.createDatabase(TEST_DB_V8, 8).apply {
+            execSQL(
+                "INSERT INTO processing_state " +
+                    "(session_id, state, audio_deleted, last_error, updated_at_epoch_ms) " +
+                    "VALUES ('session-v8', 'PENDING', 0, NULL, 12)",
+            )
+            close()
+        }
+
+        val db = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            CaptureDatabase::class.java,
+            TEST_DB_V8,
+        ).addMigrations(*CaptureDatabase.migrations()).allowMainThreadQueries().build()
+        db.openHelper.readableDatabase.query(
+            "SELECT state, completed_segments, total_segments, processing_time_ms " +
+                "FROM processing_state WHERE session_id = 'session-v8'",
+        ).use {
+            it.moveToFirst()
+            assertEquals("PENDING", it.getString(0))
+            assertEquals(0, it.getInt(1))
+            assertEquals(0, it.getInt(2))
+            assertEquals(0, it.getLong(3))
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
+        const val TEST_DB_V8 = "migration-v8-to-v9-test.db"
     }
 }

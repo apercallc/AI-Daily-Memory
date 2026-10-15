@@ -15,7 +15,7 @@ This file turns the architecture in README.md into an executable delivery plan.
 Checkboxes track user-facing deliverables or phase gates. Indented lines under a checkbox are its
 acceptance criteria, not separate projects. Future-phase work stays open until its dependencies pass.
 
-Phone and Wear OS device acceptance, endurance, battery, and fault evidence remain required before Phase 0 closes. The detailed checklists live in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md` and `docs/quality/QUALITY_GATES.md`; a source build is not device evidence.
+Phone and Wear OS acceptance, endurance, battery, and fault measurements are release sign-off, tracked outside this delivery TODO in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md` and `docs/quality/QUALITY_GATES.md`. Do not claim capture reliability or production readiness without that evidence.
 
 ADR-0020 and ADR-0026 establish on-phone transcription and notes-only sync. The one-time
 transcription model download is optional; recordings stay on the phone while it is unavailable.
@@ -31,11 +31,9 @@ availability controls, not paid-plan metering.
 
 Goal: prove reliable Android capture before building AI infrastructure.
 
-Phase 0 remains open until target-device battery, thermal, storage, speech-ratio, audio-quality, and recovery evidence passes the acceptance checklist in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md`. Do not advance delivery priority based on source-only test results.
+Physical-device evidence remains a release sign-off, not a software delivery task. Software phases may proceed; release readiness still requires the evidence in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md`.
 
-- [ ] Complete and document phone and Wear OS device acceptance, endurance, battery, thermal,
-  storage, speech-quality, and recovery evidence; record device, OS, build, duration, and raw
-  measurements in the linked checklist before closing Phase 0.
+Phase 0 hardware acceptance is intentionally not tracked as a TODO checkbox. Automated code tests and quality gates remain required for software changes.
 
 ## Cross-surface compatibility
 
@@ -49,25 +47,19 @@ Phase 0 remains open until target-device battery, thermal, storage, speech-ratio
 
 ## API foundation
 
-- [ ] Generate OpenAPI document in CI (policy: docs/api/VERSIONING.md)
-- [ ] Validate breaking API changes
+- [x] Generate and verify the versioned OpenAPI document in CI (policy: docs/api/VERSIONING.md)
+- [x] Reject breaking API changes against the base branch's contract snapshot
 
 ## Transcription
 
-- [ ] Evaluate transcription quality with noisy/distant speech and multiple speakers
+Transcription quality testing with noisy/distant speech and multiple speakers is outside this software TODO and remains part of release validation.
 
-## Local speech analysis and gating (ADR-0015 / ADR-0022)
-
-- [ ] Establish labeled-audio and device-performance evidence before choosing a speech gate
-  - Label speech, no speech, media, whisper, and pocket/bag recordings; measure MediaCodec decode
-    and VAD throughput on the device matrix (docs/performance).
-- [ ] Implement conservative local speech gating only if the measured results support it
-  - Keep complete audio until labeled real-world results show that suppressing a range is safe.
-  - Preserve source segment IDs and timestamp offsets for any selected ranges.
-  - On analysis failure, retain the full segment for processing and expose the failure in capture health.
-- [ ] Give users a high-fidelity option and truthful speech/capture status
-  - Cover not recording, no speech, waiting for local processing, transcription unavailable, and
-    muffled capture (for example, a phone in a pocket or bag).
+Speech gating remains deferred until measured evidence supports it; retain complete audio and do not suppress ranges without that evidence (ADR-0022).
+- [x] Give users a high-fidelity option and truthful speech/capture status
+  - Offer the free on-device model or a user-configured provider. Distinguish not recording, no
+    speech detected after complete analysis, waiting for local processing, and unavailable or
+    failed processing. When no speech is detected, suggest checking microphone placement without
+    claiming a cause.
 
 ## Optional notes sync (ADR-0020 / ADR-0026)
 

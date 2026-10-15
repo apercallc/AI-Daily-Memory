@@ -79,6 +79,15 @@ interface LocalTranscriptDao {
     @Query("DELETE FROM local_transcript_line WHERE session_id = :sessionId")
     suspend fun deleteForSession(sessionId: String)
 
+    @Query("DELETE FROM local_transcript_line WHERE segment_id = :segmentId")
+    suspend fun deleteForSegment(segmentId: String)
+
+    @Transaction
+    suspend fun replaceForSegment(segmentId: String, lines: List<LocalTranscriptLineEntity>) {
+        deleteForSegment(segmentId)
+        insertAll(lines)
+    }
+
     @Query("SELECT COUNT(*) FROM local_transcript_line WHERE session_id = :sessionId")
     suspend fun countForSession(sessionId: String): Int
 
@@ -129,6 +138,9 @@ interface ProcessingStateDao {
 
     @Query("SELECT * FROM processing_state WHERE session_id = :sessionId")
     suspend fun forSession(sessionId: String): ProcessingStateEntity?
+
+    @Query("SELECT * FROM processing_state WHERE session_id = :sessionId")
+    fun observeForSession(sessionId: String): Flow<ProcessingStateEntity?>
 
     @Query("SELECT * FROM processing_state WHERE state = :state")
     suspend fun inState(state: String): List<ProcessingStateEntity>

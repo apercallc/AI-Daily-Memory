@@ -33,7 +33,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncDeletionQueueEntity::class,
         ProviderUsageEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -57,7 +57,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         /** Every migration, in order. Tests open old databases with exactly this list. */
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-            MIGRATION_6_7, MIGRATION_7_8,
+            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -261,6 +261,15 @@ abstract class CaptureDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_provider_usage_session_id` " +
                         "ON `provider_usage` (`session_id`)",
                 )
+            }
+        }
+
+        /** Stores per-session segment progress so long transcripts survive interruption. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `completed_segments` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `total_segments` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `processing_time_ms` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

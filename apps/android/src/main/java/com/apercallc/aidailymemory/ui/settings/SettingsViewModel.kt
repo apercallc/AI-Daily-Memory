@@ -237,13 +237,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         pSettings.syncIncludeTranscripts,
         pSettings.lastSyncFailed,
         pSettings.configRevision,
-        container.links.link,
-    ) { enabled, includeTranscripts, lastSyncFailed, _, link ->
+        combine(container.links.link, pSettings.lastSyncSucceededAtEpochMs) { link, lastSyncSucceededAt ->
+            link to lastSyncSucceededAt
+        },
+    ) { enabled, includeTranscripts, lastSyncFailed, _, linkAndSuccess ->
         SyncUi(
             enabled = enabled,
-            connected = link != null,
+            connected = linkAndSuccess.first != null,
             includeTranscripts = includeTranscripts,
-            lastSyncEpochMs = pSettings.lastSyncEpochMs,
+            lastSyncSucceededAtEpochMs = linkAndSuccess.second,
             lastSyncFailed = lastSyncFailed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncUi())
@@ -385,6 +387,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             pSettings.setSyncIncludeTranscripts(include)
             onProcessingSettingsChanged()
             say(R.string.settings_saved)
+        },
+        onRetry = {
+            container.syncScheduler.schedule()
+            say(R.string.sync_retry_scheduled)
         },
     )
 

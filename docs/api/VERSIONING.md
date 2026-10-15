@@ -34,6 +34,11 @@ app release that uses it. Deprecation is announced in the response header
 
 ## Enforcement
 
-- `tests/test_app.py` checks the OpenAPI document is generated; CI will diff it against the
-  last released document and fail on breaking changes (TODO Phase 1: "Validate breaking API
-  changes").
+- `app.openapi_artifact` generates the committed `docs/api/openapi.v1.json` snapshot. CI fails
+  when the generated contract differs from that file.
+- On pull requests and pushes, CI compares the candidate against the base-branch snapshot with
+  `app.openapi_compat`. Removed routes, operations, parameters, response fields, type changes,
+  newly required request data, narrowed accepted input, and authorization-contract changes fail
+  unless the API is versioned appropriately. Optional additive fields and routes remain allowed.
+- The first committed snapshot establishes the v1 comparison baseline; subsequent changes are
+  checked against the snapshot on the base branch.

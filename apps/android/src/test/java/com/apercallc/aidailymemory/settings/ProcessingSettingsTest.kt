@@ -109,6 +109,18 @@ class ProcessingSettingsTest {
     }
 
     @Test
+    fun `last successful sync time persists separately from the report cursor`() {
+        val settings = ProcessingSettings(preferences) { aead }
+        settings.lastSyncEpochMs = 10_000L
+        settings.setLastSyncSucceededAtEpochMs(20_000L)
+
+        val reopened = ProcessingSettings(preferences) { aead }
+
+        assertEquals(10_000L, reopened.lastSyncEpochMs)
+        assertEquals(20_000L, reopened.lastSyncSucceededAtEpochMs.value)
+    }
+
+    @Test
     fun `changing extraction provider emits a configuration revision`() {
         val settings = ProcessingSettings(preferences) { aead }
 
