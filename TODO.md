@@ -12,6 +12,9 @@ This file turns the architecture in README.md into an executable delivery plan.
 - Every production change requires tests, observability, security review appropriate to the risk, and documentation.
 - Every phase must have explicit exit criteria before the next phase becomes the priority.
 
+Checkboxes track user-facing deliverables or phase gates. Indented lines under a checkbox are its
+acceptance criteria, not separate projects. Future-phase work stays open until its dependencies pass.
+
 Phone and Wear OS device acceptance, endurance, battery, and fault evidence remain required before Phase 0 closes. The detailed checklists live in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md` and `docs/quality/QUALITY_GATES.md`; a source build is not device evidence.
 
 ADR-0020 and ADR-0026 supersede ADR-0014's cloud-processing assumption and accept on-device
@@ -24,10 +27,10 @@ and self-hosters; do not build new cloud upload, plan-limit, or fallback behavio
 pipeline without a new ADR. The relationship between the two ADRs remains a documentation cleanup
 item before any future work revives those legacy paths.
 
-**Product decision conflict:** the repository rules and Phase 10 plan call for a monthly
-subscription with server-authoritative entitlements, while ADR-0026 says the product is free and
-billing stays off. Keep billing and plan-metered processing work open until this product direction
-is reconciled; do not silently delete either requirement.
+ADR-0028 resolves the product direction: the product is free, users may use free on-device
+models or their own provider accounts, and the project does not pay model costs on users' behalf.
+Remove dormant billing and operator-funded inference paths before production; abuse limits remain
+availability controls, not paid-plan metering.
 
 # Phase 0 — Capture reliability
 
@@ -35,105 +38,115 @@ Goal: prove reliable Android capture before building AI infrastructure.
 
 Phase 0 remains open until target-device battery, thermal, storage, speech-ratio, audio-quality, and recovery evidence passes the acceptance checklist in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md`. Do not advance delivery priority based on source-only test results.
 
+## Cross-surface compatibility
+
+- [x] Implement responsive web layouts and adaptive Android tablet navigation
+  - Web app layouts support phone, tablet, and desktop widths; the notes library switches to a
+    folder sidebar at tablet widths.
+  - Android uses bottom navigation below 600 dp and a labeled navigation rail with a centered,
+    960 dp maximum content width at tablet widths.
+
 # Phase 1 — On-device processing + notes sync
 
 ## API foundation
 
 - [ ] Generate OpenAPI document in CI (policy: docs/api/VERSIONING.md)
 - [ ] Validate breaking API changes
-- [ ] Shared edge throttling before horizontal scaling or broader public exposure
 
 ## Transcription
 
-- [ ] Evaluate noisy/distant speech
-- [ ] Evaluate multiple speakers
-
-## Legacy phone audio upload client (ADR-0015)
-
-The existing implementation remains for legacy installs and self-hosters. ADR-0026 removes
-audio upload from the new app's default path; new local processing must not depend on this client.
+- [ ] Evaluate transcription quality with noisy/distant speech and multiple speakers
 
 ## Local speech analysis and gating (ADR-0015 / ADR-0026)
 
-- [ ] Labeled day-audio set (speech / no speech / media / whisper / pocket) for VAD tuning
-- [ ] Measure MediaCodec decode + VAD throughput on the device matrix (docs/performance)
-- [ ] Energy gate then Silero VAD (ONNX Runtime, stable); pre/post-roll, gap merge as config
-- [ ] Preserve source segment IDs and timestamp offsets when local VAD ranges are transcribed
-- [ ] VAD failure falls back to the energy gate (more audio, never less); capture-health event
-- [ ] High-fidelity setting (all non-silent audio)
-- [ ] Coverage states: not recording / no speech / waiting for local processing / transcription unavailable
-- [ ] "Muffled" capture-health signal (phone in pocket/bag)
+- [ ] Establish labeled-audio and device-performance evidence before choosing a speech gate
+  - Label speech, no speech, media, whisper, and pocket/bag recordings; measure MediaCodec decode
+    and VAD throughput on the device matrix (docs/performance).
+- [ ] Implement conservative local speech gating only if the measured results support it
+  - Use an energy gate before Silero VAD, with configurable pre/post-roll and gap merging.
+  - Preserve source segment IDs and timestamp offsets when transcribing selected ranges.
+  - On VAD failure, fall back to the energy gate so more audio is retained, and emit capture health.
+- [ ] Give users a high-fidelity option and truthful speech/capture status
+  - Cover not recording, no speech, waiting for local processing, transcription unavailable, and
+    muffled capture (for example, a phone in a pocket or bag).
 
-## Storage modes (ADR-0014)
+## Optional notes sync (ADR-0020 / ADR-0026)
 
-- [ ] Cross-day context packet (open action items) sent by the phone with the night job
-- [ ] Mode switch phone -> cloud (from now / include history), idempotent by client IDs
-- [ ] Mode switch cloud -> phone: download, verify, then server delete; never delete first
-- [ ] "Last saved to Drive" indicator; phone-loss warning in phone-only mode
+ADR-0026 removes storage modes from the phone. Sync is an optional, phone-to-server copy of
+notes and never sends audio; the phone remains the source of truth. Do not build transfers between
+ADR-0014 storage modes or Drive-backed storage into the current product.
+
+- [ ] Show the last successful notes sync and clearly identify failed or pending notes; offer a manual
+  retry if automatic retries do not resolve them
+- [ ] Warn during onboarding and settings that unsynced memory exists only on the phone and can be
+  lost with the phone
 
 ### Phase 1 exit gate
 
-- [ ] Every acknowledged upload becomes a transcript or an explicit recoverable/terminal failure.
-- [ ] Duplicate retries produce no duplicate transcript evidence.
+- [ ] Every captured segment is classified as no speech or reaches a transcript or visible
+  recoverable/terminal outcome; the on-device default works without network access.
+- [ ] Reprocessing and sync retries are idempotent; local transcripts remain until user deletion,
+  and deletions propagate to the configured sync target.
 
 # Phase 2 — Daily timeline + structured memory
 
 ## Event grouping
 
-- [ ] Avoid over-fragmented 30-second memories
-- [ ] Handle long meetings
-- [ ] Handle short Quick Notes
-- [ ] Handle event boundary corrections
+- [ ] Group short notes and long meetings into useful, correctable events
+  - Avoid over-fragmented 30-second memories and support event-boundary corrections.
 
-## Structured extraction (ADR-0019; full_cloud accounts only — see ADR-0014)
+## Structured extraction (ADR-0020 / ADR-0026; on-device)
 
-- [ ] Facts
-- [ ] Highlights
+- [ ] Extract evidence-backed facts and highlights on device
 
 ## Human correction
 
-- [ ] Supersede old decisions
-- [ ] Include confirmed corrections in future retrieval ranking
+- [ ] Let users supersede old decisions and rank confirmed corrections in future retrieval
 
 ## Daily summary / daily report
 
-- [ ] Generate the report at bedtime (ReportTiming.dueAt) from structured memory + evidence —
-  no scheduler exists; a report is built as soon as extraction has something (ADR-0019)
-- [ ] Deliver it at wake time (ReportTiming.deliverAt); "partial" while audio is pending — the
-  "partial" status is implemented (GET /v1/reports/{memory_day}); wake-time delivery is not
-- [ ] Report screen in the app; share as Markdown (Google Drive via the share sheet) — not built;
+- [ ] Generate reports at bedtime and deliver them at wake time from structured memory + evidence
+  - Schedule with `ReportTiming.dueAt` / `ReportTiming.deliverAt`; show partial status while audio is
+    pending. The `partial` API status exists, but scheduling and wake-time delivery do not.
+- [ ] Report screen in the app; share as Markdown via the Android share sheet — not built;
   `render_markdown` exists and is unused by the app
-- [ ] Optional nightly auto-save to Drive from the phone (`drive.file`, on-device auth; server never holds Drive tokens)
-- [ ] Avoid summary-of-summary drift (no headline/summary text is generated at all yet)
-- [ ] Bound LLM context (no chunking/truncation for a very long day's transcript yet)
+- [ ] Keep reports grounded and bound processing context
+  - Avoid summary-of-summary drift; add chunking/truncation for very long days before generating a
+    report. No headline or summary text is currently generated.
 
-## Owner voice attribution (ADR-0016)
+## Owner voice attribution (ADR-0016; deferred)
 
-- [ ] Consent screen; enrollment behind device unlock; delete anytime
-- [ ] Enrollment (~45 s, quality checks), embedding encrypted on device, excluded from backup/export
-- [ ] Owner spans (ME / NOT_ME / UNSURE) uploaded as metadata only
-- [ ] Map diarization clusters to Me by overlap-weighted vote; short turns inherit cluster label
-- [ ] Not-enrolled path: "Someone", report still complete
-- [ ] Extraction: owner + direction (i_committed / asked_of_me / i_asked / they_committed) + confidence
-- [ ] Report contract v1.1 (additive): Your to-dos / Waiting on others / Not sure who
-- [ ] Speaker flip stored as a correction; re-derives affected items
-- [ ] Never store voiceprints for anyone but the enrolled owner (test + review checklist)
+ADR-0016 assumes speech clips and owner spans are sent to a server for diarization; ADR-0026
+removes audio uploads and moves processing to the phone. Do not implement that hybrid flow. First
+reconcile ADR-0016 with ADR-0020/0026 in a new ADR. Proceed only if Phase 2 evaluation shows a
+material improvement in commitment attribution and the required biometric legal and consent
+review passes.
+
+- [ ] Revisit owner voice attribution only if Phase 2 evaluation shows material benefit and a new ADR,
+  biometric, legal, and consent review approves an on-device design
+  - Enrollment must require device unlock, be deletable, and use quality checks; encrypt the owner
+    embedding, and exclude it from backup/export; target an enrollment of about 45 seconds.
+  - Keep raw owner spans (ME / NOT_ME / UNSURE) on device; sharing derived ownership needs explicit
+    approval in the revised ADR, and never store another person's voiceprint.
+  - Map diarization clusters to the owner, with short turns inheriting their cluster; support a
+    complete not-enrolled path (“Someone”).
+  - Extract owner, direction (`i_committed` / `asked_of_me` / `i_asked` / `they_committed`), and
+    confidence. Speaker corrections must re-derive affected items.
+  - Add report contract v1.1 fields: Your to-dos / Waiting on others / Not sure who.
 
 ## AI evaluation
 
 - [ ] Create human-reviewed gold dataset
-- [ ] Measure decision precision/recall
-- [ ] Measure explicit task precision/recall
-- [ ] Measure commitment precision/recall
-- [ ] Measure idea extraction quality
-- [ ] Treat false-positive tasks/commitments as high-severity quality failures
+- [ ] Measure precision/recall for decisions, explicit tasks, commitments, and ideas; treat false
+  positive tasks and commitments as high-severity failures
+- [ ] Evaluate prior open action items as extraction context; keep it only if it improves follow-up
+  accuracy without more false positives
 - [ ] Add regression tests for every confirmed extraction bug
 
 ### Phase 2 exit gate
 
-- [ ] Timeline consistently surfaces information worth remembering.
-- [ ] Every derived item can trace back to evidence.
-- [ ] User corrections never mutate original evidence.
+- [ ] Timeline surfaces useful information, every derived item traces to evidence, and corrections
+  never mutate original evidence.
 
 # Phase 3 — Wear OS
 
@@ -142,47 +155,36 @@ audio upload from the new app's default path; new local processing must not depe
 ### Phase 3 exit gate
 
 - [ ] Watch controls phone reliably during normal daily use.
-- [ ] UI never claims a command succeeded before phone acknowledgement.
+- [x] UI never claims a command succeeded before phone acknowledgement.
 
 # Phase 4 — Recall engine
 
 ## Time
 
-- [ ] Persist UTC timestamps + source timezone + local date
-- [ ] Resolve today/yesterday/last week
-- [ ] Resolve morning/afternoon/evening
-- [ ] Handle DST transitions
-- [ ] Handle travel / timezone changes
-- [ ] Use monotonic device time for capture ordering where wall-clock drift could matter
+- [ ] Preserve timestamp provenance and stable capture ordering
+  - Store UTC, source timezone, and local date; use monotonic time where wall-clock drift could affect
+    capture ordering.
+- [ ] Resolve relative dates and dayparts across daylight-saving and travel changes
+  - Support today/yesterday/last week, morning/afternoon/evening, DST transitions, and timezone
+    changes while traveling.
 
 ## Entities
 
-- [ ] Person/project/company/place/product entity model
-- [ ] Aliases
-- [ ] Entity mentions
-- [ ] User correction/merge
-- [ ] Do not assume mentioned name == speaker identity
+- [ ] Resolve people, projects, companies, places, and products with aliases and correctable mentions
+  - Allow user correction/merge; a mentioned name must never be treated as proof of speaker identity.
 
 ## Retrieval
 
-- [ ] Structured SQL first
-- [ ] PostgreSQL full-text search
-- [ ] Date/type/entity filters
-- [ ] Evidence expansion around winning event
-- [ ] Bounded candidate sets
-- [ ] Answer abstains when evidence is insufficient
-- [ ] Return evidence references
+- [ ] Deliver bounded, evidence-backed recall using structured and lexical search
+  - Use structured SQL first, PostgreSQL full-text search, date/type/entity filters, and evidence
+    expansion around winning events.
+  - Bound candidate sets, return evidence references, and abstain when evidence is insufficient.
 
 ## Recall evaluation
 
-- [ ] Build benchmark questions from known days
-- [ ] Recall@K
-- [ ] Ranking quality
-- [ ] Temporal query accuracy
-- [ ] Entity alias accuracy
-- [ ] Evidence-source accuracy
-- [ ] Insufficient-evidence abstention rate
-- [ ] Add regression test for every confirmed recall failure
+- [ ] Build a known-day recall benchmark and add regression tests for confirmed failures
+  - Measure Recall@K, ranking, temporal and entity-alias accuracy, evidence-source accuracy, and
+    insufficient-evidence abstention.
 
 ### Phase 4 exit gate
 
@@ -200,19 +202,12 @@ audio upload from the new app's default path; new local processing must not depe
 
 # Phase 6 — Semantic recall (only if benchmark proves need)
 
-- [ ] Establish lexical/structured baseline first
-- [ ] Add event embeddings
-- [ ] Add structured-memory embeddings
-- [ ] Avoid embeddings for every tiny transcript fragment
-- [ ] pgvector exact search first
-- [ ] Hybrid lexical + vector retrieval
-- [ ] Reciprocal Rank Fusion
-- [ ] Rerank only a small candidate set
-- [ ] Benchmark recall improvement
-- [ ] Benchmark latency
-- [ ] Benchmark cost
-- [ ] Add approximate index only if exact vector search becomes too slow
-- [ ] Measure recall loss before HNSW/IVF rollout
+- [ ] Add semantic recall only if Phase 4 benchmarks show a meaningful lexical-recall gap
+  - Establish the lexical/structured baseline first; prefer event and structured-memory embeddings
+    over tiny transcript fragments.
+  - Start with pgvector exact search, hybrid lexical/vector retrieval, Reciprocal Rank Fusion, and
+    reranking a small candidate set; measure recall, latency, and cost.
+  - Consider approximate indexes only if exact search is too slow, and measure recall loss first.
 
 ### Phase 6 exit gate
 
@@ -220,82 +215,66 @@ audio upload from the new app's default path; new local processing must not depe
 
 # Phase 7 — Long-term memory
 
-- [ ] Weekly summaries
-- [ ] Project memory
-- [ ] Recurring commitments
-- [ ] Memory supersession
-- [ ] Durable entity relationships
-- [ ] Memory consolidation
-- [ ] Reprocessing by extraction/schema version
-- [ ] Retention controls
-- [ ] User-visible memory deletion/correction
+- [ ] Add durable summaries and project memory for recurring commitments and entity relationships
+- [ ] Consolidate and supersede memories while supporting reprocessing by extraction/schema version
+- [ ] Provide retention controls and user-visible memory correction/deletion
 
 # Phase 8 — Production hardening
 
 ## Privacy / legal / abuse resistance
 
-- [ ] Consent guidance
-- [ ] Jurisdiction/workplace-policy disclaimer
-- [ ] Threat model
-- [ ] Privacy data-flow diagram
-- [ ] Data inventory and classification
-- [ ] Retention/deletion matrix
-- [ ] Account export
-  - [ ] User-initiated export includes transcripts, events, highlights, memory items, entities, and daily summaries (JSON + JSONL)
-  - [ ] Raw audio included only while retention still holds (ADR-0003); document the expiry honestly
-  - [ ] Export delivered via scoped, short-TTL signed URL, never inline in the API response
-  - [ ] Export requests rate-limited and idempotent; re-request within TTL does not regenerate
-  - [ ] Export is excluded from third-party/API-key scopes by default (self-service only)
+- [ ] Complete the release privacy and data-rights package
+  - Provide consent guidance and a jurisdiction/workplace-policy disclaimer.
+  - Complete a threat model, privacy data-flow diagram, data inventory/classification, and
+    retention/deletion matrix.
+  - Provide user-initiated export of transcripts, events, highlights, memory items, entities, and
+    daily summaries (JSON + JSONL).
+  - Include raw audio only while retention still holds (ADR-0003), and explain expiry honestly.
+  - Deliver exports through scoped, short-TTL signed URLs, never inline in the API response.
+  - Rate-limit and make export requests idempotent; re-requests within TTL must not regenerate.
+  - Exclude export from third-party/API-key scopes by default; keep it self-service only.
 
 ## Security
 
-- [ ] Authentication threat model
-- [ ] Authorization tests for every user-owned resource
-- [ ] Object-storage path isolation
-- [ ] Signed URL scope/TTL tests
-- [ ] Rate limits / abuse limits
-- [ ] SBOM for releases
-- [ ] Backend container runs non-root
+- [ ] Remove dormant monetization and operator-funded inference paths (ADR-0028)
+  - Remove Stripe checkout/portal/webhook routes, config, UI, plan entitlements, and schema fields with a safe migration; retain transactional email and account-recovery behavior.
+  - Keep web Ask retrieval-only; ensure user requests never invoke model providers using operator-owned keys, and never fall back silently to paid inference.
+  - Test that abuse limits remain availability safeguards rather than paid-plan metering.
+- [ ] Verify the release security controls
+  - Complete the authentication threat model and authorization tests for every user-owned resource.
+  - Verify object-storage path isolation and signed URL scope/TTL tests.
+  - Establish rate and abuse limits; shared edge throttling must precede horizontal scaling or
+    broader public exposure.
+  - Produce an SBOM for releases and run the backend container as a non-root user.
 
 ## Reliability / operations
 
-- [ ] Service-level indicators
-- [ ] Alerting for ingestion failures
-- [ ] Alerting for processing backlog
-- [ ] Alerting for provider failure
-- [ ] Database backup monitoring
-- [ ] Disaster recovery test
-- [ ] Load tests
-- [ ] Chaos/fault tests for worker retry behavior
+- [ ] Demonstrate production monitoring and recovery readiness
+  - Define service-level indicators and alert on ingestion failures, processing backlog, and
+    provider failures.
+  - Monitor database backups and pass a disaster-recovery test.
+  - Pass load tests and chaos/fault tests for worker retry behavior.
 
-# Phase 10 — Public launch: subscription, user API, data portability
+# Phase 10 — Public launch: free user API and data portability
 
 Do not begin until Phase 5 (CLI) and Phase 8 (production hardening) have
-exited. Charging money and opening third-party API access raise the bar on
-authorization, billing correctness, and data rights — everything below builds on
-hardened phases, it does not replace them.
-
-## Billing / subscription
-
-- [ ] Entitlement service behind the same API surface as other features
-- [ ] Plan definition: free tier limits, paid tiers, what is metered (recording hours, processing, recall calls, API calls)
-- [ ] Grace period / dunning / cancellation behavior defined and tested
-- [ ] Sandbox + production billing test suite (purchase, renew, cancel, refund, restore on reinstall)
-- [ ] Subscription state surfaced honestly in the app (no dark patterns; cancellation as easy as sign-up)
+exited. Public API access still requires strong authorization, abuse controls,
+and complete data rights. The product remains free under ADR-0028.
 
 ## Public API access (user-owned clients)
 
-- [ ] API keys shipped with the public API (scopes, hashing, rotation, rate limits)
-- [ ] Public API docs with auth, rate limits, and error semantics
-- [ ] Versioned API contract; deprecation policy for breaking changes
-- [ ] API access gated by subscription entitlement
-- [ ] Abuse monitoring per key (volume anomalies, scraping patterns)
+- [ ] Launch versioned, abuse-monitored public API access for user-owned clients
+  - Ship API keys with scopes, hashing, rotation, and rate limits; document authentication, limits,
+    and error semantics.
+  - Define the versioned contract and breaking-change deprecation policy.
+  - Monitor per-key volume anomalies and scraping patterns; do not add paid tiers or entitlements.
 
 ## Data portability
 
-- [ ] Export completeness tested against the data inventory
-- [ ] Account deletion covers derived data, embeddings, jobs, and retained objects (SECURITY.md)
+- [ ] Verify export completeness against the data inventory and account deletion across derived data,
+  embeddings, jobs, and retained objects (SECURITY.md)
 
 ### Phase 10 exit gate
 
-- [ ] A paying user can subscribe, connect an API client, export all their data, and cancel — entirely self-service, with correct entitlement enforcement at every step.
+- [ ] A user can create an API client, export all their data, and delete their account through
+  self-service flows, with authorization and abuse controls enforced throughout.

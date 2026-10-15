@@ -423,19 +423,23 @@ class OpenSegment internal constructor(
         )
     }
 
-    /** Flushes and fsyncs before the file descriptor closes: sealed means on disk. */
-    private class SyncOnClose(private val file: FileOutputStream) : FilterOutputStream(file) {
-        override fun write(b: ByteArray, off: Int, len: Int) = file.write(b, off, len)
-
-        override fun close() {
-            file.flush()
-            file.fd.sync()
-            file.close()
-        }
-    }
-
     private companion object {
         const val SAMPLES_PER_FRAME = 1024L
         const val MILLIS = 1000L
+    }
+}
+
+/** Flushes and fsyncs before closing: a sealed segment means its bytes reached disk. */
+internal class SyncOnClose(
+    private val file: FileOutputStream,
+    private val fsync: (FileOutputStream) -> Unit = { it.fd.sync() },
+) : FilterOutputStream(file) {
+    override fun write(b: ByteArray, off: Int, len: Int) = file.write(b, off, len)
+
+    override fun close() {
+        file.use { output ->
+            output.flush()
+            fsync(output)
+        }
     }
 }

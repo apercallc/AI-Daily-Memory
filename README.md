@@ -6,8 +6,8 @@ AI Daily Memory is an Android and Wear OS project for capturing a day locally an
 
 - Android capture, session controls, encrypted local segments, recovery, and on-phone transcription (free downloadable model, English) are implemented. Summaries are optional and use the person's own API key (ADR-0026).
 - Wear OS provides remote controls and reflects phone-confirmed state.
-- The backend stores synced notes and serves the web app and REST API: account sign-in, scoped tokens, sync, reports, memory browse and Ask. It does no transcription or summarizing.
-- Audio is never uploaded. Server-side transcription and extraction stay disabled, so new uploads are refused. The service is free; billing code exists but is off.
+- The backend stores synced notes and serves the web app and REST API: account sign-in, scoped tokens, sync, reports, memory browse and retrieval-based Ask. The operator-configured model path for web Ask is slated for removal under ADR-0028; production must not use it.
+- Audio is never uploaded. Server-side transcription and extraction stay disabled, so new uploads are refused. The service is free; dormant billing code must be removed before production (ADR-0028).
 - Release readiness still requires physical phone/watch accessibility and endurance testing. This repository is not a production release declaration.
 
 ## Privacy

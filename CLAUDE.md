@@ -30,9 +30,10 @@ Located in `.claude/skills/`:
 
 - **Never report work done without stating which quality gates ran.** Minimum:
   `./gradlew qualityCheck`; backend changes also need the `uv run` checks from AGENTS.md.
-- **Commercial goals are rules (AGENTS.md items 3–5):** server-authoritative
-  entitlements for every paid surface; API keys hashed/scoped/rate-limited/revocable;
-  self-service export and deletion as user rights. TODO.md Phase 10 is the roadmap.
+- **Product direction is free (ADR-0028):** no monetization, paid entitlements, or
+  operator-funded model inference. Users may use free on-device models or their own
+  provider credentials. API keys remain hashed/scoped/rate-limited/revocable, and
+  export and deletion remain self-service rights.
 - **Take work from `TODO.md`** in phase order. Don't jump phases or add later-phase
   infrastructure early.
 - **Keep the state machine pure** (`core/recording`): no Android imports, no side

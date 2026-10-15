@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.database.sqlite.SQLiteException
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioRouting
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
 import android.media.AudioTimestamp
@@ -173,10 +174,13 @@ class AudioCaptureEngine(
             logFailure(TAG, "segment_encryption_unavailable", e)
             return CaptureProblem.ENCRYPTION_UNAVAILABLE
         }
-        val record = openRecord() ?: return CaptureProblem.MICROPHONE_UNAVAILABLE
+        val openedRecord = openRecord() ?: return CaptureProblem.MICROPHONE_UNAVAILABLE
+        val record = openedRecord.record
         val callback = SilencedCallback(record.audioSessionId)
-        audioManager.registerAudioRecordingCallback(callback, Handler(Looper.getMainLooper()))
+        var callbackRegistered = false
         try {
+            audioManager.registerAudioRecordingCallback(callback, Handler(Looper.getMainLooper()))
+            callbackRegistered = true
             val encoder = try {
                 AacEncoder(config.sampleRateHz, 1, config.bitRate, config.readSamples * 2)
             } catch (e: IOException) {
@@ -191,10 +195,22 @@ class AudioCaptureEngine(
             }
             return encoder.use { pipeline(sessionId, record, it, report) }
         } finally {
-            audioManager.unregisterAudioRecordingCallback(callback)
-            record.stop()
-            record.release()
+            val failures = runCaptureCleanup(
+                listOfNotNull(
+                    if (callbackRegistered) "audio_callback_unregister" to {
+                        audioManager.unregisterAudioRecordingCallback(callback)
+                    } else {
+                        null
+                    },
+                    "audio_route_listener_remove" to {
+                        record.removeOnRoutingChangedListener(openedRecord.routeListener)
+                    },
+                    "audio_record_stop" to { record.stop() },
+                    "audio_record_release" to { record.release() },
+                ),
+            )
             _health.value = _health.value.copy(microphoneSilent = false)
+            failures.forEach { (event, error) -> logFailure(TAG, event, error) }
         }
     }
 
@@ -363,7 +379,7 @@ class AudioCaptureEngine(
     }
 
     @SuppressLint("MissingPermission")
-    private fun openRecord(): AudioRecord? {
+    private fun openRecord(): OpenedRecord? {
         val minBuffer = AudioRecord.getMinBufferSize(
             config.sampleRateHz,
             AudioFormat.CHANNEL_IN_MONO,
@@ -404,13 +420,28 @@ class AudioCaptureEngine(
             record.release()
             return null
         }
-        record.addOnRoutingChangedListener(
+        val routeListener = AudioRouting.OnRoutingChangedListener {
             // Route changes (headset, Bluetooth) keep capturing on the new device; logged so
             // endurance tests can correlate them with gaps.
-            { Log.i(TAG, "audio_route_changed") },
-            Handler(Looper.getMainLooper()),
-        )
-        return record
+            Log.i(TAG, "audio_route_changed")
+        }
+        try {
+            record.addOnRoutingChangedListener(routeListener, Handler(Looper.getMainLooper()))
+        } catch (error: RuntimeException) {
+            logFailure(TAG, "audio_route_listener_registration_failed", error)
+            val failures = runCaptureCleanup(
+                listOf(
+                    "audio_route_listener_remove" to {
+                        record.removeOnRoutingChangedListener(routeListener)
+                    },
+                    "audio_record_stop" to { record.stop() },
+                    "audio_record_release" to { record.release() },
+                ),
+            )
+            failures.forEach { (event, failure) -> logFailure(TAG, event, failure) }
+            return null
+        }
+        return OpenedRecord(record, routeListener)
     }
 
     private fun isInCall(): Boolean = audioManager.mode in CALL_MODES
@@ -457,6 +488,11 @@ class AudioCaptureEngine(
         }
     }
 
+    private data class OpenedRecord(
+        val record: AudioRecord,
+        val routeListener: AudioRouting.OnRoutingChangedListener,
+    )
+
     private companion object {
         const val TAG = "AudioCaptureEngine"
         const val BYTES_PER_SAMPLE = 2
@@ -466,4 +502,18 @@ class AudioCaptureEngine(
             AudioManager.MODE_CALL_SCREENING,
         )
     }
+}
+
+internal fun runCaptureCleanup(
+    actions: List<Pair<String, () -> Unit>>,
+): List<Pair<String, Exception>> {
+    val failures = mutableListOf<Pair<String, Exception>>()
+    actions.forEach { (event, action) ->
+        try {
+            action()
+        } catch (error: Exception) {
+            failures += event to error
+        }
+    }
+    return failures
 }

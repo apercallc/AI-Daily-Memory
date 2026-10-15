@@ -23,19 +23,20 @@ Because we record real conversations, two product-level rules outrank everything
    undeletable: user deletion and retention remove evidence and cascade to everything
    derived from it (ADR-0004 amendment).
 
-The commercial direction (TODO.md Phase 10): release publicly, charge a monthly
-subscription, let users connect their own clients via the public REST API (ADR-0021: no MCP server), and support
-self-service data export. Three more rules follow from that:
+The product is free (ADR-0028). Users may use free on-device models or supply their
+own provider credentials; the project does not sell services or pay model-provider
+costs on users' behalf. Public REST API access (ADR-0021), self-service export, and
+account deletion remain part of the product. These rules follow:
 
-3. **Entitlements are server-authoritative.** No client — app, CLI, or third-party
-   API client — gates itself into paid features. Every paid surface checks
-   entitlements server-side.
+3. **No monetization or operator-funded inference.** Do not add subscriptions, paid
+   plans, purchases, billing entitlements, or server-side model calls using operator
+   keys. Abuse limits protect availability and are not plan metering.
 4. **API keys are user-owned secrets.** Stored only as hashes, scoped read-only by
    default, rate-limited, revocable. Third-party clients never get bulk transcript
    export by default.
 5. **Users own their data.** Self-service export (including raw audio while
    retention still holds, per ADR-0003) and complete account deletion are rights,
-   not upsells — and third-party API scopes cannot weaken them.
+   and third-party API scopes cannot weaken them.
 
 ## Repository map
 
@@ -70,8 +71,9 @@ self-service data export. Three more rules follow from that:
   append-safe encrypted segments, watch protocol + shared applicationId, backend as sole
   DB client, mic service lifecycle, markers, daily rhythm, audio retention, where memory
   lives, speech gating, owner voice, no speech retention, transcription provider, structured
-  extraction, on-device processing, REST-only integration, offline-or-hosted server, own server optional, on-phone transcription with notes-only sync — ADR-0001…0027) requires a new ADR first, not a
-  silent change.
+  extraction, on-device processing, REST-only integration, offline-or-hosted server, own server
+  optional, on-phone transcription with notes-only sync, free product with no monetization —
+  ADR-0001…0028) requires a new ADR first, not a silent change.
 
 ## Build and verify
 

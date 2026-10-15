@@ -1,8 +1,8 @@
 # ADR-0025: Email Recovery and Web Subscriptions
 
-- Status: Accepted; billing is built but switched off while the service is free (ADR-0026)
+- Status: Superseded for billing by ADR-0028; transactional email decision remains accepted
 - Date: 2026-10-13
-- Builds on: ADR-0024. Decides the billing provider question TODO.md Phase 10 lists.
+- Builds on: ADR-0024. Billing details below are historical and must not be implemented; see ADR-0028.
 
 ## Decision
 

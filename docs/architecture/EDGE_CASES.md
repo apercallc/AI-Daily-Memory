@@ -48,6 +48,7 @@ have; a privacy pause always wins; every failure is visible and has a recovery p
 | Quick Stop → Start race on the service | `stopSelf(startId)` never stops a newer command | `RecordingService` | ✅ |
 | Wedged encoder | Input stall bounded (~1 s) → `Interrupted(UNKNOWN)`; final drain bounded | `AacEncoder` | ✅ |
 | Audio route change (headset, Bluetooth) | Capture continues on the new route; change logged for endurance correlation | `AudioCaptureEngine` | ✅ (device test pending) |
+| Recording or route callback registration / teardown fails | The capture job still attempts removal of registered callbacks, recorder stop, and release; cleanup failures are logged after all release actions run | `AudioCaptureEngine` | ✅ (device fault injection pending) |
 | Marker while not capturing, or double tap | Refused / acknowledged once | `MarkerPolicy` (ADR-0011) | ✅ |
 | Recording notification blocked, channel disabled, or swiped away (Android 14+) | Mic never opens without a visible indicator (`INDICATOR_HIDDEN`), re-checked while capturing; a dismissed indicator is re-posted | `RecordingService`, `CaptureNotifications`, `CommandReceiver` | ✅ |
 | Slow fsync / storage stall during segment rotation | Reader thread never touches the disk; 2 s platform buffer plus a 5 s writer backlog; a full backlog stops capture visibly instead of dropping audio | `AudioCaptureEngine` | ✅ (device measurement pending) |
