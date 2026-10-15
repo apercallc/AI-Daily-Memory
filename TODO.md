@@ -17,15 +17,10 @@ acceptance criteria, not separate projects. Future-phase work stays open until i
 
 Phone and Wear OS device acceptance, endurance, battery, and fault evidence remain required before Phase 0 closes. The detailed checklists live in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md` and `docs/quality/QUALITY_GATES.md`; a source build is not device evidence.
 
-ADR-0020 and ADR-0026 supersede ADR-0014's cloud-processing assumption and accept on-device
-transcription. This warning is retained only as historical context; do not require another ADR
-for the already accepted phone-only path. Keep the Phase 0 model, battery, and speech-quality
-benchmarks open before calling that path production-ready. For the new app, ADR-0026 supersedes
-ADR-0015's cloud clip upload and server speech-minute limit: Vosk runs locally, and optional
-user-key providers receive audio directly. Preserve the older server flow only for legacy installs
-and self-hosters; do not build new cloud upload, plan-limit, or fallback behavior into the phone
-pipeline without a new ADR. The relationship between the two ADRs remains a documentation cleanup
-item before any future work revives those legacy paths.
+ADR-0020 and ADR-0026 establish on-phone transcription and notes-only sync. The one-time
+transcription model download is optional; recordings stay on the phone while it is unavailable.
+Audio only leaves the phone when the user explicitly selects their own provider. Preserve legacy
+server flows only for existing data; do not add new audio upload or operator-funded inference paths.
 
 ADR-0028 resolves the product direction: the product is free, users may use free on-device
 models or their own provider accounts, and the project does not pay model costs on users' behalf.
@@ -37,6 +32,10 @@ availability controls, not paid-plan metering.
 Goal: prove reliable Android capture before building AI infrastructure.
 
 Phase 0 remains open until target-device battery, thermal, storage, speech-ratio, audio-quality, and recovery evidence passes the acceptance checklist in `docs/performance/PHASE0_CAPTURE_MEASUREMENTS.md`. Do not advance delivery priority based on source-only test results.
+
+- [ ] Complete and document phone and Wear OS device acceptance, endurance, battery, thermal,
+  storage, speech-quality, and recovery evidence; record device, OS, build, duration, and raw
+  measurements in the linked checklist before closing Phase 0.
 
 ## Cross-surface compatibility
 
@@ -57,24 +56,23 @@ Phase 0 remains open until target-device battery, thermal, storage, speech-ratio
 
 - [ ] Evaluate transcription quality with noisy/distant speech and multiple speakers
 
-## Local speech analysis and gating (ADR-0015 / ADR-0026)
+## Local speech analysis and gating (ADR-0015 / ADR-0022)
 
 - [ ] Establish labeled-audio and device-performance evidence before choosing a speech gate
   - Label speech, no speech, media, whisper, and pocket/bag recordings; measure MediaCodec decode
     and VAD throughput on the device matrix (docs/performance).
 - [ ] Implement conservative local speech gating only if the measured results support it
-  - Use an energy gate before Silero VAD, with configurable pre/post-roll and gap merging.
-  - Preserve source segment IDs and timestamp offsets when transcribing selected ranges.
-  - On VAD failure, fall back to the energy gate so more audio is retained, and emit capture health.
+  - Keep complete audio until labeled real-world results show that suppressing a range is safe.
+  - Preserve source segment IDs and timestamp offsets for any selected ranges.
+  - On analysis failure, retain the full segment for processing and expose the failure in capture health.
 - [ ] Give users a high-fidelity option and truthful speech/capture status
   - Cover not recording, no speech, waiting for local processing, transcription unavailable, and
     muffled capture (for example, a phone in a pocket or bag).
 
 ## Optional notes sync (ADR-0020 / ADR-0026)
 
-ADR-0026 removes storage modes from the phone. Sync is an optional, phone-to-server copy of
-notes and never sends audio; the phone remains the source of truth. Do not build transfers between
-ADR-0014 storage modes or Drive-backed storage into the current product.
+ADR-0026 removes storage modes and custom server addresses from the phone. Sync is an optional
+phone-to-hosted-server copy of notes and never sends audio; the phone remains the source of truth.
 
 - [ ] Show the last successful notes sync and clearly identify failed or pending notes; offer a manual
   retry if automatic retries do not resolve them
@@ -83,10 +81,11 @@ ADR-0014 storage modes or Drive-backed storage into the current product.
 
 ### Phase 1 exit gate
 
-- [ ] Every captured segment is classified as no speech or reaches a transcript or visible
-  recoverable/terminal outcome; the on-device default works without network access.
-- [ ] Reprocessing and sync retries are idempotent; local transcripts remain until user deletion,
-  and deletions propagate to the configured sync target.
+- [ ] Every captured segment reaches a visible processing outcome. After the one-time model download,
+  the on-device default works offline; before then, audio remains local and visibly pending.
+- [ ] Reprocessing and sync retries are idempotent; local transcripts remain until user deletion.
+  Deletions of data already synced to the hosted server remain queued and propagate after reconnect,
+  including when sync has since been disabled.
 
 # Phase 2 — Daily timeline + structured memory
 
@@ -95,9 +94,10 @@ ADR-0014 storage modes or Drive-backed storage into the current product.
 - [ ] Group short notes and long meetings into useful, correctable events
   - Avoid over-fragmented 30-second memories and support event-boundary corrections.
 
-## Structured extraction (ADR-0020 / ADR-0026; on-device)
+## Structured extraction (ADR-0020 / ADR-0026)
 
-- [ ] Extract evidence-backed facts and highlights on device
+- [ ] Produce evidence-backed facts and highlights through local processing or an explicitly
+  user-configured provider; keep transcript-only use functional and never use operator-funded inference
 
 ## Human correction
 
@@ -106,33 +106,19 @@ ADR-0014 storage modes or Drive-backed storage into the current product.
 ## Daily summary / daily report
 
 - [ ] Generate reports at bedtime and deliver them at wake time from structured memory + evidence
-  - Schedule with `ReportTiming.dueAt` / `ReportTiming.deliverAt`; show partial status while audio is
-    pending. The `partial` API status exists, but scheduling and wake-time delivery do not.
-- [ ] Report screen in the app; share as Markdown via the Android share sheet — not built;
-  `render_markdown` exists and is unused by the app
+  - Connect existing report timing calculations to scheduled processing and wake-time delivery;
+    show partial status while audio is pending.
+- [ ] Add an in-app report screen and share reports as Markdown through the Android share sheet
 - [ ] Keep reports grounded and bound processing context
   - Avoid summary-of-summary drift; add chunking/truncation for very long days before generating a
-    report. No headline or summary text is currently generated.
+    report. Headlines and deterministic summaries already exist; keep generated content tied to
+    evidence and avoid claiming unsupported summary quality.
 
-## Owner voice attribution (ADR-0016; deferred)
+## Owner voice attribution (deferred, not a launch requirement)
 
-ADR-0016 assumes speech clips and owner spans are sent to a server for diarization; ADR-0026
-removes audio uploads and moves processing to the phone. Do not implement that hybrid flow. First
-reconcile ADR-0016 with ADR-0020/0026 in a new ADR. Proceed only if Phase 2 evaluation shows a
-material improvement in commitment attribution and the required biometric legal and consent
-review passes.
-
-- [ ] Revisit owner voice attribution only if Phase 2 evaluation shows material benefit and a new ADR,
-  biometric, legal, and consent review approves an on-device design
-  - Enrollment must require device unlock, be deletable, and use quality checks; encrypt the owner
-    embedding, and exclude it from backup/export; target an enrollment of about 45 seconds.
-  - Keep raw owner spans (ME / NOT_ME / UNSURE) on device; sharing derived ownership needs explicit
-    approval in the revised ADR, and never store another person's voiceprint.
-  - Map diarization clusters to the owner, with short turns inheriting their cluster; support a
-    complete not-enrolled path (“Someone”).
-  - Extract owner, direction (`i_committed` / `asked_of_me` / `i_asked` / `they_committed`), and
-    confidence. Speaker corrections must re-derive affected items.
-  - Add report contract v1.1 fields: Your to-dos / Waiting on others / Not sure who.
+ADR-0016's hybrid upload design conflicts with ADR-0026's phone-only processing. Do not implement
+it. Reconsider only after a new ADR and biometric legal/consent review; never store another person's
+voiceprint.
 
 ## AI evaluation
 
@@ -161,29 +147,26 @@ review passes.
 
 ## Time
 
-- [ ] Preserve timestamp provenance and stable capture ordering
-  - Store UTC, source timezone, and local date; use monotonic time where wall-clock drift could affect
-    capture ordering.
+- [ ] Preserve timestamp provenance through sync and recall, with stable ordering across clock changes
+  - Phone capture already stores UTC, source timezone, local date, and monotonic time; verify the
+    fields needed by recall survive sync without deriving dates from server-local time.
 - [ ] Resolve relative dates and dayparts across daylight-saving and travel changes
   - Support today/yesterday/last week, morning/afternoon/evening, DST transitions, and timezone
     changes while traveling.
 
-## Entities
-
-- [ ] Resolve people, projects, companies, places, and products with aliases and correctable mentions
-  - Allow user correction/merge; a mentioned name must never be treated as proof of speaker identity.
-
 ## Retrieval
 
+Name mentions remain text evidence; never infer speaker identity from a name appearing in a transcript.
+
 - [ ] Deliver bounded, evidence-backed recall using structured and lexical search
-  - Use structured SQL first, PostgreSQL full-text search, date/type/entity filters, and evidence
-    expansion around winning events.
+  - Use structured SQL first, PostgreSQL full-text search, date/type filters, and evidence expansion
+    around winning events.
   - Bound candidate sets, return evidence references, and abstain when evidence is insufficient.
 
 ## Recall evaluation
 
 - [ ] Build a known-day recall benchmark and add regression tests for confirmed failures
-  - Measure Recall@K, ranking, temporal and entity-alias accuracy, evidence-source accuracy, and
+  - Measure Recall@K, ranking, temporal accuracy, evidence-source accuracy, and
     insufficient-evidence abstention.
 
 ### Phase 4 exit gate
@@ -192,30 +175,20 @@ review passes.
 
 # Phase 5 — CLI
 
-## CLI
-
-- [ ] adm highlights
-
 ### Phase 5 exit gate
 
 - [ ] CLI returns evidence-backed results through the public API.
 
-# Phase 6 — Semantic recall (only if benchmark proves need)
+# Phase 6 — Conditional: semantic recall
 
-- [ ] Add semantic recall only if Phase 4 benchmarks show a meaningful lexical-recall gap
-  - Establish the lexical/structured baseline first; prefer event and structured-memory embeddings
-    over tiny transcript fragments.
-  - Start with pgvector exact search, hybrid lexical/vector retrieval, Reciprocal Rank Fusion, and
-    reranking a small candidate set; measure recall, latency, and cost.
-  - Consider approximate indexes only if exact search is too slow, and measure recall loss first.
-
-### Phase 6 exit gate
-
-- [ ] Semantic retrieval provides measurable recall improvement for acceptable latency/cost.
+Do not implement semantic retrieval unless the Phase 4 benchmark shows a material gap in lexical
+and structured recall. If evidence supports it, add a scoped task and review first; until then this
+phase does not block launch and no embedding or vector-index infrastructure is needed.
 
 # Phase 7 — Long-term memory
 
-- [ ] Add durable summaries and project memory for recurring commitments and entity relationships
+- [ ] Add optional durable summaries and project memory for recurring commitments and relationships;
+  use local processing or a provider the user explicitly configured
 - [ ] Consolidate and supersede memories while supporting reprocessing by extraction/schema version
 - [ ] Provide retention controls and user-visible memory correction/deletion
 
@@ -227,10 +200,10 @@ review passes.
   - Provide consent guidance and a jurisdiction/workplace-policy disclaimer.
   - Complete a threat model, privacy data-flow diagram, data inventory/classification, and
     retention/deletion matrix.
-  - Provide user-initiated export of transcripts, events, highlights, memory items, entities, and
-    daily summaries (JSON + JSONL).
-  - Include raw audio only while retention still holds (ADR-0003), and explain expiry honestly.
-  - Deliver exports through scoped, short-TTL signed URLs, never inline in the API response.
+  - Provide user-initiated export of synced notes, transcripts, events, highlights, memory items, and
+    daily summaries (JSON + JSONL), reconciled against the data inventory.
+  - Include retained raw audio only in an on-device export; audio never uploads to the server.
+  - Deliver large server-side exports through scoped, short-TTL signed URLs, never inline in the API response.
   - Rate-limit and make export requests idempotent; re-requests within TTL must not regenerate.
   - Exclude export from third-party/API-key scopes by default; keep it self-service only.
 

@@ -17,9 +17,9 @@ code makes that has **not** been measured on hardware yet. Record results next t
 | Screen-off capture without a wake lock | The service holds no wake lock of its own; the audio HAL is expected to keep delivering | `RecordingService` | 1 h screen-off run: gaps must be zero |
 | Health-tracker cost in long sessions | `observeSession` re-reads every segment row after each write (~1,440 rows at 24 h) | `CaptureHealthTracker` | Query time at 1,440 rows; switch to SQL aggregates if it is material |
 | `asShortBuffer()` view allocation per encoder input (~10/s) | Tiny objects; confirm GC impact is nil | `AacEncoder.encode` | Allocation tracker over 10 min |
-| Speech share of recorded time (Gate B cost input) | Transcription cost scales with padded speech, not recorded hours (ADR-0015) | `SpeechAnalyzer`, `EnergyVad` (`energy-v1`), `SpeechConfig` | Charge overnight after a normal day, then query `segment_speech` (below). `padded_ms / total_ms` is the share that would be transcribed |
+| Voice-only share of recorded time | Measures local analysis and transcription workload; when a user selects their own provider, it can estimate their usage. It is not product metering. | `SpeechAnalyzer`, `VoiceVad` (`voice-v1`), `SpeechConfig` | Charge overnight after a normal day, then query `segment_speech` (below). `padded_ms / total_ms` is the share selected for transcription |
 | Night analysis throughput and battery | The job must finish on one overnight charge | `SpeechAnalysisJobService`, `MediaCodecAacDecoder` | `speech_analysis_batch` logs (counts per batch) + Perfetto CPU while charging |
-| Energy-VAD over-count in noise | `energy-v1` counts steady noise (café, car) as speech, so it's an upper bound on cost | `EnergyVad` margin/floors | Compare against a hand-labeled hour per environment; replace with Silero if the over-count is material |
+| Voice-VAD false positives and misses in noise | Detector accuracy must be established on labeled real recordings before it suppresses any audio (ADR-0022) | `VoiceVad` (`voice-v1`) | Compare against hand-labeled recordings in each environment; keep full audio for transcription until measured false-positive and false-negative rates support suppression |
 
 ### Reading the speech measurement (debug build)
 
@@ -33,5 +33,7 @@ adb shell run-as com.apercallc.aidailymemory sqlite3 databases/capture.db \
    FROM segment_speech WHERE outcome = 'OK' GROUP BY day;"
 ```
 
-`transcribed_h` × provider price per hour = the per-user-day cost the Gate B model needs. Only
-numbers are stored: no audio, text, or regions leave the phone in shadow mode.
+When the user selects their own transcription provider, `transcribed_h` may be combined with that
+provider's published rate to estimate the user's usage cost. This is never operator-funded inference
+or paid-plan metering. Only numbers are stored: no audio, text, or regions leave the phone in shadow
+mode.
