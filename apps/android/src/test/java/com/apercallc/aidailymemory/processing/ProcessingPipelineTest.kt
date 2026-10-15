@@ -309,6 +309,171 @@ class ProcessingPipelineTest {
         assertEquals(null, database.processingState().forSession(SESSION_ID)?.lastError)
     }
 
+    @Test
+    fun `sessions are enqueued even while provider settings are incomplete`() = runTest {
+        val (store, _) = encryptedSegmentStore()
+        addCompletedAudio(store, 1)
+        val segmentId = database.segments().forSession(SESSION_ID).single().segmentId
+        database.speech().upsert(
+            com.apercallc.aidailymemory.data.SegmentSpeechEntity(
+                segmentId = segmentId,
+                analyzer = com.apercallc.aidailymemory.recording.speech.VoiceVad.VERSION,
+                outcome = "OK",
+                totalMs = 1_000,
+                speechMs = 500,
+                paddedMs = 500,
+                regionCount = 1,
+                analyzedAtEpochMs = 1L,
+            ),
+        )
+
+        pipeline(
+            extractionProvider = null,
+            segmentStore = store,
+            configGaps = { listOf(com.apercallc.aidailymemory.recording.processing.ConfigGap.EXTRACTION_KEY) },
+        ).processPending()
+
+        assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
+        assertEquals(null, database.processingState().forSession(SESSION_ID)?.lastError)
+        assertEquals("SEALED", database.segments().forSession(SESSION_ID).single().state)
+    }
+
+    @Test
+    fun `checkpoint failure rolls back later transcript after an empty segment`() = runTest {
+        val (store, _) = encryptedSegmentStore()
+        addCompletedAudio(store, 2)
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", false, null, 0L))
+        // Simulate a storage failure at the precise crash window between evidence and progress.
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER fail_checkpoint BEFORE INSERT ON processing_state " +
+                "WHEN NEW.completed_segments = 2 BEGIN SELECT RAISE(ABORT, 'checkpoint fault'); END",
+        )
+        var calls = 0
+        val provider = transcriptProvider {
+            calls++
+            if (calls == 1) TranscriptResult("en", emptyList())
+            else TranscriptResult("en", listOf(TranscribedSpan(0, 50, "Uncommitted line")))
+        }
+        val interrupted = pipeline(null, provider, segmentStore = store).processPending()
+
+        assertEquals(1, interrupted.failed)
+        assertEquals(1, database.processingState().forSession(SESSION_ID)?.completedSegments)
+        assertTrue(database.localTranscripts().forSession(SESSION_ID).isEmpty())
+        database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_checkpoint")
+        var resumedCalls = 0
+        val resumed = pipeline(null, transcriptProvider {
+            resumedCalls++
+            TranscriptResult("en", listOf(TranscribedSpan(0, 50, "Committed line")))
+        }, segmentStore = store).processPending()
+
+        assertEquals(ProcessingRun(1, 0, 0), resumed)
+        assertEquals(1, resumedCalls, "The committed empty segment must not run again")
+        assertEquals("Committed line", database.localTranscripts().forSession(SESSION_ID).single().text)
+    }
+
+    @Test
+    fun `legacy evidence beyond an empty segment is never replaced on recovery`() = runTest {
+        val (store, _) = encryptedSegmentStore()
+        addCompletedAudio(store, 2)
+        val later = database.segments().forSession(SESSION_ID)[1]
+        val original = LocalTranscriptLineEntity(
+            "immutable", SESSION_ID, later.segmentId, 1_000L, 1_050L,
+            null, "Original evidence", null, "old", "old-model",
+        )
+        database.localTranscripts().insertAll(listOf(original))
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", false, null, 0L))
+        var calls = 0
+        val run = pipeline(null, transcriptProvider {
+            calls++
+            TranscriptResult("en", emptyList())
+        }, segmentStore = store).processPending()
+
+        assertEquals(ProcessingRun(1, 0, 0), run)
+        assertEquals(1, calls)
+        assertEquals(listOf(original), database.localTranscripts().forSession(SESSION_ID))
+    }
+
+    @Test
+    fun `retryable failures exhaust three attempts and manual retry preserves progress with a fresh budget`() = runTest {
+        addTranscribedSession()
+        val initial = requireNotNull(database.processingState().forSession(SESSION_ID))
+        database.processingState().upsert(initial.copy(completedSegments = 2, totalSegments = 2, processingTimeMs = 75L))
+        val evidence = database.localTranscripts().forSession(SESSION_ID)
+        var calls = 0
+        val provider = object : ExtractionProvider {
+            override val name = "test"
+            override val model = "test-model"
+            override suspend fun extract(lines: List<NumberedLine>): ExtractionResult {
+                calls++
+                throw ProcessingException("temporary_provider_error", retryable = true)
+            }
+        }
+        repeat(3) { pipeline(provider).processPending() }
+        assertEquals("FAILED", database.processingState().forSession(SESSION_ID)?.state)
+        assertEquals("temporary_provider_error", database.processingState().forSession(SESSION_ID)?.lastError)
+        assertEquals(ProcessingRun(0, 0, 0), pipeline(provider).processPending())
+        assertEquals(3, calls)
+
+        assertEquals(1, database.processingState().retryFailed(43L))
+        val reset = requireNotNull(database.processingState().forSession(SESSION_ID))
+        assertEquals(2, reset.completedSegments)
+        assertEquals(75L, reset.processingTimeMs)
+        assertTrue(reset.audioDeleted)
+        repeat(2) {
+            pipeline(provider).processPending()
+            assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
+        }
+        pipeline(provider).processPending()
+        assertEquals("FAILED", database.processingState().forSession(SESSION_ID)?.state)
+        assertEquals(6, calls)
+        assertEquals(evidence, database.localTranscripts().forSession(SESSION_ID))
+    }
+
+    @Test
+    fun `cancellation preserves the existing failure budget`() = runTest {
+        addTranscribedSession()
+        var cancel = false
+        val provider = object : ExtractionProvider {
+            override val name = "test"
+            override val model = "test-model"
+            override suspend fun extract(lines: List<NumberedLine>): ExtractionResult {
+                if (cancel) throw kotlinx.coroutines.CancellationException("window closed")
+                throw ProcessingException("temporary_provider_error", retryable = true)
+            }
+        }
+        pipeline(provider).processPending()
+        cancel = true
+        kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> {
+            pipeline(provider).processPending()
+        }
+        assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
+        cancel = false
+        pipeline(provider).processPending()
+        assertEquals("PENDING", database.processingState().forSession(SESSION_ID)?.state)
+        pipeline(provider).processPending()
+        assertEquals("FAILED", database.processingState().forSession(SESSION_ID)?.state)
+    }
+
+    private fun transcriptProvider(result: suspend () -> TranscriptResult) = object : TranscriptionProvider {
+        override val name = "test"
+        override val model = "test-model"
+        override suspend fun transcribe(audio: ByteArray, codec: String, sampleRateHz: Int) = result()
+    }
+
+    private suspend fun addCompletedAudio(store: SegmentStore, count: Int) {
+        repeat(count) { index ->
+            val open = store.begin(SessionId(SESSION_ID), index > 0, SegmentFormat("aac-lc-adts", 16_000, 1))
+            open.writeFrame(ByteBuffer.wrap(ByteArray(200) { it.toByte() }), 200)
+            store.seal(open)
+        }
+        database.transitions().append(
+            com.apercallc.aidailymemory.data.TransitionEntity(
+                1L, "COMPLETED", SESSION_ID, null, "stop",
+                CaptureTimeColumns(1_000L, "UTC", 0, "1970-01-01", 0L, "boot"),
+            ),
+        )
+    }
+
     private suspend fun addTranscribedSession(segmentState: String = "DELETED") {
         database.segments().insert(
             SegmentEntity(
@@ -388,6 +553,7 @@ class ProcessingPipelineTest {
         localTranscriptDao = database.localTranscripts(),
         processingStateDao = database.processingState(),
         providerUsageDao = database.providerUsage(),
+        database = database,
         transcriptionProvider = transcriptionProvider,
         extractionProvider = extractionProvider,
         settings = settings,

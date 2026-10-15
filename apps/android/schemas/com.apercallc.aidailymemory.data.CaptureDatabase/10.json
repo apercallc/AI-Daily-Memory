@@ -1,0 +1,1229 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "8535e702a3959247bfa032781d9389a1",
+    "entities": [
+      {
+        "tableName": "recording_transition",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`revision` INTEGER NOT NULL, `status` TEXT NOT NULL, `session_id` TEXT, `problem` TEXT, `cause` TEXT NOT NULL, `occurred_at_epoch_ms` INTEGER NOT NULL, `timezone` TEXT NOT NULL, `utc_offset_minutes` INTEGER NOT NULL, `local_date` TEXT NOT NULL, `elapsed_realtime_ms` INTEGER NOT NULL, `boot_id` TEXT NOT NULL, PRIMARY KEY(`revision`))",
+        "fields": [
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "problem",
+            "columnName": "problem",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cause",
+            "columnName": "cause",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.occurredAtEpochMs",
+            "columnName": "occurred_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.timezone",
+            "columnName": "timezone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.utcOffsetMinutes",
+            "columnName": "utc_offset_minutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.localDate",
+            "columnName": "local_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.elapsedRealtimeMs",
+            "columnName": "elapsed_realtime_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.bootId",
+            "columnName": "boot_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "revision"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_recording_transition_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recording_transition_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "audio_segment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `state` TEXT NOT NULL, `byte_size` INTEGER NOT NULL, `duration_ms` INTEGER NOT NULL, `sha256` TEXT, `acknowledged_at_epoch_ms` INTEGER, `defect` TEXT, `file_name` TEXT NOT NULL, `codec` TEXT NOT NULL, `sample_rate_hz` INTEGER NOT NULL, `channel_count` INTEGER NOT NULL, `continues_previous` INTEGER NOT NULL, `start_occurred_at_epoch_ms` INTEGER NOT NULL, `start_timezone` TEXT NOT NULL, `start_utc_offset_minutes` INTEGER NOT NULL, `start_local_date` TEXT NOT NULL, `start_elapsed_realtime_ms` INTEGER NOT NULL, `start_boot_id` TEXT NOT NULL, PRIMARY KEY(`segment_id`))",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "acknowledgedAtEpochMs",
+            "columnName": "acknowledged_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "defect",
+            "columnName": "defect",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "file_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "codec",
+            "columnName": "codec",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleRateHz",
+            "columnName": "sample_rate_hz",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelCount",
+            "columnName": "channel_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "continuesPrevious",
+            "columnName": "continues_previous",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.occurredAtEpochMs",
+            "columnName": "start_occurred_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.timezone",
+            "columnName": "start_timezone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.utcOffsetMinutes",
+            "columnName": "start_utc_offset_minutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.localDate",
+            "columnName": "start_local_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.elapsedRealtimeMs",
+            "columnName": "start_elapsed_realtime_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start.bootId",
+            "columnName": "start_boot_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_audio_segment_session_id_sequence",
+            "unique": true,
+            "columnNames": [
+              "session_id",
+              "sequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_audio_segment_session_id_sequence` ON `${TABLE_NAME}` (`session_id`, `sequence`)"
+          },
+          {
+            "name": "index_audio_segment_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audio_segment_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "capture_marker",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`marker_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `window_before_ms` INTEGER NOT NULL, `window_after_ms` INTEGER NOT NULL, `occurred_at_epoch_ms` INTEGER NOT NULL, `timezone` TEXT NOT NULL, `utc_offset_minutes` INTEGER NOT NULL, `local_date` TEXT NOT NULL, `elapsed_realtime_ms` INTEGER NOT NULL, `boot_id` TEXT NOT NULL, PRIMARY KEY(`marker_id`))",
+        "fields": [
+          {
+            "fieldPath": "markerId",
+            "columnName": "marker_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowBeforeMs",
+            "columnName": "window_before_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowAfterMs",
+            "columnName": "window_after_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.occurredAtEpochMs",
+            "columnName": "occurred_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.timezone",
+            "columnName": "timezone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.utcOffsetMinutes",
+            "columnName": "utc_offset_minutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.localDate",
+            "columnName": "local_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.elapsedRealtimeMs",
+            "columnName": "elapsed_realtime_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time.bootId",
+            "columnName": "boot_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "marker_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_capture_marker_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_capture_marker_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "session_info",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `memory_day` TEXT NOT NULL, `zone_id` TEXT NOT NULL, `started_at_epoch_ms` INTEGER NOT NULL, `custom_title` TEXT, PRIMARY KEY(`session_id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memoryDay",
+            "columnName": "memory_day",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMs",
+            "columnName": "started_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customTitle",
+            "columnName": "custom_title",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_info_memory_day",
+            "unique": false,
+            "columnNames": [
+              "memory_day"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_info_memory_day` ON `${TABLE_NAME}` (`memory_day`)"
+          }
+        ]
+      },
+      {
+        "tableName": "segment_speech",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `analyzer` TEXT NOT NULL, `outcome` TEXT NOT NULL, `total_ms` INTEGER NOT NULL, `speech_ms` INTEGER NOT NULL, `padded_ms` INTEGER NOT NULL, `region_count` INTEGER NOT NULL, `analyzed_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analyzer",
+            "columnName": "analyzer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalMs",
+            "columnName": "total_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speechMs",
+            "columnName": "speech_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paddedMs",
+            "columnName": "padded_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "regionCount",
+            "columnName": "region_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analyzedAtEpochMs",
+            "columnName": "analyzed_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id"
+          ]
+        }
+      },
+      {
+        "tableName": "speech_region",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, `speech_ms` INTEGER NOT NULL, `low_confidence` INTEGER NOT NULL, PRIMARY KEY(`segment_id`, `start_ms`))",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startMs",
+            "columnName": "start_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endMs",
+            "columnName": "end_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speechMs",
+            "columnName": "speech_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lowConfidence",
+            "columnName": "low_confidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id",
+            "start_ms"
+          ]
+        }
+      },
+      {
+        "tableName": "clip_upload",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`clip_id` TEXT NOT NULL, `segment_id` TEXT NOT NULL, `first_frame` INTEGER NOT NULL, `end_frame` INTEGER NOT NULL, `offset_ms` INTEGER NOT NULL, `duration_ms` INTEGER NOT NULL, `byte_size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `state` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `last_error` TEXT, PRIMARY KEY(`clip_id`))",
+        "fields": [
+          {
+            "fieldPath": "clipId",
+            "columnName": "clip_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstFrame",
+            "columnName": "first_frame",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endFrame",
+            "columnName": "end_frame",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "offsetMs",
+            "columnName": "offset_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteSize",
+            "columnName": "byte_size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "last_error",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "clip_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_clip_upload_segment_id_first_frame",
+            "unique": true,
+            "columnNames": [
+              "segment_id",
+              "first_frame"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_clip_upload_segment_id_first_frame` ON `${TABLE_NAME}` (`segment_id`, `first_frame`)"
+          },
+          {
+            "name": "index_clip_upload_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clip_upload_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "clip_plan",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `outcome` TEXT NOT NULL, `planned_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`segment_id`))",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plannedAtEpochMs",
+            "columnName": "planned_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id"
+          ]
+        }
+      },
+      {
+        "tableName": "transcript",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`upload_id` TEXT NOT NULL, `segment_id` TEXT NOT NULL, `offset_ms` INTEGER NOT NULL, `provider` TEXT NOT NULL, `model` TEXT NOT NULL, `language` TEXT, `received_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`upload_id`))",
+        "fields": [
+          {
+            "fieldPath": "uploadId",
+            "columnName": "upload_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "offsetMs",
+            "columnName": "offset_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "receivedAtEpochMs",
+            "columnName": "received_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "upload_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transcript_segment_id",
+            "unique": false,
+            "columnNames": [
+              "segment_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transcript_segment_id` ON `${TABLE_NAME}` (`segment_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "transcript_span",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`upload_id` TEXT NOT NULL, `idx` INTEGER NOT NULL, `start_ms` INTEGER NOT NULL, `end_ms` INTEGER NOT NULL, `sealed` BLOB NOT NULL, `confidence` REAL, PRIMARY KEY(`upload_id`, `idx`))",
+        "fields": [
+          {
+            "fieldPath": "uploadId",
+            "columnName": "upload_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idx",
+            "columnName": "idx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startMs",
+            "columnName": "start_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endMs",
+            "columnName": "end_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sealed",
+            "columnName": "sealed",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "upload_id",
+            "idx"
+          ]
+        }
+      },
+      {
+        "tableName": "memory_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `memory_day` TEXT NOT NULL, `kind` TEXT NOT NULL, `text` TEXT NOT NULL, `confidence` TEXT NOT NULL, `quote` TEXT, `owner` TEXT, `due` TEXT, `direction` TEXT, `counterpart` TEXT, `extraction_model` TEXT NOT NULL, `extraction_version` INTEGER NOT NULL, `evidence_epoch_ms` INTEGER, `dismissed_at_epoch_ms` INTEGER, `extracted_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memoryDay",
+            "columnName": "memory_day",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quote",
+            "columnName": "quote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "due",
+            "columnName": "due",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "counterpart",
+            "columnName": "counterpart",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extractionModel",
+            "columnName": "extraction_model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extractionVersion",
+            "columnName": "extraction_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "evidenceEpochMs",
+            "columnName": "evidence_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "dismissedAtEpochMs",
+            "columnName": "dismissed_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "extractedAtEpochMs",
+            "columnName": "extracted_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_memory_item_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_memory_item_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_memory_item_memory_day",
+            "unique": false,
+            "columnNames": [
+              "memory_day"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_memory_item_memory_day` ON `${TABLE_NAME}` (`memory_day`)"
+          }
+        ]
+      },
+      {
+        "tableName": "daily_report",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `memory_day` TEXT NOT NULL, `zone_id` TEXT NOT NULL, `headline` TEXT NOT NULL, `summary` TEXT NOT NULL, `report_json` TEXT NOT NULL, `generated_at_epoch_ms` INTEGER NOT NULL, `extraction_model` TEXT NOT NULL, `extraction_version` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memoryDay",
+            "columnName": "memory_day",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "headline",
+            "columnName": "headline",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reportJson",
+            "columnName": "report_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatedAtEpochMs",
+            "columnName": "generated_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extractionModel",
+            "columnName": "extraction_model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extractionVersion",
+            "columnName": "extraction_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_daily_report_memory_day",
+            "unique": true,
+            "columnNames": [
+              "memory_day"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_daily_report_memory_day` ON `${TABLE_NAME}` (`memory_day`)"
+          }
+        ]
+      },
+      {
+        "tableName": "local_transcript_line",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`line_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `segment_id` TEXT NOT NULL, `start_epoch_ms` INTEGER NOT NULL, `end_epoch_ms` INTEGER NOT NULL, `speaker` TEXT, `text` TEXT NOT NULL, `confidence` REAL, `provider` TEXT NOT NULL, `model` TEXT NOT NULL, PRIMARY KEY(`line_id`))",
+        "fields": [
+          {
+            "fieldPath": "lineId",
+            "columnName": "line_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startEpochMs",
+            "columnName": "start_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endEpochMs",
+            "columnName": "end_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speaker",
+            "columnName": "speaker",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "line_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_transcript_line_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_transcript_line_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_local_transcript_line_session_id_start_epoch_ms",
+            "unique": false,
+            "columnNames": [
+              "session_id",
+              "start_epoch_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_transcript_line_session_id_start_epoch_ms` ON `${TABLE_NAME}` (`session_id`, `start_epoch_ms`)"
+          }
+        ]
+      },
+      {
+        "tableName": "processing_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `state` TEXT NOT NULL, `audio_deleted` INTEGER NOT NULL, `last_error` TEXT, `updated_at_epoch_ms` INTEGER NOT NULL, `completed_segments` INTEGER NOT NULL DEFAULT 0, `total_segments` INTEGER NOT NULL DEFAULT 0, `processing_time_ms` INTEGER NOT NULL DEFAULT 0, `retry_attempts` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`session_id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioDeleted",
+            "columnName": "audio_deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "last_error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtEpochMs",
+            "columnName": "updated_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedSegments",
+            "columnName": "completed_segments",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "totalSegments",
+            "columnName": "total_segments",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "processingTimeMs",
+            "columnName": "processing_time_ms",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "retryAttempts",
+            "columnName": "retry_attempts",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_processing_state_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_processing_state_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_deletion_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `queued_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`session_id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "queuedAtEpochMs",
+            "columnName": "queued_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        }
+      },
+      {
+        "tableName": "provider_usage",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`request_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `stage` TEXT NOT NULL, `provider_id` TEXT, `model` TEXT NOT NULL, `request_audio_ms` INTEGER NOT NULL, `session_audio_ms` INTEGER NOT NULL, `input_tokens` INTEGER, `output_tokens` INTEGER, `recorded_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`request_id`), FOREIGN KEY(`session_id`) REFERENCES `session_info`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "requestId",
+            "columnName": "request_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerId",
+            "columnName": "provider_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestAudioMs",
+            "columnName": "request_audio_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionAudioMs",
+            "columnName": "session_audio_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputTokens",
+            "columnName": "input_tokens",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "outputTokens",
+            "columnName": "output_tokens",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "recordedAtEpochMs",
+            "columnName": "recorded_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "request_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_provider_usage_recorded_at_epoch_ms",
+            "unique": false,
+            "columnNames": [
+              "recorded_at_epoch_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_provider_usage_recorded_at_epoch_ms` ON `${TABLE_NAME}` (`recorded_at_epoch_ms`)"
+          },
+          {
+            "name": "index_provider_usage_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_provider_usage_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "session_info",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8535e702a3959247bfa032781d9389a1')"
+    ]
+  }
+}

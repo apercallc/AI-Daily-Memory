@@ -57,6 +57,34 @@ class TranscriptScreenTest {
     }
 
     @Test
+    fun `completed processing with no words shows a final outcome rather than pending`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(
+                    lines = emptyList(),
+                    processingState = ProcessingStateEntity("session", "COMPLETED", false, null, 0),
+                )
+            }
+        }
+        compose.onNodeWithText("No words recognized").assertExists()
+        compose.onNodeWithText("No transcript yet").assertDoesNotExist()
+    }
+
+    @Test
+    fun `retryable processing failure does not claim to be waiting for charging`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(
+                    lines = emptyList(),
+                    processingState = ProcessingStateEntity("session", "PENDING", false, "io_error", 0),
+                )
+            }
+        }
+        compose.onNodeWithText("Processing could not finish. A retry is pending.").assertExists()
+        compose.onNodeWithText("Waiting for the phone to charge before transcription starts.").assertDoesNotExist()
+    }
+
+    @Test
     fun `transcription status shows measured percent and remaining time`() {
         val state = ProcessingStateEntity(
             sessionId = "session",

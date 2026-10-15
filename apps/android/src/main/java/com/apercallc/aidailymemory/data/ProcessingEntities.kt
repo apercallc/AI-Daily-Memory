@@ -100,12 +100,25 @@ data class LocalTranscriptLineEntity(
 )
 
 /**
+ * One locally produced transcript line ready for display, zone-resolved (see
+ * [LocalTranscriptDao.observeDisplayLinesForSession]). A plain query projection, not a table.
+ */
+data class LocalTranscriptDisplayLine(
+    val lineId: String,
+    val startEpochMs: Long,
+    val endEpochMs: Long,
+    val speaker: String?,
+    val text: String,
+    val zoneId: String,
+)
+
+/**
  * A session deleted locally but not yet purged from the sync target (ADR-0020). Entries are
  * added when a session with possibly-synced derived memory is deleted on the phone, sent as
  * [com.apercallc.aidailymemory.recording.processing.SyncPayload.deletedSessions] on the next
  * sync, and removed only after the sync target accepted the payload.
  *
- * Deletions made while sync is disabled are not retroactively queued (known limitation).
+ * Local deletion queues the purge atomically, including while sync is disabled or disconnected.
  */
 @Entity(tableName = "sync_deletion_queue")
 data class SyncDeletionQueueEntity(
@@ -131,6 +144,8 @@ data class ProcessingStateEntity(
     @ColumnInfo(name = "completed_segments", defaultValue = "0") val completedSegments: Int = 0,
     @ColumnInfo(name = "total_segments", defaultValue = "0") val totalSegments: Int = 0,
     @ColumnInfo(name = "processing_time_ms", defaultValue = "0") val processingTimeMs: Long = 0,
+    /** Consecutive retryable failures since the last progress reset; FAILED once the budget is spent. */
+    @ColumnInfo(name = "retry_attempts", defaultValue = "0") val retryAttempts: Int = 0,
 )
 
 /** Content-free record of successful provider usage, retained only with its session. */

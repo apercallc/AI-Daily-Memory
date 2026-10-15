@@ -53,6 +53,13 @@ fun TranscriptScreen(
         }
         when {
             lines == null -> item { LoadingState(stringResource(R.string.transcript_loading)) }
+            lines.isEmpty() && processingState?.state == "COMPLETED" -> item {
+                EmptyState(
+                    icon = R.drawable.ic_nav_sessions,
+                    title = stringResource(R.string.transcript_no_words_title),
+                    body = stringResource(R.string.transcript_no_words_body),
+                )
+            }
             lines.isEmpty() -> item {
                 EmptyState(
                     icon = R.drawable.ic_nav_sessions,
@@ -104,7 +111,11 @@ private fun ProcessingStatusCard(state: ProcessingStateEntity) {
         processingTimeMs = state.processingTimeMs,
     )
     val label = when (state.state) {
-        "PENDING" -> stringResource(R.string.processing_session_waiting)
+        "PENDING" -> if (state.lastError != null) {
+            stringResource(R.string.processing_session_retry_pending)
+        } else {
+            stringResource(R.string.processing_session_waiting)
+        }
         "TRANSCRIBING" -> {
             if (estimate?.remainingMs != null) {
                 stringResource(

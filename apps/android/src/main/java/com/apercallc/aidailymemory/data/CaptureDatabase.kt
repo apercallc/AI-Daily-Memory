@@ -33,7 +33,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncDeletionQueueEntity::class,
         ProviderUsageEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -57,7 +57,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         /** Every migration, in order. Tests open old databases with exactly this list. */
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -270,6 +270,13 @@ abstract class CaptureDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `completed_segments` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `total_segments` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `processing_time_ms` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Bounds retryable-failure retries: a durable per-session counter, reset by manual retry. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `retry_attempts` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

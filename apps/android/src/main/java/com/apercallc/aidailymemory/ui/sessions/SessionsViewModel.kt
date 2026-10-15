@@ -105,16 +105,30 @@ class SessionsViewModel(
 
     /** A session's delivered transcript, oldest line first, opened off the main thread. */
     fun transcript(sessionId: String): Flow<List<TranscriptText>> =
-        container.database.transcripts().observeSession(sessionId)
-            .map { lines ->
-                lines.map { container.transcriptCipher.open(it) ?: container.transcriptCipher.unreadable(it) }
+        combine(
+            container.database.localTranscripts().observeDisplayLinesForSession(sessionId),
+            container.database.transcripts().observeSession(sessionId),
+        ) { local, legacy ->
+            if (local.isNotEmpty()) {
+                local.map { it.toTranscriptText() }
+            } else {
+                legacy.map { container.transcriptCipher.open(it) ?: container.transcriptCipher.unreadable(it) }
             }
+        }
             .catch { e ->
                 // A database error must not end the collector (and the screen) silently.
                 logFailure(TAG, "transcript_load_failed", e)
                 emit(emptyList())
             }
             .flowOn(Dispatchers.IO)
+
+    private fun com.apercallc.aidailymemory.data.LocalTranscriptDisplayLine.toTranscriptText() = TranscriptText(
+        key = lineId,
+        startEpochMs = startEpochMs,
+        zoneId = zoneId,
+        text = text,
+        speaker = speaker,
+    )
 
     /** Processing progress is observed separately so saved transcript lines appear immediately. */
     fun processingState(sessionId: String) =

@@ -80,8 +80,35 @@ class CaptureDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun `a v9 processing row migrates with a fresh retry budget`() {
+        helper.createDatabase(TEST_DB_V9, 9).apply {
+            execSQL(
+                "INSERT INTO processing_state (session_id, state, audio_deleted, last_error, " +
+                    "updated_at_epoch_ms, completed_segments, total_segments, processing_time_ms) " +
+                    "VALUES ('session-v9', 'PENDING', 0, NULL, 12, 1, 2, 500)",
+            )
+            close()
+        }
+
+        val db = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            CaptureDatabase::class.java,
+            TEST_DB_V9,
+        ).addMigrations(*CaptureDatabase.migrations()).allowMainThreadQueries().build()
+        db.openHelper.readableDatabase.query(
+            "SELECT completed_segments, retry_attempts FROM processing_state WHERE session_id = 'session-v9'",
+        ).use {
+            it.moveToFirst()
+            assertEquals(1, it.getInt(0))
+            assertEquals(0, it.getInt(1))
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V8 = "migration-v8-to-v9-test.db"
+        const val TEST_DB_V9 = "migration-v9-to-v10-test.db"
     }
 }
