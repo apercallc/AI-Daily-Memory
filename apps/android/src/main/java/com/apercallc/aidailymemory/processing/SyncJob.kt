@@ -138,16 +138,17 @@ class SyncManager(
      * is misconfigured or the endpoint rejected the payload (the next schedule retries).
      */
     suspend fun syncPending(): Boolean {
-        if (!settings.syncEnabled.value) return true
+        // Disabling new copies never cancels a queued user-requested deletion.
         // Offline: nothing leaves the phone, which is the point of offline. Not a failure either,
         // or sync being on by default would show an error to everyone who never connected.
         val account = link() ?: return true
         val url = account.baseUrl.trimEnd('/') + SYNC_PATH
         val token = account.token
-        val includeTranscripts = settings.syncIncludeTranscripts.value
+        val enabled = settings.syncEnabled.value
+        val includeTranscripts = enabled && settings.syncIncludeTranscripts.value
 
         val since = maxOf(settings.lastSyncEpochMs ?: 0L, notBeforeEpochMs())
-        val reports = database.dailyReports().since(since)
+        val reports = if (enabled) database.dailyReports().since(since) else emptyList()
         val deletions = database.syncDeletions().pendingSessionIds()
         if (reports.isEmpty() && deletions.isEmpty()) return true
 

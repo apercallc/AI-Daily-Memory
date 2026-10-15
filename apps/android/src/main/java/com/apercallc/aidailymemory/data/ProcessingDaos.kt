@@ -57,6 +57,9 @@ interface DailyReportDao {
     @Query("SELECT * FROM daily_report WHERE generated_at_epoch_ms > :sinceEpochMs ORDER BY memory_day")
     suspend fun since(sinceEpochMs: Long): List<DailyReportEntity>
 
+    @Query("SELECT memory_day FROM daily_report WHERE generated_at_epoch_ms > :sinceEpochMs ORDER BY memory_day")
+    fun observePendingDays(sinceEpochMs: Long): Flow<List<String>>
+
     /** Marks a day's report as changed so the next sync sends it again (a rename, say). */
     @Query("UPDATE daily_report SET generated_at_epoch_ms = :epochMs WHERE memory_day = :memoryDay")
     suspend fun touch(memoryDay: String, epochMs: Long): Int
@@ -90,6 +93,26 @@ interface LocalTranscriptDao {
 
     @Query("SELECT COUNT(*) FROM local_transcript_line WHERE session_id = :sessionId")
     suspend fun countForSession(sessionId: String): Int
+
+    /**
+     * Display-ready rows for a session's locally produced transcript, in the capture
+     * timezone: the segment's own if it is still known, else the session's registered zone
+     * (older rows, or a deleted segment). Already plaintext (ADR-0020); unlike [TranscriptDao]
+     * there is nothing to decrypt.
+     */
+    @Query(
+        """
+        SELECT l.line_id AS lineId, l.start_epoch_ms AS startEpochMs, l.end_epoch_ms AS endEpochMs,
+            l.speaker AS speaker, l.text AS text,
+            COALESCE(s.start_timezone, i.zone_id) AS zoneId
+        FROM local_transcript_line l
+        LEFT JOIN audio_segment s ON s.segment_id = l.segment_id
+        LEFT JOIN session_info i ON i.session_id = l.session_id
+        WHERE l.session_id = :sessionId
+        ORDER BY l.start_epoch_ms, l.line_id
+        """,
+    )
+    fun observeDisplayLinesForSession(sessionId: String): Flow<List<LocalTranscriptDisplayLine>>
 
 }
 
@@ -160,7 +183,10 @@ interface ProcessingStateDao {
     )
     fun observeMostRecentFailedError(): Flow<String?>
 
-    @Query("UPDATE processing_state SET state = 'PENDING', last_error = NULL, updated_at_epoch_ms = :nowEpochMs WHERE state = 'FAILED'")
+    @Query(
+        "UPDATE processing_state SET state = 'PENDING', last_error = NULL, retry_attempts = 0, " +
+            "updated_at_epoch_ms = :nowEpochMs WHERE state = 'FAILED'",
+    )
     suspend fun retryFailed(nowEpochMs: Long): Int
 }
 

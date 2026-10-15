@@ -51,7 +51,6 @@ import com.apercallc.aidailymemory.settings.SettingsStore
 import com.apercallc.aidailymemory.update.UpdateChecker
 import com.apercallc.aidailymemory.update.UpdateClient
 import com.apercallc.aidailymemory.data.CaptureDatabase
-import com.apercallc.aidailymemory.data.SyncDeletionQueueEntity
 import com.apercallc.aidailymemory.data.TranscriptCipher
 import com.apercallc.aidailymemory.platform.DeviceClock
 import com.apercallc.aidailymemory.platform.Permissions
@@ -428,15 +427,8 @@ class AppContainer(context: Context) {
                     state.status != RecordingStatus.IDLE &&
                     state.status != RecordingStatus.COMPLETED
             },
-            // A session whose derived memory may already be on the sync target is queued for
-            // server-side purge; the queue drains on the next successful sync (ADR-0020).
-            onDeleted = { sessionId ->
-                if (processingSettings.syncEnabled.value && links.isLinked) {
-                    database.syncDeletions()
-                        .enqueue(SyncDeletionQueueEntity(sessionId, System.currentTimeMillis()))
-                    syncScheduler.schedule()
-                }
-            },
+            // The database transaction already queued the purge, even while disconnected.
+            onDeleted = { syncScheduler.schedule() },
         )
     }
 
@@ -461,7 +453,7 @@ class AppContainer(context: Context) {
     /** Only retries a disconnected token's revoke now; audio is never uploaded (ADR-0026). */
     val uploadScheduler = UploadScheduler(app)
 
-    /** Optional API sync (ADR-0020); runs only when sync is enabled and configured. */
+    /** Optional notes sync and queued user-requested deletions (even with notes sync off). */
     val syncScheduler = SyncScheduler(app)
     val syncManager by lazy {
         SyncManager(
@@ -531,6 +523,7 @@ class AppContainer(context: Context) {
                 localTranscriptDao = database.localTranscripts(),
                 processingStateDao = database.processingState(),
                 providerUsageDao = database.providerUsage(),
+                database = database,
                 transcriptionProvider = tp,
                 extractionProvider = ep,
                 settings = processingSettings,
@@ -583,9 +576,7 @@ class AppContainer(context: Context) {
         AccountLinker(
             links = links,
             api = backend,
-            onLinked = {
-                if (processingSettings.syncEnabled.value) syncScheduler.schedule()
-            },
+            onLinked = { syncScheduler.schedule() },
             onUnlinked = { syncScheduler.cancel() },
             onRevokePending = uploadScheduler::scheduleRevoke,
             signIn = backend,
@@ -684,7 +675,7 @@ class AppContainer(context: Context) {
             applyRetention()
             speechScheduler.schedule()
             if (processingSettings.processingEnabled.value) processingScheduler.schedule()
-            if (processingSettings.syncEnabled.value) syncScheduler.schedule()
+            syncScheduler.schedule()
             controller.state.collect {
                 if (it.status == RecordingStatus.COMPLETED) {
                     applyRetention()

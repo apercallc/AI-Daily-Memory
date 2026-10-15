@@ -117,7 +117,14 @@ fun OnboardingScreen(permissions: Permissions? = null, onFinish: (OnboardingResu
                 )
                 Text(text = stringResource(page.body), style = MaterialTheme.typography.bodyLarge)
                 when (page) {
-                    Page.WHERE -> WhereChoice(connect = connect, onChange = { connect = it })
+                    Page.WHERE -> {
+                        Text(
+                            text = stringResource(R.string.notes_phone_loss_warning),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AiDailyMemoryTheme.statusColors.warning,
+                        )
+                        WhereChoice(connect = connect, onChange = { connect = it })
+                    }
                     Page.ALLOW -> {
                         Text(
                             text = stringResource(R.string.onboarding_allow_detail),

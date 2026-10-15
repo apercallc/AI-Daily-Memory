@@ -91,6 +91,29 @@ class SessionDeletionTest {
             assertEquals(1, db.sessions().observeSince("2026-10-01").first().size)
         }
 
+    @Test
+    fun `local deletion durably queues remote purge without a link or sync setting`() = runTest {
+        db.sessions().register(sessionInfo("delete"))
+        db.sessions().deleteSession("delete")
+        assertEquals(listOf("delete"), db.syncDeletions().pendingSessionIds())
+        db.sessions().deleteSession("delete")
+        assertEquals(listOf("delete"), db.syncDeletions().pendingSessionIds())
+    }
+
+    @Test
+    fun `a failed local database deletion rolls back the purge queue too`() = runTest {
+        db.sessions().register(sessionInfo("keep"))
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER refuse_delete BEFORE DELETE ON session_info " +
+                "BEGIN SELECT RAISE(ABORT, 'test refusal'); END",
+        )
+        kotlin.test.assertFailsWith<android.database.sqlite.SQLiteConstraintException> {
+            db.sessions().deleteSession("keep")
+        }
+        assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
+        assertEquals("2026-10-11", db.sessions().memoryDayForSession("keep"))
+    }
+
     private fun memoryItem(sessionId: String) = MemoryItemEntity(
         id = "memory-$sessionId",
         sessionId = sessionId,

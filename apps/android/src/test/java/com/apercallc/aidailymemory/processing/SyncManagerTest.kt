@@ -193,6 +193,37 @@ class SyncManagerTest {
     }
 
     @Test
+    fun `disabled sync still sends queued deletions without reports or transcripts`() = runTest {
+        settings.setSyncEnabled(false)
+        settings.setSyncIncludeTranscripts(true)
+        db.dailyReports().upsert(report("2026-10-12", generatedAt = 5_000))
+        db.syncDeletions().enqueue(queueDeletion("gone-1"))
+
+        assertTrue(manager().syncPending())
+
+        assertEquals(listOf("gone-1"), sentDeletedSessions())
+        val root = Json.parseToJsonElement(bodies.single()).jsonObject
+        assertEquals(emptyList(), root["reports"]!!.jsonArray.toList())
+        assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
+        assertEquals(null, settings.lastSyncEpochMs)
+    }
+
+    @Test
+    fun `disabled sync retains failed deletions and retries after reconnect`() = runTest {
+        settings.setSyncEnabled(false)
+        db.syncDeletions().enqueue(queueDeletion("gone-1"))
+        assertFalse(manager(failWith = { throw java.io.IOException("offline") }).syncPending())
+        assertEquals(listOf("gone-1"), db.syncDeletions().pendingSessionIds())
+        link = null
+        assertTrue(manager().syncPending())
+        assertEquals(listOf("gone-1"), db.syncDeletions().pendingSessionIds())
+        link = ServerLink(HostedServer.BASE_URL, "adm_" + "T".repeat(43))
+        assertTrue(manager().syncPending())
+        assertEquals(listOf("gone-1"), sentDeletedSessions())
+        assertEquals(emptyList(), db.syncDeletions().pendingSessionIds())
+    }
+
+    @Test
     fun `nothing to send makes no network call`() = runTest {
         assertTrue(manager().syncPending())
         assertEquals(emptyList<String>(), bodies)

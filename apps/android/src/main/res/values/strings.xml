@@ -157,7 +157,10 @@
     <string name="session_rename">Rename</string>
     <string name="transcript_empty_title">No transcript yet</string>
     <string name="transcript_empty">Speech is turned into text on this phone while it charges. Download the free speech model in Settings if you haven\'t yet.</string>
+    <string name="transcript_no_words_title">No words recognized</string>
+    <string name="transcript_no_words_body">Processing finished but found no speech in this session.</string>
     <string name="processing_session_waiting">Waiting for the phone to charge before transcription starts.</string>
+    <string name="processing_session_retry_pending">Processing could not finish. A retry is pending.</string>
     <string name="processing_session_progress">Transcribing on this phone. %1$d%% complete, about %2$s left.</string>
     <plurals name="processing_session_progress_no_eta">
         <item quantity="one">Transcribing on this phone. %1$d%% complete across %2$d of %3$d segment.</item>
@@ -320,7 +323,17 @@
     <string name="sync_enabled">Send daily reports to my account</string>
     <string name="sync_last_success">Last successful notes sync: %1$s</string>
     <string name="sync_never_succeeded">No successful notes sync yet.</string>
-    <string name="sync_failed">The last sync failed. Unsynced changes remain on this phone and will retry when charging on Wi-Fi.</string>
+    <string name="sync_failed">The last sync failed. Unsynced changes remain on this phone.</string>
+    <string name="notes_phone_loss_warning">Notes that have not synced are stored only on this phone. If this phone is lost or damaged, those notes can be lost.</string>
+    <string name="sync_pending">Reports are waiting to sync.</string>
+    <string name="sync_pending_off">Report sync is off. Turn it on to send pending reports.</string>
+    <string name="sync_pending_day">Pending report: %1$s</string>
+    <plurals name="sync_pending_deletions">
+        <item quantity="one">%1$d deletion waiting for server confirmation.</item>
+        <item quantity="other">%1$d deletions waiting for server confirmation.</item>
+    </plurals>
+    <string name="sync_pending_deletions_hint">Server copies may remain until deletion is confirmed. Deletions still sync when report sync is off.</string>
+    <string name="sync_retry_hint">Retry schedules another attempt when charging on Wi-Fi.</string>
     <string name="sync_retry">Retry sync</string>
     <string name="sync_retry_scheduled">A sync retry is scheduled for the next charging and Wi-Fi window.</string>
     <string name="url_must_be_https">Enter a full https:// address with a valid host. Plain http is not allowed.</string>

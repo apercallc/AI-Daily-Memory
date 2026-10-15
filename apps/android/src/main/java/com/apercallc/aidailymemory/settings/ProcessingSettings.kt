@@ -277,6 +277,7 @@ class ProcessingSettings(
             putBoolean(KEY_SYNC_INCLUDE_TRANSCRIPTS, include)
             remove(KEY_LAST_SYNC)
         }
+        _reportCursor.value = null
         _syncIncludeTranscripts.value = include
     }
 
@@ -290,11 +291,19 @@ class ProcessingSettings(
         _lastSyncSucceededAtEpochMs.value = epochMs
     }
 
+    private val _reportCursor = MutableStateFlow(
+        prefs.getLong(KEY_LAST_SYNC, NONE).takeIf { it != NONE },
+    )
+    val reportCursor: StateFlow<Long?> = _reportCursor.asStateFlow()
+
     /** Report cursor; independent of the time the last request succeeded. */
     var lastSyncEpochMs: Long?
-        get() = prefs.getLong(KEY_LAST_SYNC, NONE).takeIf { it != NONE }
-        set(value) = prefs.edit {
-            if (value == null) remove(KEY_LAST_SYNC) else putLong(KEY_LAST_SYNC, value)
+        get() = _reportCursor.value
+        set(value) {
+            prefs.edit {
+                if (value == null) remove(KEY_LAST_SYNC) else putLong(KEY_LAST_SYNC, value)
+            }
+            _reportCursor.value = value
         }
 
     companion object {

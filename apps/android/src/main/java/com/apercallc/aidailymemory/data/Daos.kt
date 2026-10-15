@@ -91,6 +91,9 @@ interface SessionDao {
     @Transaction
     suspend fun deleteSession(sessionId: String) {
         val memoryDay = memoryDayForSession(sessionId)
+        // Same transaction as local deletion: process death cannot lose the remote purge.
+        // Keep this even while disconnected or sync is off; neither revokes a deletion request.
+        enqueueSyncDeletion(SyncDeletionQueueEntity(sessionId, System.currentTimeMillis()))
         deleteTranscriptSpans(sessionId)
         deleteTranscripts(sessionId)
         deleteLocalTranscriptLines(sessionId)
@@ -107,6 +110,9 @@ interface SessionDao {
         deleteTransitions(sessionId)
         deleteSessionInfo(sessionId)
     }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enqueueSyncDeletion(entry: SyncDeletionQueueEntity)
 
     @Query("SELECT session_id FROM session_info WHERE memory_day = :memoryDay")
     suspend fun sessionIdsForDay(memoryDay: String): List<String>

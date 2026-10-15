@@ -1,5 +1,6 @@
 package com.apercallc.aidailymemory.ui
 
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
 import com.apercallc.aidailymemory.R
@@ -18,6 +19,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -35,15 +38,21 @@ import org.robolectric.RobolectricTestRunner
 class SettingsViewModelTest {
     private val app = ApplicationProvider.getApplicationContext<AiDailyMemoryApplication>()
     private val container = app.container
+    private val viewModels = mutableListOf<SettingsViewModel>()
+
+    private fun newViewModel() = SettingsViewModel(container).also { viewModels += it }
 
     @Before
     fun setMain() = Dispatchers.setMain(UnconfinedTestDispatcher())
 
     @After
-    fun resetMain() = Dispatchers.resetMain()
+    fun resetMain() = runBlocking {
+        viewModels.forEach { it.viewModelScope.coroutineContext.job.cancelAndJoin() }
+        Dispatchers.resetMain()
+    }
 
     private fun withViewModel(block: (SettingsViewModel) -> Unit) = runBlocking {
-        val viewModel = SettingsViewModel(container)
+        val viewModel = newViewModel()
         // Main is an unconfined test dispatcher, so these collectors are live before block runs.
         val warm = launch(Dispatchers.Main) {
             launch { viewModel.processing.collect {} }
@@ -124,8 +133,46 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `sync status observes queued report dates and deletions while sync is off`() = runBlocking {
+        container.processingSettings.setSyncEnabled(false)
+        container.database.dailyReports().upsert(
+            com.apercallc.aidailymemory.data.DailyReportEntity(
+                id = "report-test", memoryDay = "2026-10-15", zoneId = "UTC",
+                headline = "Test", summary = "", reportJson = "{}",
+                generatedAtEpochMs = 5_000, extractionModel = "none:transcript-only",
+                extractionVersion = 1,
+            ),
+        )
+        container.database.syncDeletions().enqueue(
+            com.apercallc.aidailymemory.data.SyncDeletionQueueEntity("deleted-session", 1_000),
+        )
+        val vm = newViewModel()
+        val warm = launch(Dispatchers.Main) { vm.sync.collect {} }
+        try {
+            val pending = withTimeout(5_000) {
+                vm.sync.first { it.pendingDays == listOf("2026-10-15") && it.pendingDeletions == 1 }
+            }
+            assertFalse(pending.enabled)
+            container.processingSettings.lastSyncEpochMs = 5_000
+            withTimeout(5_000) { vm.sync.first { it.pendingDays.isEmpty() && it.pendingDeletions == 1 } }
+            container.database.syncDeletions().clear(listOf("deleted-session"))
+            withTimeout(5_000) { vm.sync.first { it.pendingDays.isEmpty() && it.pendingDeletions == 0 } }
+            Unit
+        } finally {
+            warm.cancel()
+        }
+    }
+
+    @Test
+    fun `disabling notes sync does not cancel queued deletion delivery`() = withViewModel { vm ->
+        val jobs = app.getSystemService(android.app.job.JobScheduler::class.java)
+        vm.syncActions.onEnableChange(false)
+        assertTrue(jobs.getPendingJob(com.apercallc.aidailymemory.processing.SyncScheduler.JOB_ID) != null)
+    }
+
+    @Test
     fun `changing a setting confirms that it was saved`() = runBlocking {
-        val viewModel = SettingsViewModel(container)
+        val viewModel = newViewModel()
         val messages = mutableListOf<Int>()
         val job = launch(Dispatchers.Main) { viewModel.messages.collect { messages += it } }
 
@@ -140,7 +187,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `testing the connection while offline says there is nothing to test`() = runBlocking {
-        val viewModel = SettingsViewModel(container)
+        val viewModel = newViewModel()
         val messages = CompletableDeferred<Int>()
         val job = launch(Dispatchers.Main) { messages.complete(viewModel.messages.first()) }
 
@@ -218,7 +265,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `the server defaults to hosted, takes an https address and resets`() = runBlocking {
-        val vm = SettingsViewModel(container)
+        val vm = newViewModel()
         val warm = launch(Dispatchers.Main) { vm.account.collect {} }
         // The account state also waits on the database, so wait for it rather than read at once.
         suspend fun settled(matches: (AccountUi) -> Boolean) = withTimeout(5_000) { vm.account.first(matches) }

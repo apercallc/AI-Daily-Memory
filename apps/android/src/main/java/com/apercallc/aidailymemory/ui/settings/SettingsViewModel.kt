@@ -232,21 +232,35 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ProcessingUi())
 
+    private val pendingSyncDays: Flow<List<String>> = combine(
+        pSettings.reportCursor,
+        container.links.link,
+    ) { cursor, link ->
+        maxOf(cursor ?: 0L, if (link == null) 0L else container.links.uploadSinceEpochMs)
+    }.flatMapLatest { since -> container.database.dailyReports().observePendingDays(since) }
+        .onStart { emit(emptyList()) }
+
     val sync: StateFlow<SyncUi> = combine(
         pSettings.syncEnabled,
         pSettings.syncIncludeTranscripts,
         pSettings.lastSyncFailed,
-        pSettings.configRevision,
+        combine(
+            pendingSyncDays,
+            container.database.syncDeletions().observeCount().onStart { emit(0) },
+            ::Pair,
+        ),
         combine(container.links.link, pSettings.lastSyncSucceededAtEpochMs) { link, lastSyncSucceededAt ->
             link to lastSyncSucceededAt
         },
-    ) { enabled, includeTranscripts, lastSyncFailed, _, linkAndSuccess ->
+    ) { enabled, includeTranscripts, lastSyncFailed, pending, linkAndSuccess ->
         SyncUi(
             enabled = enabled,
             connected = linkAndSuccess.first != null,
             includeTranscripts = includeTranscripts,
             lastSyncSucceededAtEpochMs = linkAndSuccess.second,
             lastSyncFailed = lastSyncFailed,
+            pendingDays = pending.first,
+            pendingDeletions = pending.second,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncUi())
 
@@ -452,8 +466,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             container.processingScheduler.cancel()
         }
-        if (pSettings.syncEnabled.value) container.syncScheduler.schedule()
-        else container.syncScheduler.cancel()
+        // The manager filters out reports while disabled, but must still drain deletions.
+        container.syncScheduler.schedule()
     }
 
     private val _messages = Channel<Int>(Channel.BUFFERED)

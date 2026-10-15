@@ -88,6 +88,10 @@ data class SyncUi(
     val includeTranscripts: Boolean = false,
     val lastSyncSucceededAtEpochMs: Long? = null,
     val lastSyncFailed: Boolean = false,
+    /** Report dates still awaiting server acknowledgement, not a backup guarantee. */
+    val pendingDays: List<String> = emptyList(),
+    /** Deletions awaiting server acknowledgement, independent of report sync being enabled. */
+    val pendingDeletions: Int = 0,
 )
 
 /** Events from the processing settings section. */
@@ -665,41 +669,89 @@ fun SyncSettingsSection(
                 onCheckedChange = actions.onEnableChange,
             )
         }
-        if (sync.enabled) {
-            val lastSyncTime = remember(sync.lastSyncSucceededAtEpochMs) {
-                sync.lastSyncSucceededAtEpochMs?.let { epochMs ->
-                    java.text.DateFormat.getDateTimeInstance(
-                        java.text.DateFormat.MEDIUM,
-                        java.text.DateFormat.SHORT,
-                    ).format(java.util.Date(epochMs))
-                }
+        Text(
+            text = stringResource(R.string.notes_phone_loss_warning),
+            style = MaterialTheme.typography.bodyMedium,
+            color = AiDailyMemoryTheme.statusColors.warning,
+        )
+        val lastSyncTime = remember(sync.lastSyncSucceededAtEpochMs) {
+            sync.lastSyncSucceededAtEpochMs?.let { epochMs ->
+                java.text.DateFormat.getDateTimeInstance(
+                    java.text.DateFormat.MEDIUM,
+                    java.text.DateFormat.SHORT,
+                ).format(java.util.Date(epochMs))
             }
+        }
+        Text(
+            text = lastSyncTime?.let { stringResource(R.string.sync_last_success, it) }
+                ?: stringResource(R.string.sync_never_succeeded),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!sync.connected && (sync.enabled || sync.pendingDays.isNotEmpty() || sync.pendingDeletions > 0)) {
             Text(
-                text = lastSyncTime?.let { stringResource(R.string.sync_last_success, it) }
-                    ?: stringResource(R.string.sync_never_succeeded),
+                text = stringResource(R.string.sync_needs_account),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!sync.connected) {
+        }
+        if (sync.lastSyncFailed) {
+            Text(
+                text = stringResource(R.string.sync_failed),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        if (sync.pendingDays.isNotEmpty()) {
+            Text(
+                text = stringResource(if (sync.enabled) R.string.sync_pending else R.string.sync_pending_off),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // A failed attempt is not proof that every pending report was attempted or failed.
+            // Keep exact dates pending until the supplied, acknowledged state changes.
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                sync.pendingDays.forEach { day ->
+                    Text(
+                        text = stringResource(R.string.sync_pending_day, day),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+        if (sync.pendingDeletions > 0) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            ) {
                 Text(
-                    text = stringResource(R.string.sync_needs_account),
+                    text = pluralStringResource(
+                        R.plurals.sync_pending_deletions,
+                        sync.pendingDeletions,
+                        sync.pendingDeletions,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(R.string.sync_pending_deletions_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (sync.lastSyncFailed) {
-                Text(
-                    text = stringResource(R.string.sync_failed),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-                OutlinedButton(
-                    onClick = actions.onRetry,
-                    enabled = sync.connected,
-                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                ) { Text(stringResource(R.string.sync_retry)) }
-            }
+        }
+        if (sync.lastSyncFailed || sync.pendingDays.isNotEmpty() || sync.pendingDeletions > 0) {
+            Text(
+                text = stringResource(R.string.sync_retry_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = actions.onRetry,
+                enabled = sync.connected && (sync.enabled || sync.pendingDeletions > 0),
+                modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+            ) { Text(stringResource(R.string.sync_retry)) }
+        }
+        if (sync.enabled) {
             SettingsCard {
                 ToggleRow(
                     label = stringResource(R.string.sync_include_transcripts),

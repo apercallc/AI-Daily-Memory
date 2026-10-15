@@ -66,9 +66,9 @@ Speech gating remains deferred until measured evidence supports it; retain compl
 ADR-0026 removes storage modes and custom server addresses from the phone. Sync is an optional
 phone-to-hosted-server copy of notes and never sends audio; the phone remains the source of truth.
 
-- [ ] Show the last successful notes sync and clearly identify failed or pending notes; offer a manual
+- [x] Show the last successful notes sync and clearly identify failed or pending notes; offer a manual
   retry if automatic retries do not resolve them
-- [ ] Warn during onboarding and settings that unsynced memory exists only on the phone and can be
+- [x] Warn during onboarding and settings that unsynced memory exists only on the phone and can be
   lost with the phone
 
 ### Phase 1 exit gate

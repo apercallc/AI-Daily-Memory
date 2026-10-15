@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import org.junit.Rule
 import org.junit.Test
@@ -48,12 +49,30 @@ class OnboardingScreenTest {
         show()
 
         compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("Sync my notes").performClick()
+        compose.onNodeWithText("Sync my notes").performScrollTo().performClick()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Set up my account").performClick()
 
         assertEquals(OnboardingResult.CONNECT_ACCOUNT, result)
+    }
+
+    @Test
+    fun `phone loss warning remains visible for both storage choices`() {
+        show()
+        compose.onNodeWithText("Next").performClick()
+
+        compose.onNodeWithText("Keep notes on this phone").assertIsSelected()
+        compose.onNodeWithText("Notes that have not synced are stored only on this phone.", substring = true)
+            .assertExists()
+        compose.onNodeWithText("If this phone is lost or damaged, those notes can be lost.", substring = true)
+            .assertExists()
+
+        compose.onNodeWithText("Sync my notes").performScrollTo().performClick().assertIsSelected()
+        compose.onNodeWithText("Notes that have not synced are stored only on this phone.", substring = true)
+            .assertExists()
+        compose.onNodeWithText("If this phone is lost or damaged, those notes can be lost.", substring = true)
+            .assertExists()
     }
 
     @Test
@@ -72,7 +91,7 @@ class OnboardingScreenTest {
     fun `skip never connects, even after choosing to`() {
         show()
         compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("Sync my notes").performClick()
+        compose.onNodeWithText("Sync my notes").performScrollTo().performClick()
 
         compose.onNodeWithText("Skip").performClick()
 
