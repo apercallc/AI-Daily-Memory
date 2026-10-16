@@ -10,36 +10,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from app.main import create_app
-from app.recall import Answer, AnswerUnavailableError, Evidence
 from tests.conftest import make_account, settings_for
 
 PASSWORD = "correct horse battery"  # noqa: S105 - test credential
 
 
-class FakeAnswers:
-    name = "fake"
-
-    def __init__(self) -> None:
-        self.calls: list[list[Evidence]] = []
-        self.fail = False
-
-    async def answer(self, question: str, items: list[Evidence]) -> Answer:
-        self.calls.append(items)
-        if self.fail:
-            raise AnswerUnavailableError
-        return Answer(
-            f"Model says: {items[0].text}", (items[0].item_id, "not-given"), False, "model"
-        )
-
-
 @pytest.fixture
-def answers() -> FakeAnswers:
-    return FakeAnswers()
-
-
-@pytest.fixture
-def client(db: Engine, database_url: str, answers: FakeAnswers) -> Iterator[TestClient]:
-    app = create_app(settings_for(database_url, daily_ask_limit=3), answer_provider=answers)
+def client(db: Engine, database_url: str) -> Iterator[TestClient]:
+    app = create_app(settings_for(database_url, daily_ask_limit=3))
     with TestClient(app) as test_client:
         yield test_client
 
@@ -386,7 +364,7 @@ def test_evidence_is_returned_only_for_the_owner(client: TestClient, db: Engine)
 
 
 def test_ask_finds_items_by_words_and_cites_only_what_it_retrieved(
-    client: TestClient, db: Engine, answers: FakeAnswers
+    client: TestClient, db: Engine
 ) -> None:
     headers = web_session(client)
     user = user_of(db, "me@example.com")
@@ -405,9 +383,9 @@ def test_ask_finds_items_by_words_and_cites_only_what_it_retrieved(
     ).json()
 
     assert result["abstained"] is False
-    assert result["source"] == "model"
+    assert result["source"] == "evidence_only"
     assert [i["text"] for i in result["items"]] == ["Send Sam the pricing deck"]
-    assert [e.text for e in answers.calls[0]] == ["Send Sam the pricing deck"]
+    assert "Send Sam the pricing deck" in result["answer"]
 
 
 def test_ask_by_time_and_kind_needs_no_keywords(client: TestClient, db: Engine) -> None:
@@ -426,9 +404,7 @@ def test_ask_by_time_and_kind_needs_no_keywords(client: TestClient, db: Engine) 
     assert [i["text"] for i in result["items"]] == ["Choose Postgres"]
 
 
-def test_ask_abstains_and_never_calls_the_model_without_evidence(
-    client: TestClient, db: Engine, answers: FakeAnswers
-) -> None:
+def test_ask_abstains_without_evidence(client: TestClient, db: Engine) -> None:
     headers = web_session(client)
     add_item(db, user_of(db, "me@example.com"), "Book the venue")
 
@@ -438,7 +414,6 @@ def test_ask_abstains_and_never_calls_the_model_without_evidence(
 
     assert result["abstained"] is True
     assert result["items"] == []
-    assert answers.calls == []
 
 
 def test_ask_never_reaches_another_persons_memory_or_dismissed_items(
@@ -469,28 +444,14 @@ def test_ask_uses_the_persons_corrected_wording(client: TestClient, db: Engine) 
     assert [i["text"] for i in result["items"]] == ["Call Priya about the lease"]
 
 
-def test_a_failed_model_falls_back_to_listing_the_evidence(
-    client: TestClient, db: Engine, answers: FakeAnswers
-) -> None:
-    headers = web_session(client)
-    add_item(db, user_of(db, "me@example.com"), "Order the banners")
-    answers.fail = True
-
-    result = client.post(
-        "/v1/ask", json={"question": "who ordered banners"}, headers=headers
-    ).json()
-
-    assert result["source"] == "evidence_only"
-    assert not result["abstained"]
-    assert "Order the banners" in result["answer"]
-
-
-def test_ask_without_a_model_is_evidence_only(db: Engine, database_url: str) -> None:
+def test_ask_is_always_evidence_only(db: Engine, database_url: str) -> None:
+    # Ask has no model path at all (ADR-0028): this is the only answer it ever gives.
     with TestClient(create_app(settings_for(database_url))) as plain:
         headers = web_session(plain)
         add_item(db, user_of(db, "me@example.com"), "Order the banners")
         result = plain.post("/v1/ask", json={"question": "banners"}, headers=headers).json()
     assert result["source"] == "evidence_only"
+    assert "Order the banners" in result["answer"]
 
 
 def test_ask_is_metered_per_person_per_day_on_the_server(client: TestClient, db: Engine) -> None:

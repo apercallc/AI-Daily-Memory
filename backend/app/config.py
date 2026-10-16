@@ -68,13 +68,11 @@ class Settings(BaseSettings):
     claude_api_key: SecretStr | None = None
     claude_model: str = "claude-sonnet-5"
 
-    # Ask (recall) answers. "disabled" lists the matching memory items without any third party
-    # seeing them; "claude" lets a model phrase the answer from those items only. Turning it on
-    # sends a person's memory text to the provider, so it is an operator decision, like the
-    # providers above.
-    ask_provider: Literal["disabled", "claude"] = "disabled"
-    ask_model: str = "claude-sonnet-5"
-    # Ask calls per person per UTC day; plan-based entitlements replace this in Phase 10.
+    # Ask (recall) answers (ADR-0028): retrieval-only. The server never calls a model provider
+    # on a user's behalf for Ask — an answer is always just the matching memory items, read
+    # back plainly. A future user-owned-credential flow could change this; an operator-funded
+    # one will not.
+    # Ask calls per person per UTC day: an abuse/availability limit, not plan metering.
     daily_ask_limit: int = Field(default=50, ge=1, le=10_000)
 
     # Email (password reset, verification). Disabled until an operator configures a provider;
@@ -84,18 +82,6 @@ class Settings(BaseSettings):
     mail_from: str = "AI Daily Memory <no-reply@aidailymem.apercallc.com>"
     # Where links in emails point (the web app's origin).
     public_base_url: str = "https://aidailymem.apercallc.com"
-
-    # Billing (Stripe Checkout for web subscriptions, ADR-0025). Disabled until configured.
-    stripe_secret_key: SecretStr | None = None
-    stripe_webhook_secret: SecretStr | None = None
-    stripe_price_id: str | None = None
-    # Plan limits per person per UTC day. "free" keeps `daily_ask_limit` and the upload quota.
-    pro_daily_ask_limit: int = Field(default=500, ge=1, le=100_000)
-    pro_upload_quota_multiplier: int = Field(default=4, ge=1, le=100)
-
-    @property
-    def billing_enabled(self) -> bool:
-        return bool(self.stripe_secret_key and self.stripe_webhook_secret and self.stripe_price_id)
 
     @field_validator("database_url", mode="before")
     @classmethod

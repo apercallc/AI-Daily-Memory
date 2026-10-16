@@ -5,6 +5,22 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the dormant Stripe billing implementation (checkout, portal, webhook, plan
+  entitlement columns) and the operator-funded Ask model path, per ADR-0028. Ask is now
+  retrieval-only unconditionally: it was already the fallback, and is now the only behavior.
+  `/v1/capabilities` no longer reports `billing` or `ask_model`. A migration drops the
+  now-unused `plan`, `stripe_customer_id`, `plan_renews_at`, and `plan_cancels_at_period_end`
+  columns from `users`; transactional email and account recovery are unaffected.
+
+### Fixed
+
+- Server-side extraction (the `full_cloud` storage mode) now computes a session's memory day
+  from the uploading client's own timezone when it sends one, instead of always converting to
+  UTC first — a late-evening or early-morning session no longer silently lands on the wrong
+  calendar day. Uploads may now optionally carry a `source_timezone` (IANA zone id).
+
 ## [0.4.0] - 2026-10-13
 
 ### Changed

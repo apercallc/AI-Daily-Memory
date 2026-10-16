@@ -85,12 +85,6 @@ class User(Base):
     # Where memory lives (ADR-0014); phone-only is the default the app preselects.
     storage_mode: Mapped[str] = mapped_column(String(16), server_default="phone_only")
     created_at: Mapped[datetime] = _created()
-    # Entitlements are server-authoritative (AGENTS.md rule 3): only the billing webhook, never a
-    # client, moves these.
-    plan: Mapped[str] = mapped_column(String(16), server_default="free")
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
-    plan_renews_at: Mapped[datetime | None]
-    plan_cancels_at_period_end: Mapped[bool] = mapped_column(server_default="false")
 
 
 class DeletedAccountObjectPurge(Base):

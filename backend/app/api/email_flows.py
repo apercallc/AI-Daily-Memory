@@ -62,8 +62,6 @@ class TokenOnly(BaseModel):
 
 class Capabilities(BaseModel):
     email: bool
-    billing: bool
-    ask_model: bool
 
 
 def _mailer(request: Request) -> Mailer | None:
@@ -98,12 +96,7 @@ async def send_link(
 
 @router.get("/capabilities", response_model=Capabilities)
 async def capabilities(request: Request) -> Capabilities:
-    settings: Settings = request.app.state.settings
-    return Capabilities(
-        email=_mailer(request) is not None,
-        billing=settings.billing_enabled,
-        ask_model=getattr(request.app.state, "answer_provider", None) is not None,
-    )
+    return Capabilities(email=_mailer(request) is not None)
 
 
 @router.post(

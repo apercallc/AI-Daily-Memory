@@ -262,8 +262,7 @@ async def _create(
             AudioUpload.created_at >= since,
         ),
     )
-    plan = await session.scalar(select(User.plan).where(User.id == principal.user_id))
-    if int(used or 0) + body.byte_size > limits_for(plan or "free", settings).upload_bytes_per_day:
+    if int(used or 0) + body.byte_size > limits_for(settings).upload_bytes_per_day:
         await session.rollback()
         return error_response(429, "Daily upload quota reached.", code="quota_exceeded")
 

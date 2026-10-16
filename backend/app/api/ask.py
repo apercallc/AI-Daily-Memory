@@ -23,14 +23,12 @@ from app.api.notes import _ensure_notes, _snippet
 from app.auth import Principal, require
 from app.config import Settings
 from app.db import get_session
-from app.db.models import MemoryItem, MemoryItemCorrection, Note, User
+from app.db.models import MemoryItem, MemoryItemCorrection, Note
 from app.errors import ErrorResponse, error_response
 from app.plans import limits_for
 from app.recall import (
     NOTHING_FOUND,
     Answer,
-    AnswerProvider,
-    AnswerUnavailableError,
     DateRange,
     Evidence,
     evidence_only_answer,
@@ -210,8 +208,7 @@ async def ask(
     body: AskRequest, request: Request, session: Session, reader: Reader
 ) -> AskResponse | JSONResponse:
     settings: Settings = request.app.state.settings
-    plan = await session.scalar(select(User.plan).where(User.id == reader.user_id))
-    limit = limits_for(plan or "free", settings).ask_per_day
+    limit = limits_for(settings).ask_per_day
     if not await take(session, reader.user_id, "ask", limit=limit):
         await session.rollback()
         return error_response(
@@ -235,18 +232,14 @@ async def ask(
     await session.commit()
 
     label = window.label if window else None
-    provider: AnswerProvider | None = getattr(request.app.state, "answer_provider", None)
+    # Ask is retrieval-only (ADR-0028): no model provider ever sees this person's memory, so
+    # the answer is always just the matching items, read back plainly.
     if not evidence and mentions:
         answer = Answer(NOTHING_MATCHED_BUT_MENTIONED, (), abstained=True, source="evidence_only")
     elif not evidence:
         answer = Answer(NOTHING_FOUND, (), abstained=True, source="evidence_only")
-    elif provider is None:
-        answer = evidence_only_answer(body.question, evidence, label)
     else:
-        try:
-            answer = await provider.answer(body.question, evidence)
-        except AnswerUnavailableError:
-            answer = evidence_only_answer(body.question, evidence, label)
+        answer = evidence_only_answer(body.question, evidence, label)
     by_id = {e.item_id: e for e in evidence}
     cited = [by_id[i] for i in answer.used if i in by_id]
     return AskResponse(

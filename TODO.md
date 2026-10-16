@@ -261,10 +261,21 @@ phase does not block launch and no embedding or vector-index infrastructure is n
 
 ## Security
 
-- [ ] Remove dormant monetization and operator-funded inference paths (ADR-0028)
+- [x] Remove dormant monetization and operator-funded inference paths (ADR-0028)
   - Remove Stripe checkout/portal/webhook routes, config, UI, plan entitlements, and schema fields with a safe migration; retain transactional email and account-recovery behavior.
   - Keep web Ask retrieval-only; ensure user requests never invoke model providers using operator-owned keys, and never fall back silently to paid inference.
   - Test that abuse limits remain availability safeguards rather than paid-plan metering.
+  - Deleted `app/billing.py`, `app/api/billing.py`, `app/recall.py`'s `ClaudeAnswerProvider`/
+    `AnswerProvider` provider path, and the `ask_provider`/`ask_model`/`stripe_*`/`pro_*`
+    settings; `app/api/ask.py` now always answers with `evidence_only_answer` (unconditional,
+    not a fallback). Migration 0014 drops `users.plan`, `stripe_customer_id`,
+    `plan_renews_at`, `plan_cancels_at_period_end`; `limits_for()` takes only `Settings` now
+    (one tier, `daily_ask_limit`/`daily_upload_bytes_quota` — abuse/availability limits, not
+    plan metering). `/v1/capabilities` no longer reports `billing`/`ask_model`. Transactional
+    email/password-reset/account-recovery routes and tests are untouched
+    (`tests/test_email.py`, renamed from `tests/test_email_and_billing.py`). Full backend
+    suite (526 tests, 97% coverage), ruff, mypy, pip-audit, and the regenerated
+    `docs/api/openapi.v1.json` all verified green.
 - [ ] Verify the release security controls
   - Complete the authentication threat model and authorization tests for every user-owned resource.
   - Verify object-storage path isolation and signed URL scope/TTL tests.
