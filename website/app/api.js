@@ -62,10 +62,6 @@ const MESSAGES = {
   item_not_found: "That item no longer exists.",
   invalid_link: "That link has expired or was already used. Ask for a new one.",
   email_unavailable: "Email isn't set up on this server, so this isn't available.",
-  already_subscribed: "You already have a subscription.",
-  billing_unavailable: "Subscriptions aren't available right now.",
-  billing_provider_error: "Couldn't reach the payment provider. Try again in a moment.",
-  no_subscription: "There's no subscription to manage.",
   database_unavailable: "The service is busy right now. Try again in a moment.",
   storage_unavailable: "Storage is busy right now. Try again in a moment.",
 };

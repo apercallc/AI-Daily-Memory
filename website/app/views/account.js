@@ -3,7 +3,7 @@ import { confirmBox } from "../dialogs.js";
 import { h, notice, prettyTime, spinner } from "../dom.js";
 
 export async function accountView({ me, signOut }) {
-  const caps = await api("/capabilities", { auth: false }).catch(() => ({ email: false, billing: false }));
+  const caps = await api("/capabilities", { auth: false }).catch(() => ({ email: false }));
   const account = section("Profile", h("p", { class: "m0" }, me.email || "Signed in"),
     h("p", { class: "field-hint" }, "Your account connects this web library to the notes you choose to sync from your phone."));
   return h("div", { class: "settings-page" },
@@ -19,7 +19,7 @@ export async function accountView({ me, signOut }) {
         settingLink("settings-security", "Password"),
         settingLink("settings-data", "Your data")),
       h("div", { class: "settings-content" },
-        settingGroup("settings-account", "Account", account, caps.billing ? await planCard() : null),
+        settingGroup("settings-account", "Account", account),
         settingGroup("settings-phone", "Phone sync", phoneCard(me)),
         settingGroup("settings-access", "Devices and API", await signInsCard(), await keysCard()),
         settingGroup("settings-security", "Sign-in security", passwordCard()),
@@ -49,26 +49,6 @@ function verifyBanner(me, caps) {
     h("button", { class: "link", onclick: async () => {
       try { await api("/me/verify", { method: "POST" }); status.replaceChildren(notice("ok", "Sent. Check your inbox.")); } catch (e) { status.replaceChildren(notice("error", describe(e))); }
     } }, "Send the email"), status);
-}
-
-async function planCard() {
-  const status = h("div", { "aria-live": "polite" });
-  let b;
-  try { b = await api("/billing"); } catch (e) { return section("Plan", notice("error", describe(e))); }
-  const go = async (path) => {
-    try {
-      const { url } = await api(path, { method: "POST" });
-      if (url.startsWith("https://")) location.assign(url);
-    } catch (e) { status.replaceChildren(notice("error", describe(e))); }
-  };
-  const pro = b.plan === "pro";
-  return section("Plan",
-    h("p", { class: "mt0" }, h("strong", null, pro ? "Pro" : "Free"),
-      pro && b.renews_at ? ` — ${b.cancels_at_period_end ? "ends" : "renews"} ${prettyTime(b.renews_at)}` : ""),
-    h("p", { class: "muted" }, `Questions today: ${b.asks_used} of ${b.ask_limit}.`),
-    pro ? h("button", { onclick: () => go("/billing/portal") }, "Manage or cancel")
-        : h("button", { class: "primary", onclick: () => go("/billing/checkout") }, "Upgrade to Pro"),
-    status);
 }
 
 function section(title, ...children) {

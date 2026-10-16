@@ -413,6 +413,18 @@ and complete data rights. The product remains free under ADR-0028.
     and error semantics.
   - Define the versioned contract and breaking-change deprecation policy.
   - Monitor per-key volume anomalies and scraping patterns; do not add paid tiers or entitlements.
+  - Most of the building-block work already exists and was confirmed correct this pass:
+    `GET/POST /v1/api-keys` (hashed, read-only `memory:read` scope by construction, capped at
+    10, create+revoke achieves rotation), `docs/api/VERSIONING.md` (the versioned contract and
+    deprecation policy), `docs/api/ENDPOINTS.md` (corrected this pass — it still documented
+    `/v1/billing*` routes and `ask_model`/`billing` capability fields that ADR-0028 removed
+    from the backend weeks ago; also found and removed the matching dead frontend code in
+    `website/app/views/account.js`'s `planCard()` and the now-impossible billing error codes in
+    `website/app/api.js`, both still calling/naming routes that 404 today).
+  - Still genuinely blocked, not done: per-key volume/scraping anomaly monitoring needs a real
+    monitoring decision and account, not just code (same shape as the login-anomaly gap in
+    `THREAT_MODEL.md` T1). The phase header itself gates this on Phase 8 exiting, and Phase 8's
+    Reliability item (SLIs/alerting, backup drill, load/chaos tests) has not exited yet.
 
 ## Data portability
 

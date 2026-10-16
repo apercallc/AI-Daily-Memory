@@ -135,7 +135,7 @@ and a token that expires after 30 days. A phone keeps the device defaults.
 | `GET /v1/tokens` | phone or `account:manage` | active sign-ins (phones, browsers, API keys); `current` marks the caller |
 | `DELETE /v1/tokens/{id}` | phone or `account:manage` | revoke one (a lost phone, an old browser, a key) |
 | `GET /v1/api-keys`, `POST /v1/api-keys` | phone or `account:manage` | list / create read-only keys (max 10). The secret is shown once |
-| `GET /v1/export` | phone or `account:manage` | one JSON file with everything held about you. 3 per hour |
+| `GET /v1/export` | phone or `account:manage` | everything held about you. `?format=json` (default, one document) or `?format=jsonl` (one JSON object per line). 3 per hour, idempotent per format within the signed URL's TTL |
 
 ## Memory (browse and correct)
 
@@ -171,24 +171,27 @@ from them is replaced by "Recording" and left out of search.
 ## Ask (recall)
 
 `POST /v1/ask` with `{"question": "...", "today": "YYYY-MM-DD"}` (scope `memory:read`) returns
-`{answer, abstained, source, range_label, items[]}`. Retrieval is a bounded, user-scoped query
-(dates in the question, its keywords, the kind of item it hints at), and the answer is built only
-from what that returns; it abstains when nothing matches. `source` is `evidence_only` (the items
-are listed, no third party sees them) unless the operator enabled `ASK_PROVIDER=claude`, then
-`model`. Metered per person per UTC day (`DAILY_ASK_LIMIT`, default 50); over the limit gives 429
+`{answer, abstained, source, range_label, items[], notes[]}`. Retrieval is a bounded,
+user-scoped query (dates in the question, its keywords, the kind of item it hints at), and the
+answer is built only from what that returns; it abstains when nothing matches. `source` is
+always `evidence_only` (ADR-0028: Ask is retrieval-only — no model provider, operator-funded or
+otherwise, ever sees this person's memory; the items are listed plainly, read back as-is).
+`notes` lists sessions whose own words (title or transcript) mention the question, for people
+who read transcripts — a way to stay askable even when a question matches no structured item.
+Metered per person per UTC day (`DAILY_ASK_LIMIT`, default 50); over the limit gives 429
 `quota_exceeded` with `Retry-After`.
 
-## Email, plans and capabilities (ADR-0025)
+## Email and capabilities (ADR-0025, ADR-0028)
 
 | Route | What it does |
 | --- | --- |
-| `GET /v1/capabilities` | `{email, billing, ask_model}`: which optional features this server has |
+| `GET /v1/capabilities` | `{email: bool}` — whether this server has a mail provider configured. No billing or model-provider capability exists (ADR-0028: the product is free, with no operator-funded inference) |
 | `POST /v1/password/forgot` | `{email}`; always 202; 503 `email_unavailable` without a mail provider. 5 per hour |
 | `POST /v1/password/reset` | `{token, new_password}`; ends browser sessions and API keys. 400 `invalid_link` |
 | `POST /v1/me/verify`, `POST /v1/verify` | send the confirmation email / confirm with `{token}` |
-| `GET /v1/billing` | plan, renewal, limits, Ask use today |
-| `POST /v1/billing/checkout`, `POST /v1/billing/portal` | Stripe URLs (503 `billing_unavailable` when off) |
-| `POST /v1/billing/webhook` | Stripe only; signature-checked |
+
+There is no billing, checkout, portal, or webhook route. Dormant Stripe code paths were
+removed entirely (ADR-0028); do not reintroduce them.
 
 ## Health
 
