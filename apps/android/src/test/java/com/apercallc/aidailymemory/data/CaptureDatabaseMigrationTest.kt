@@ -106,9 +106,39 @@ class CaptureDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun `a v10 database gains an empty memory_item_correction table`() {
+        helper.createDatabase(TEST_DB_V10, 10).apply {
+            execSQL(
+                "INSERT INTO memory_item (id, session_id, memory_day, kind, text, confidence, " +
+                    "quote, owner, due, direction, counterpart, extraction_model, " +
+                    "extraction_version, evidence_epoch_ms, dismissed_at_epoch_ms, extracted_at_epoch_ms) " +
+                    "VALUES ('item-v10', 's', '2026-10-15', 'decision', 'Original text', 'likely', " +
+                    "NULL, NULL, NULL, NULL, NULL, 'user-key:m', 1, NULL, NULL, 1)",
+            )
+            close()
+        }
+
+        val db = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            CaptureDatabase::class.java,
+            TEST_DB_V10,
+        ).addMigrations(*CaptureDatabase.migrations()).allowMainThreadQueries().build()
+        db.openHelper.readableDatabase.query("SELECT text FROM memory_item WHERE id = 'item-v10'").use {
+            it.moveToFirst()
+            assertEquals("Original text", it.getString(0))
+        }
+        db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM memory_item_correction").use {
+            it.moveToFirst()
+            assertEquals(0, it.getInt(0))
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V8 = "migration-v8-to-v9-test.db"
         const val TEST_DB_V9 = "migration-v9-to-v10-test.db"
+        const val TEST_DB_V10 = "migration-v10-to-v11-test.db"
     }
 }

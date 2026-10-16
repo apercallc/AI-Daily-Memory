@@ -46,6 +46,28 @@ data class MemoryItemEntity(
 )
 
 /**
+ * A correction superseding a [MemoryItemEntity]'s text (human correction; AGENTS.md: derived AI
+ * output is always correctable, and a correction is stored apart from what it corrects — the
+ * original extracted item is never rewritten or deleted). The item's current corrected display
+ * text is its latest correction by [correctedAtEpochMs], falling back to the extracted text when
+ * none exists.
+ *
+ * Known limitation shared with dismissal (ADR-0019): [MemoryItemDao.replaceForSession] deletes
+ * and reinserts a session's items on every (re)extraction run, so a correction tied to an old
+ * item id is orphaned if that session is ever reprocessed.
+ */
+@Entity(
+    tableName = "memory_item_correction",
+    indices = [Index(value = ["item_id"])],
+)
+data class MemoryItemCorrectionEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "item_id") val itemId: String,
+    @ColumnInfo(name = "corrected_text") val correctedText: String,
+    @ColumnInfo(name = "corrected_at_epoch_ms") val correctedAtEpochMs: Long,
+)
+
+/**
  * A daily report stored on the phone (ADR-0020). One row per user per memory day (single-user
  * device, so just one row per memory day). Stored as JSONB-equivalent (JSON string in SQLite).
  *

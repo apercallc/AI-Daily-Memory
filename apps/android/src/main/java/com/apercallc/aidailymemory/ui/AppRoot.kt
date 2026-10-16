@@ -285,6 +285,8 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
             onRetry = viewModel::retry,
             modifier = modifier,
             onSetUpProcessing = onSetUpProcessing,
+            onDismiss = viewModel::dismiss,
+            onCorrect = viewModel::correct,
         )
     }
 }

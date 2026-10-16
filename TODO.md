@@ -93,7 +93,13 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 
 ## Human correction
 
-- [ ] Let users supersede old decisions and rank confirmed corrections in future retrieval
+- [x] Let users supersede old decisions and rank confirmed corrections in future retrieval
+  - Supersede is in: a correction is stored apart from the extracted item (new
+    `memory_item_correction` table, never rewriting evidence or the extracted row), shown in
+    place of the original wherever items are displayed, with a "Corrected" label. Ranking
+    corrections ahead of originals in a dedicated recall engine's results is Phase 4 scope —
+    there is no recall surface yet to rank within; the daily timeline (the only retrieval
+    surface that exists today) already always prefers the correction.
 
 ## Daily summary / daily report
 

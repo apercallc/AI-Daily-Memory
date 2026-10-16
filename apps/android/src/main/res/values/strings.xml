@@ -358,6 +358,12 @@
     <string name="memory_hide_transcript">Hide transcript</string>
     <string name="memory_transcript_deleted">Audio deleted after transcription</string>
     <string name="memory_evidence_quote">\"%1$s\"</string>
+    <string name="memory_dismiss_item">Dismiss</string>
+    <string name="memory_correct_item">Correct</string>
+    <string name="memory_corrected_label">Corrected</string>
+    <string name="memory_correct_dialog_title">Correct this item</string>
+    <string name="memory_correct_dialog_save">Save</string>
+    <string name="memory_correct_dialog_cancel">Cancel</string>
     <string name="nav_memory">Memory</string>
 
     <!-- Account: one hosted server, offline or connected -->

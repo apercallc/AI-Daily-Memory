@@ -88,4 +88,66 @@ class MemoryViewModelTest {
 
         assertEquals(emptyList(), days)
     }
+
+    @Test
+    fun `dismissing an item removes it without rewriting the extracted row`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(listOf(item("i1", "s1", "2026-10-12")))
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        var latest: MemoryLoadState = MemoryLoadState.Loading
+        val collector = launch { vm.state.collect { latest = it } }
+        withTimeout(5_000) { while (latest.itemCount() != 1) kotlinx.coroutines.yield() }
+
+        vm.dismiss("i1")
+        withTimeout(5_000) { while (latest.itemCount() != 0) kotlinx.coroutines.yield() }
+        collector.cancel()
+
+        val raw = container.database.openHelper.readableDatabase
+            .query("SELECT text FROM memory_item WHERE id = 'i1'")
+        raw.use {
+            it.moveToFirst()
+            assertEquals("Original text", it.getString(0))
+        }
+    }
+
+    @Test
+    fun `correcting an item shows the corrected text without losing the original`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(listOf(item("i1", "s1", "2026-10-12")))
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        var latest: MemoryLoadState = MemoryLoadState.Loading
+        val collector = launch { vm.state.collect { latest = it } }
+        withTimeout(5_000) { while (latest.itemCount() != 1) kotlinx.coroutines.yield() }
+
+        vm.correct("i1", "The corrected version")
+        withTimeout(5_000) { while (latest.firstItemOrNull()?.text != "The corrected version") kotlinx.coroutines.yield() }
+        collector.cancel()
+
+        assertEquals(true, latest.firstItemOrNull()?.isCorrected)
+    }
+
+    private fun MemoryLoadState.itemCount(): Int = (this as? MemoryLoadState.Content)
+        ?.days?.flatMap { it.sessions }?.flatMap { it.items }?.size ?: -1
+
+    private fun MemoryLoadState.firstItemOrNull() = (this as? MemoryLoadState.Content)
+        ?.days?.flatMap { it.sessions }?.flatMap { it.items }?.firstOrNull()
+
+    private fun item(id: String, sessionId: String, memoryDay: String) = com.apercallc.aidailymemory.data.MemoryItemEntity(
+        id = id,
+        sessionId = sessionId,
+        memoryDay = memoryDay,
+        kind = "decision",
+        text = "Original text",
+        confidence = "likely",
+        quote = null,
+        owner = null,
+        due = null,
+        direction = null,
+        counterpart = null,
+        extractionModel = "user-key:m",
+        extractionVersion = 1,
+        evidenceEpochMs = null,
+        dismissedAtEpochMs = null,
+        extractedAtEpochMs = 1L,
+    )
 }

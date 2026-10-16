@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
+import com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
 import com.apercallc.aidailymemory.recording.session.PartOfDay
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 sealed interface MemoryLoadState {
     data object Loading : MemoryLoadState
@@ -60,11 +62,14 @@ class MemoryViewModel(
                             return@flow
                         }
                         val itemsDao = container.database.memoryItems()
+                        val correctionsDao = container.database.memoryCorrections()
                         val transcriptDao = container.database.localTranscripts()
                         val processingDao = container.database.processingState()
 
                         val sessions = rows.map { row ->
                             val sessionItems = itemsDao.forSession(row.sessionId)
+                            val corrections = correctionsDao.forItems(sessionItems.map { it.id })
+                                .associateBy { it.itemId }
                             val sessionLines = transcriptDao.forSession(row.sessionId)
                             val procState = processingDao.forSession(row.sessionId)
 
@@ -79,8 +84,8 @@ class MemoryViewModel(
                                 title = title,
                                 startTime = formatTime(row.startedAtEpochMs, row.zoneId),
                                 capturedMs = row.capturedMs,
-                                summary = buildSummary(sessionItems),
-                                items = sessionItems.map { it.toDisplayItem() },
+                                summary = buildSummary(sessionItems, corrections),
+                                items = sessionItems.map { it.toDisplayItem(corrections[it.id]) },
                                 transcriptLines = sessionLines,
                                 audioDeleted = procState?.audioDeleted == true,
                                 freedBytes = 0,
@@ -112,6 +117,29 @@ class MemoryViewModel(
         reloadRequests.update { it + 1 }
     }
 
+    /** Hides an item from the timeline without rewriting the extracted row (dismiss, ADR-0019). */
+    fun dismiss(itemId: String) = viewModelScope.launch {
+        container.database.memoryItems().dismiss(itemId, now().toEpochMilli())
+        reloadRequests.update { it + 1 }
+    }
+
+    /**
+     * Supersedes an item's displayed text with a correction, stored apart from the extracted
+     * row it corrects (AGENTS.md: derived AI output is correctable; evidence/extraction is
+     * never rewritten in place).
+     */
+    fun correct(itemId: String, correctedText: String) = viewModelScope.launch {
+        container.database.memoryCorrections().insert(
+            MemoryItemCorrectionEntity(
+                id = container.ids.next().toString(),
+                itemId = itemId,
+                correctedText = correctedText,
+                correctedAtEpochMs = now().toEpochMilli(),
+            ),
+        )
+        reloadRequests.update { it + 1 }
+    }
+
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 
@@ -126,9 +154,9 @@ class MemoryViewModel(
         zone()
     }
 
-    private fun buildSummary(items: List<MemoryItemEntity>): String {
+    private fun buildSummary(items: List<MemoryItemEntity>, corrections: Map<String, MemoryItemCorrectionEntity>): String {
         if (items.isEmpty()) return ""
-        return items.joinToString(". ") { it.text }
+        return items.joinToString(". ") { corrections[it.id]?.correctedText ?: it.text }
     }
 
     private fun formatDayLabel(day: String): DayLabel {
@@ -153,12 +181,14 @@ class MemoryViewModel(
     }
 }
 
-private fun MemoryItemEntity.toDisplayItem() = MemoryDisplayItem(
+private fun MemoryItemEntity.toDisplayItem(correction: MemoryItemCorrectionEntity?) = MemoryDisplayItem(
+    id = id,
     kind = kind,
-    text = text,
+    text = correction?.correctedText ?: text,
     confidence = confidence,
     quote = quote,
     owner = owner,
     due = due,
     sessionId = sessionId,
+    isCorrected = correction != null,
 )

@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +58,7 @@ import java.time.format.FormatStyle
 
 /** One memory item with its display metadata, ready for the UI. */
 data class MemoryDisplayItem(
+    val id: String,
     val kind: String,
     val text: String,
     val confidence: String,
@@ -61,6 +66,8 @@ data class MemoryDisplayItem(
     val owner: String?,
     val due: String?,
     val sessionId: String,
+    /** True when [text] is a human correction, not the original extracted wording. */
+    val isCorrected: Boolean = false,
 )
 
 /** One session in the daily memory timeline, with its summary and items. */
@@ -100,6 +107,8 @@ fun MemoryScreen(
     modifier: Modifier = Modifier,
     /** Empty state's way forward: Settings, where memory processing is turned on. */
     onSetUpProcessing: (() -> Unit)? = null,
+    onDismiss: (String) -> Unit = {},
+    onCorrect: (String, String) -> Unit = { _, _ -> },
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     LazyColumn(
@@ -131,7 +140,7 @@ fun MemoryScreen(
                 }
             } else {
                 items(state.days, key = { it.dateLabel }) { day ->
-                    MemoryDaySection(day)
+                    MemoryDaySection(day, onDismiss, onCorrect)
                 }
             }
         }
@@ -139,7 +148,7 @@ fun MemoryScreen(
 }
 
 @Composable
-private fun MemoryDaySection(day: MemoryDay) {
+private fun MemoryDaySection(day: MemoryDay, onDismiss: (String) -> Unit, onCorrect: (String, String) -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         Text(
@@ -153,13 +162,17 @@ private fun MemoryDaySection(day: MemoryDay) {
             modifier = Modifier.semantics { heading() },
         )
         day.sessions.forEach { session ->
-            MemorySessionCard(session)
+            MemorySessionCard(session, onDismiss, onCorrect)
         }
     }
 }
 
 @Composable
-private fun MemorySessionCard(session: MemorySession) {
+private fun MemorySessionCard(
+    session: MemorySession,
+    onDismiss: (String) -> Unit,
+    onCorrect: (String, String) -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -226,7 +239,7 @@ private fun MemorySessionCard(session: MemorySession) {
             val grouped = session.items.groupBy { it.kind }
             listOf("decision", "action", "commitment", "idea", "question").forEach { kind ->
                 grouped[kind]?.let { items ->
-                    MemoryItemSection(kind, items)
+                    MemoryItemSection(kind, items, onDismiss, onCorrect)
                 }
             }
 
@@ -239,7 +252,12 @@ private fun MemorySessionCard(session: MemorySession) {
 }
 
 @Composable
-private fun MemoryItemSection(kind: String, items: List<MemoryDisplayItem>) {
+private fun MemoryItemSection(
+    kind: String,
+    items: List<MemoryDisplayItem>,
+    onDismiss: (String) -> Unit,
+    onCorrect: (String, String) -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     val titleRes = when (kind) {
         "decision" -> R.string.memory_decisions
@@ -257,33 +275,95 @@ private fun MemoryItemSection(kind: String, items: List<MemoryDisplayItem>) {
             modifier = Modifier.semantics { heading() },
         )
         items.forEach { item ->
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            MemoryItemRow(item, onDismiss, onCorrect)
+        }
+    }
+}
+
+@Composable
+private fun MemoryItemRow(
+    item: MemoryDisplayItem,
+    onDismiss: (String) -> Unit,
+    onCorrect: (String, String) -> Unit,
+) {
+    val spacing = AiDailyMemoryTheme.spacing
+    var correcting by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                if (item.isCorrected) {
                     Text(
-                        text = "›",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = stringResource(R.string.memory_corrected_label),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
                     )
-                    Column {
-                        Text(
-                            text = item.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        item.quote?.let { quote ->
-                            Text(
-                                text = stringResource(R.string.memory_evidence_quote, quote),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontStyle = FontStyle.Italic,
-                            )
-                        }
+                }
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                item.quote?.let { quote ->
+                    Text(
+                        text = stringResource(R.string.memory_evidence_quote, quote),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontStyle = FontStyle.Italic,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    TextButton(onClick = { correcting = true }) {
+                        Text(stringResource(R.string.memory_correct_item))
+                    }
+                    TextButton(onClick = { onDismiss(item.id) }) {
+                        Text(stringResource(R.string.memory_dismiss_item))
                     }
                 }
             }
         }
     }
+    if (correcting) {
+        CorrectItemDialog(
+            initialText = item.text,
+            onSave = { newText ->
+                onCorrect(item.id, newText)
+                correcting = false
+            },
+            onDismissRequest = { correcting = false },
+        )
+    }
+}
+
+@Composable
+private fun CorrectItemDialog(initialText: String, onSave: (String) -> Unit, onDismissRequest: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf(initialText) }
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(R.string.memory_correct_dialog_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.testTag("correct_item_text_field"),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text) }, enabled = text.isNotBlank()) {
+                Text(stringResource(R.string.memory_correct_dialog_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(R.string.memory_correct_dialog_cancel))
+            }
+        },
+    )
 }
 
 @Composable

@@ -41,6 +41,26 @@ interface MemoryItemDao {
 }
 
 @Dao
+interface MemoryCorrectionDao {
+    @Insert
+    suspend fun insert(correction: MemoryItemCorrectionEntity)
+
+    @Query(
+        "SELECT * FROM memory_item_correction WHERE item_id = :itemId " +
+            "ORDER BY corrected_at_epoch_ms DESC LIMIT 1",
+    )
+    suspend fun latestForItem(itemId: String): MemoryItemCorrectionEntity?
+
+    /** One row per corrected item: its latest correction, for batch display lookups. */
+    @Query(
+        "SELECT c.* FROM memory_item_correction c WHERE c.corrected_at_epoch_ms = (" +
+            "SELECT MAX(c2.corrected_at_epoch_ms) FROM memory_item_correction c2 " +
+            "WHERE c2.item_id = c.item_id) AND c.item_id IN (:itemIds)",
+    )
+    suspend fun forItems(itemIds: List<String>): List<MemoryItemCorrectionEntity>
+}
+
+@Dao
 interface DailyReportDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(report: DailyReportEntity)

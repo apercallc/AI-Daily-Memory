@@ -32,8 +32,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProcessingStateEntity::class,
         SyncDeletionQueueEntity::class,
         ProviderUsageEntity::class,
+        MemoryItemCorrectionEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -45,6 +46,7 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun clips(): ClipDao
     abstract fun transcripts(): TranscriptDao
     abstract fun memoryItems(): MemoryItemDao
+    abstract fun memoryCorrections(): MemoryCorrectionDao
     abstract fun dailyReports(): DailyReportDao
     abstract fun localTranscripts(): LocalTranscriptDao
     abstract fun processingState(): ProcessingStateDao
@@ -57,7 +59,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         /** Every migration, in order. Tests open old databases with exactly this list. */
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -277,6 +279,21 @@ abstract class CaptureDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `processing_state` ADD COLUMN `retry_attempts` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Human correction: a correction is stored apart from the item it supersedes. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `memory_item_correction` (" +
+                        "`id` TEXT NOT NULL, `item_id` TEXT NOT NULL, `corrected_text` TEXT NOT NULL, " +
+                        "`corrected_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_memory_item_correction_item_id` " +
+                        "ON `memory_item_correction` (`item_id`)",
+                )
             }
         }
     }
