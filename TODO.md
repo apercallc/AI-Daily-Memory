@@ -93,8 +93,15 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 
 ## Structured extraction (ADR-0020 / ADR-0026)
 
-- [ ] Produce evidence-backed facts and highlights through local processing or an explicitly
+- [x] Produce evidence-backed facts and highlights through local processing or an explicitly
   user-configured provider; keep transcript-only use functional and never use operator-funded inference
+  - `ApiKeyExtractionProvider` (apps/android, tested) calls the user's own OpenAI-compatible
+    endpoint with their own key, chunked through `TranscriptChunker` so one long session never
+    becomes a single unbounded prompt; every item is validated (`ProcessingValidation`) before
+    it reaches the memory table. With no provider configured, `AppContainer` passes `null` and
+    `ProcessingPipeline` stores the transcript alone (`TRANSCRIPT_ONLY`) — summaries are strictly
+    opt-in, never a fallback to an operator-funded model. `StubExtractionProvider` is an
+    unreachable placeholder that only satisfies the type when settings are incomplete.
 
 ## Human correction
 
@@ -152,6 +159,12 @@ voiceprint.
 
 - [ ] Timeline surfaces useful information, every derived item traces to evidence, and corrections
   never mutate original evidence.
+  - Evidence traceability and correction immutability are structurally in place (every
+    `MemoryItem` carries `evidenceSegmentIndices`/`evidenceEpochMs`/`quote`; corrections live in
+    `memory_item_correction`, never touching the extracted row). Not yet met: "useful
+    information" is an extraction-quality claim, and the "AI evaluation" items above (gold
+    dataset, precision/recall) that would substantiate it are still open — this gate stays open
+    until they close, not stretched ahead of them.
 
 # Phase 3 — Wear OS
 
@@ -229,7 +242,17 @@ Name mentions remain text evidence; never infer speaker identity from a name app
 
 ### Phase 5 exit gate
 
-- [ ] CLI returns evidence-backed results through the public API.
+- [x] CLI returns evidence-backed results through the public API.
+  - `interfaces/cli/adm.py` (7 tests, all green) is a stdlib-only client against the real
+    `/v1` API with a read-only API key: `adm ask` returns `POST /v1/ask`'s answer plus the
+    `Evidence` items it cites (abstains rather than guessing when nothing matches);
+    `adm day`/`search`/`decisions`/`tasks`/`commitments`/`ideas`/`questions` page through
+    `GET /v1/memory/items`, the same grounded `MemoryItem` rows (never free-text), each
+    showing its original extracted wording alongside any correction. No direct DB access;
+    every path is the same public, scoped, rate-limited API a third-party client would use.
+    (Per-item verbatim transcript quotes via `/v1/memory/items/{id}/evidence` need the
+    separate `transcript:read` scope, which read-only API keys don't carry — out of scope
+    for this CLI, which only ever reads `memory:read` data.)
 
 # Phase 6 — Conditional: semantic recall
 
@@ -282,6 +305,16 @@ phase does not block launch and no embedding or vector-index infrastructure is n
   - Establish rate and abuse limits; shared edge throttling must precede horizontal scaling or
     broader public exposure.
   - Produce an SBOM for releases and run the backend container as a non-root user.
+  - Non-root container: done (`backend/Dockerfile` runs as `USER app`, not root).
+  - SBOM: done — CI's backend job runs `pip-audit --format cyclonedx-json` and uploads
+    `backend-sbom` as a build artifact on every run (`.github/workflows/ci.yml`).
+  - Still open: a written authentication threat model doc, an explicit authorization-test
+    audit across every endpoint, and object-storage/signed-URL scope+TTL tests reviewed as a
+    set (ownership checks and TTL-bounded presigned URLs already exist per-endpoint — e.g.
+    `app/api/uploads.py`'s `_owned`/`presign_put` — but have not been reviewed together as the
+    security control this item asks for). Shared edge throttling is correctly deferred: the
+    in-process limiter is sized for the single-replica deployment that exists today
+    (`docs/product/LAUNCH_GAPS.md` "Single API replica").
 
 ## Reliability / operations
 
@@ -290,6 +323,16 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     provider failures.
   - Monitor database backups and pass a disaster-recovery test.
   - Pass load tests and chaos/fault tests for worker retry behavior.
+  - Fixed in this pass: the deleted-account object-storage purge retried a failing delete
+    forever with no bound (`docs/product/LAUNCH_GAPS.md` "Deleted-account purge retries
+    forever on a permanent error"). `app/retention.py`'s `_purge_deleted_account_prefixes` now
+    dead-letters a row after `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible
+    `last_error_code`/`dead_at` (migration 0015), mirroring `app/jobs.py`'s existing
+    bounded-retry pattern; `python -m app.admin dead-account-purges`/`requeue-account-purge`
+    give an operator the same visibility and recovery path `dead-jobs`/`requeue-job` already
+    give for processing jobs. Still open: SLIs/alerting, backup monitoring + a disaster-recovery
+    drill, and load/chaos tests — these need real monitoring and operations accounts/decisions,
+    not just code.
 
 # Phase 10 — Public launch: free user API and data portability
 
