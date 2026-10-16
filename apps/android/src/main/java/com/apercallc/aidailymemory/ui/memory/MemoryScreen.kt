@@ -109,6 +109,8 @@ fun MemoryScreen(
     onSetUpProcessing: (() -> Unit)? = null,
     onDismiss: (String) -> Unit = {},
     onCorrect: (String, String) -> Unit = { _, _ -> },
+    /** Opens the full report screen for one day (its raw memory-day key), to view and share. */
+    onOpenReport: (String) -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     LazyColumn(
@@ -140,7 +142,7 @@ fun MemoryScreen(
                 }
             } else {
                 items(state.days, key = { it.dateLabel }) { day ->
-                    MemoryDaySection(day, onDismiss, onCorrect)
+                    MemoryDaySection(day, onDismiss, onCorrect, onOpenReport)
                 }
             }
         }
@@ -148,19 +150,33 @@ fun MemoryScreen(
 }
 
 @Composable
-private fun MemoryDaySection(day: MemoryDay, onDismiss: (String) -> Unit, onCorrect: (String, String) -> Unit) {
+private fun MemoryDaySection(
+    day: MemoryDay,
+    onDismiss: (String) -> Unit,
+    onCorrect: (String, String) -> Unit,
+    onOpenReport: (String) -> Unit,
+) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-        Text(
-            text = when (val label = day.dayLabel) {
-                DayLabel.Today -> stringResource(R.string.day_today)
-                DayLabel.Yesterday -> stringResource(R.string.day_yesterday)
-                is DayLabel.Date -> label.text
-            },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { heading() },
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = when (val label = day.dayLabel) {
+                    DayLabel.Today -> stringResource(R.string.day_today)
+                    DayLabel.Yesterday -> stringResource(R.string.day_yesterday)
+                    is DayLabel.Date -> label.text
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() },
+            )
+            TextButton(onClick = { onOpenReport(day.dateLabel) }) {
+                Text(stringResource(R.string.memory_view_report))
+            }
+        }
         day.sessions.forEach { session ->
             MemorySessionCard(session, onDismiss, onCorrect)
         }

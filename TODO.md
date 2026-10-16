@@ -106,7 +106,11 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 - [ ] Generate reports at bedtime and deliver them at wake time from structured memory + evidence
   - Connect existing report timing calculations to scheduled processing and wake-time delivery;
     show partial status while audio is pending.
-- [ ] Add an in-app report screen and share reports as Markdown through the Android share sheet
+- [x] Add an in-app report screen and share reports as Markdown through the Android share sheet
+  - Each day in the timeline has a "View report" action into a read-only report screen (headline,
+    summary, coverage, items by kind); its Share action renders the same report as Markdown and
+    hands it to the Android share sheet. Days without a generated report show a truthful empty
+    state instead of a blank screen.
 - [ ] Keep reports grounded and bound processing context
   - Avoid summary-of-summary drift; add chunking/truncation for very long days before generating a
     report. Headlines and deterministic summaries already exist; keep generated content tied to

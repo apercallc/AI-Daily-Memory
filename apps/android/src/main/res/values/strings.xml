@@ -364,7 +364,19 @@
     <string name="memory_correct_dialog_title">Correct this item</string>
     <string name="memory_correct_dialog_save">Save</string>
     <string name="memory_correct_dialog_cancel">Cancel</string>
+    <string name="memory_view_report">View report</string>
     <string name="nav_memory">Memory</string>
+
+    <!-- Daily report screen -->
+    <string name="report_title">Daily report</string>
+    <string name="report_share">Share</string>
+    <string name="report_share_chooser">Share this day\'s report</string>
+    <string name="report_not_generated_title">No report yet</string>
+    <string name="report_not_generated_body">This day has no generated report. Reports are produced after an AI-summarized session finishes processing.</string>
+    <string name="report_loading">Loading report…</string>
+    <string name="report_coverage">Recorded %1$d min across %2$d %3$s.</string>
+    <string name="report_coverage_session">session</string>
+    <string name="report_coverage_sessions">sessions</string>
 
     <!-- Account: one hosted server, offline or connected -->
     <string name="account_offline_status">Offline. Nothing leaves this phone.</string>

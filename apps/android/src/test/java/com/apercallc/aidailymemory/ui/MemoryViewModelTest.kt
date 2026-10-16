@@ -126,6 +126,26 @@ class MemoryViewModelTest {
         assertEquals(true, latest.firstItemOrNull()?.isCorrected)
     }
 
+    @Test
+    fun `report observes the stored entity for a memory day, not other days`() = runBlocking {
+        container.database.dailyReports().upsert(reportEntity("2026-10-12"))
+        container.database.dailyReports().upsert(reportEntity("2026-10-11"))
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+
+        val report = withTimeout(5_000) { vm.report("2026-10-12").first() }
+
+        assertEquals("2026-10-12", report?.memoryDay)
+    }
+
+    @Test
+    fun `report is null for a day that never generated one`() = runBlocking {
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+
+        val report = withTimeout(5_000) { vm.report("2026-10-12").first() }
+
+        assertEquals(null, report)
+    }
+
     private fun MemoryLoadState.itemCount(): Int = (this as? MemoryLoadState.Content)
         ?.days?.flatMap { it.sessions }?.flatMap { it.items }?.size ?: -1
 
@@ -149,5 +169,17 @@ class MemoryViewModelTest {
         evidenceEpochMs = null,
         dismissedAtEpochMs = null,
         extractedAtEpochMs = 1L,
+    )
+
+    private fun reportEntity(memoryDay: String) = com.apercallc.aidailymemory.data.DailyReportEntity(
+        id = "report-$memoryDay",
+        memoryDay = memoryDay,
+        zoneId = "UTC",
+        headline = "1 decision",
+        summary = "Decided: ship",
+        reportJson = "{}",
+        generatedAtEpochMs = 1L,
+        extractionModel = "user-key:m",
+        extractionVersion = 1,
     )
 }

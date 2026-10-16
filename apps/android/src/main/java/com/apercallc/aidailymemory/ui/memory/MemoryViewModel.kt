@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
+import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
@@ -22,6 +23,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -116,6 +118,14 @@ class MemoryViewModel(
     fun retry() {
         reloadRequests.update { it + 1 }
     }
+
+    /**
+     * One day's generated report, for the report screen (TODO.md "Add an in-app report
+     * screen and share reports as Markdown"). Null while no report has been generated yet for
+     * that memory day (e.g. before extraction finishes, or when summaries aren't configured).
+     */
+    fun report(memoryDay: String): Flow<DailyReportEntity?> =
+        container.database.dailyReports().observeForDay(memoryDay)
 
     /** Hides an item from the timeline without rewriting the extracted row (dismiss, ADR-0019). */
     fun dismiss(itemId: String) = viewModelScope.launch {

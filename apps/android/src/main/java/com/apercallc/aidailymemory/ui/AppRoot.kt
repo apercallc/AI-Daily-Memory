@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -43,12 +44,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.processing.ReportBuilder
+import com.apercallc.aidailymemory.recording.processing.DailyReport
+import com.apercallc.aidailymemory.recording.processing.renderMarkdown
 import com.apercallc.aidailymemory.recording.server.HostedServer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,6 +71,8 @@ import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
+import com.apercallc.aidailymemory.ui.report.ReportLoadState
+import com.apercallc.aidailymemory.ui.report.ReportScreen
 import com.apercallc.aidailymemory.ui.settings.NextChange
 import com.apercallc.aidailymemory.ui.settings.AccountCallbacks
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
@@ -85,6 +92,7 @@ enum class AppScreen(val tab: Tab?) {
     MEMORY(Tab(R.string.nav_memory, R.drawable.ic_nav_memory)),
     SETTINGS(Tab(R.string.nav_settings, R.drawable.ic_nav_settings)),
     TRANSCRIPT(null),
+    REPORT(null),
 }
 
 private const val NEXT_CHANGE_REFRESH_MS = 30_000L
@@ -131,8 +139,13 @@ fun AppRoot(
     if (showPermissionGate(permissions, sessionOpen)) return
     var openSession by rememberSaveable { mutableStateOf<String?>(null) }
     var openTitle by rememberSaveable { mutableStateOf("") }
+    var openReportDay by rememberSaveable { mutableStateOf<String?>(null) }
     val back = {
-        screen = if (screen == AppScreen.TRANSCRIPT) AppScreen.SESSIONS else AppScreen.CAPTURE
+        screen = when (screen) {
+            AppScreen.TRANSCRIPT -> AppScreen.SESSIONS
+            AppScreen.REPORT -> AppScreen.MEMORY
+            else -> AppScreen.CAPTURE
+        }
     }
     BackHandler(enabled = screen != AppScreen.CAPTURE) { back() }
 
@@ -161,7 +174,11 @@ fun AppRoot(
             ) {
                 if (useNavigationRail) {
                     TabletNavigationRail(
-                        selected = if (screen == AppScreen.TRANSCRIPT) AppScreen.SESSIONS else screen,
+                        selected = when (screen) {
+                            AppScreen.TRANSCRIPT -> AppScreen.SESSIONS
+                            AppScreen.REPORT -> AppScreen.MEMORY
+                            else -> screen
+                        },
                         onSelect = { screen = it },
                     )
                 }
@@ -190,7 +207,14 @@ fun AppRoot(
                                     openTitle = title
                                     screen = AppScreen.TRANSCRIPT
                                 }
-                                AppScreen.MEMORY -> MemoryRoute(memory(), onSetUpProcessing = openProcessingSettings)
+                                AppScreen.MEMORY -> MemoryRoute(
+                                    memory(),
+                                    onSetUpProcessing = openProcessingSettings,
+                                    onOpenReport = { day ->
+                                        openReportDay = day
+                                        screen = AppScreen.REPORT
+                                    },
+                                )
                                 AppScreen.SETTINGS -> SettingsRoute(
                                     settings(),
                                     updates(),
@@ -207,6 +231,15 @@ fun AppRoot(
                                     } else {
                                         // Nothing to show (state lost): fall back to the list.
                                         LaunchedEffect(Unit) { screen = AppScreen.SESSIONS }
+                                    }
+                                }
+                                AppScreen.REPORT -> {
+                                    val day = openReportDay
+                                    if (day != null) {
+                                        ReportRoute(memory(), day, onBack = back)
+                                    } else {
+                                        // Nothing to show (state lost): fall back to the timeline.
+                                        LaunchedEffect(Unit) { screen = AppScreen.MEMORY }
                                     }
                                 }
                             }
@@ -277,7 +310,7 @@ private fun SessionsRoute(
 }
 
 @Composable
-private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Unit) {
+private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Unit, onOpenReport: (String) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SecondaryScreen(stringResource(R.string.memory_title), null, snackbar = null) { modifier ->
         MemoryScreen(
@@ -287,8 +320,52 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
             onSetUpProcessing = onSetUpProcessing,
             onDismiss = viewModel::dismiss,
             onCorrect = viewModel::correct,
+            onOpenReport = onOpenReport,
         )
     }
+}
+
+@Composable
+private fun ReportRoute(viewModel: MemoryViewModel, memoryDay: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val entity by remember(memoryDay) { viewModel.report(memoryDay) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    // null while loading; stays null forever when the day never produced a report.
+    var everLoaded by rememberSaveable(memoryDay) { mutableStateOf(false) }
+    LaunchedEffect(entity) { if (entity != null) everLoaded = true }
+    val report = remember(entity) {
+        entity?.let { ReportBuilder.deserialize(it.reportJson) }
+    }
+    val reportState = when {
+        report != null -> ReportLoadState.Content(report)
+        everLoaded -> ReportLoadState.NotGenerated
+        else -> ReportLoadState.Loading
+    }
+    SecondaryScreen(
+        title = stringResource(R.string.report_title),
+        onBack = onBack,
+        snackbar = null,
+        trailing = report?.let {
+            {
+                TextButton(onClick = { shareReport(context, it) }) {
+                    Text(stringResource(R.string.report_share))
+                }
+            }
+        },
+    ) { modifier ->
+        ReportScreen(state = reportState, modifier = modifier)
+    }
+}
+
+/** Hands the day's report, rendered as Markdown, to the Android share sheet. */
+private fun shareReport(context: Context, report: DailyReport) {
+    val markdown = renderMarkdown(report)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, markdown)
+        putExtra(Intent.EXTRA_SUBJECT, report.headline)
+    }
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.report_share_chooser)))
 }
 
 @Composable
@@ -407,6 +484,7 @@ private fun SecondaryScreen(
     title: String,
     onBack: (() -> Unit)?,
     snackbar: SnackbarHostState?,
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
@@ -425,18 +503,25 @@ private fun SecondaryScreen(
                 .padding(horizontal = spacing.xxl, vertical = spacing.lg),
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) {
-                    TextButton(
-                        onClick = onBack,
-                        modifier = Modifier.heightIn(min = spacing.minTouchTarget),
-                    ) { Text(stringResource(R.string.nav_back)) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) {
+                        TextButton(
+                            onClick = onBack,
+                            modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                        ) { Text(stringResource(R.string.nav_back)) }
+                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
                 }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.semantics { heading() },
-                )
+                trailing?.invoke()
             }
             content(Modifier.fillMaxSize())
         }
