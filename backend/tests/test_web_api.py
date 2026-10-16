@@ -633,6 +633,51 @@ def test_export_is_idempotent_within_the_ttl_and_regenerates_after_it(
     assert {i["text"] for i in regenerated["memory_items"]} == {"First", "Second"}
 
 
+def test_export_can_be_fetched_as_jsonl_instead(
+    client: TestClient, db: Engine, store: FakeObjectStore
+) -> None:
+    headers = web_session(client)
+    user = user_of(db, "me@example.com")
+    item = add_item(db, user, "Send the deck")
+    client.patch(
+        f"/v1/memory/items/{item}", json={"text": "Send the deck Thursday"}, headers=headers
+    )
+
+    response = client.get("/v1/export", params={"format": "jsonl"}, headers=headers)
+
+    assert response.status_code == 200
+    raw, _ = store.objects[f"users/{user}/export.jsonl"]
+    lines = [json.loads(line) for line in raw.decode().splitlines() if line]
+    account_lines = [r for r in lines if r["type"] == "account"]
+    item_lines = [r for r in lines if r["type"] == "memory_item"]
+    assert len(account_lines) == 1
+    assert account_lines[0]["email"] == "me@example.com"
+    assert item_lines[0]["your_text"] == "Send the deck Thursday"
+
+
+def test_switching_export_format_always_regenerates_rather_than_reusing_a_stale_object(
+    client: TestClient, db: Engine, store: FakeObjectStore
+) -> None:
+    # One cache row per user tracks the *last* format generated; switching formats is a cache
+    # miss by design (the cached object is for the other format), so it must pick up anything
+    # written since — never silently serve the previous format's stale snapshot.
+    headers = web_session(client)
+    user = user_of(db, "me@example.com")
+    add_item(db, user, "First")
+
+    client.get("/v1/export", headers=headers)  # caches as json
+    client.get("/v1/export", params={"format": "jsonl"}, headers=headers)  # switch -> jsonl
+    add_item(db, user, "Second")
+    client.get("/v1/export", headers=headers)  # switch back -> json; must regenerate
+
+    json_raw = store.objects[f"users/{user}/export.json"][0].decode()
+    jsonl_raw = store.objects[f"users/{user}/export.jsonl"][0].decode()
+    assert "First" in json_raw
+    assert "Second" in json_raw
+    assert "First" in jsonl_raw
+    assert "Second" not in jsonl_raw  # generated before "Second" existed
+
+
 def test_export_without_object_storage_fails_closed(db: Engine, database_url: str) -> None:
     app = create_app(settings_for(database_url, daily_ask_limit=3))  # no object_store
     with TestClient(app) as no_store_client:

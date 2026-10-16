@@ -315,13 +315,23 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     `docs/security/THREAT_MODEL.md`. Consent/jurisdiction guidance already exists in
     `website/privacy.html` ("Recording other people") and `website/terms.html`, both explicitly
     marked draft pending a lawyer's review (`docs/product/LAUNCH_GAPS.md`).
-  - Still genuinely open, not done: JSONL export format and including retained raw audio in
-    an on-device export are not implemented. A lawyer's review of the privacy/terms drafts
-    remains outside what an agent session can do.
+  - Still genuinely open, not done: including retained raw audio in an on-device export is not
+    implemented. A lawyer's review of the privacy/terms drafts remains outside what an agent
+    session can do.
   - Resolved in this pass: `GET /v1/export` now delivers through a scoped, short-TTL signed
     URL (`AccountExport`, migration 0016) instead of streaming inline, and reuses the same
     generated object for repeat requests within the TTL instead of regenerating — both
     sub-bullets above are now met.
+  - Resolved this pass: `GET /v1/export?format=jsonl` (migration 0017 adds `AccountExport.
+    format`) emits one JSON object per line, each tagged with its own `type`
+    (`account`/`memory_item`/`note_folder`/`note`/`daily_report`/`transcript`/`clip`/
+    `sign_in`) instead of one document — streamable/greppable for a large account.
+    `format=json` (the default) is unchanged. Each format is cached and TTL-idempotent
+    independently; switching formats is a deliberate cache miss (the cached object is for the
+    other format) and always regenerates against current data rather than ever serving a
+    stale snapshot under the wrong format. `docs/api/openapi.v1.json` regenerated; confirmed
+    additive-only against the previous committed contract (`app.openapi_compat` reports zero
+    breaking changes).
 
 ## Security
 

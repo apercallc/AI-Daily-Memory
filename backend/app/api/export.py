@@ -1,25 +1,28 @@
 """Self-service export of everything the server holds about you (a right, not an upsell).
 
-    GET /v1/export   a short-lived, scoped signed URL to one JSON document: account, memory
-                     items with your corrections, folders and how you organized each note,
-                     daily reports, transcripts the server holds, sign-ins and clip metadata
+    GET /v1/export   a short-lived, scoped signed URL to your data: account, memory items with
+                     your corrections, folders and how you organized each note, daily reports,
+                     transcripts the server holds, sign-ins and clip metadata.
+                     ?format=json (default) is one document; ?format=jsonl is one JSON object
+                     per line, for streaming/grepping a large account without loading it whole.
 
 Assembled in batches so a large account never sits in memory whole, then written once to
 object storage and delivered through a presigned GET — never inlined in the API response
-(TODO.md Phase 8). A request within the URL's TTL reuses the same stored object instead of
-rerunning the whole export (idempotent; TODO.md "re-requests within TTL must not regenerate").
-Raw audio is temporary (ADR-0003) and is never in the export; the clip list says what is still
-held. Sealed phone-mode transcripts are not readable by the server and so are not included:
-they live on the phone.
+(TODO.md Phase 8). A request within the URL's TTL *for the same format* reuses the same stored
+object instead of rerunning the whole export (idempotent; TODO.md "re-requests within TTL must
+not regenerate"); switching format always regenerates, since the cached object is for the other
+one. Raw audio is temporary (ADR-0003) and is never in the export; the clip list says what is
+still held. Sealed phone-mode transcripts are not readable by the server and so are not
+included: they live on the phone.
 """
 
 import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -54,6 +57,11 @@ _ERRORS: dict[int | str, dict[str, object]] = {
     s: {"model": ErrorResponse} for s in (401, 403, 429, 503)
 }
 BATCH = 500
+ExportFormat = Literal["json", "jsonl"]
+_CONTENT_TYPE: dict[ExportFormat, str] = {
+    "json": "application/json",
+    "jsonl": "application/x-ndjson",
+}
 
 
 class ExportOut(BaseModel):
@@ -61,8 +69,8 @@ class ExportOut(BaseModel):
     expires_at: datetime
 
 
-def _object_key(user_id: uuid.UUID) -> str:
-    return f"{user_prefix(user_id)}export.json"
+def _object_key(user_id: uuid.UUID, fmt: ExportFormat) -> str:
+    return f"{user_prefix(user_id)}export.{fmt}"
 
 
 def _settings(request: Request) -> Settings:
@@ -210,6 +218,7 @@ async def _tokens(session: AsyncSession, user_id: uuid.UUID) -> AsyncIterator[di
 
 
 async def _document(session: AsyncSession, user_id: uuid.UUID) -> AsyncIterator[str]:
+    """One JSON document: `{"exported_at": ..., "account": {...}, "memory_items": [...], ...}`."""
     user = await session.get(User, user_id)
     email = await email_of(session, user_id)
     yield "{" + _dump("exported_at") + ":" + _dump(datetime.now(UTC)) + ","
@@ -238,6 +247,36 @@ async def _document(session: AsyncSession, user_id: uuid.UUID) -> AsyncIterator[
     yield "}"
 
 
+async def _document_jsonl(session: AsyncSession, user_id: uuid.UUID) -> AsyncIterator[str]:
+    """One JSON object per line, each tagged with its own `type` — streamable and greppable
+    without loading a large account's export whole (TODO.md Phase 8 "JSON + JSONL")."""
+    user = await session.get(User, user_id)
+    email = await email_of(session, user_id)
+    yield (
+        _dump(
+            {
+                "type": "account",
+                "exported_at": datetime.now(UTC),
+                "email": email,
+                "storage_mode": user.storage_mode if user else None,
+                "created_at": user.created_at if user else None,
+            }
+        )
+        + "\n"
+    )
+    for name, rows in (
+        ("memory_item", _items(session, user_id)),
+        ("note_folder", _folders(session, user_id)),
+        ("note", _notes(session, user_id)),
+        ("daily_report", _reports(session, user_id)),
+        ("transcript", _transcripts(session, user_id)),
+        ("clip", _clips(session, user_id)),
+        ("sign_in", _tokens(session, user_id)),
+    ):
+        async for row in rows:
+            yield _dump({"type": name, **row}) + "\n"
+
+
 @router.get(
     "/export",
     response_model=ExportOut,
@@ -249,26 +288,34 @@ async def export(
     session: Session,
     owner: Owner,
     settings: Annotated[Settings, Depends(_settings)],
+    format: Annotated[ExportFormat, Query()] = "json",
 ) -> ExportOut:
     store: ObjectStore | None = getattr(request.app.state, "object_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Export storage isn't configured yet.")
 
     now = datetime.now(UTC)
-    key = _object_key(owner.user_id)
+    key = _object_key(owner.user_id, format)
     existing = await session.get(AccountExport, owner.user_id)
-    if existing is None or existing.expires_at <= now:
-        document = "".join([chunk async for chunk in _document(session, owner.user_id)])
-        await store.write(key, document.encode(), content_type="application/json")
+    # A cached object for the *other* format must never be served under this request's format.
+    if existing is None or existing.expires_at <= now or existing.format != format:
+        build = _document if format == "json" else _document_jsonl
+        document = "".join([chunk async for chunk in build(session, owner.user_id)])
+        await store.write(key, document.encode(), content_type=_CONTENT_TYPE[format])
         expires_at = now + timedelta(seconds=settings.export_url_ttl_seconds)
         upsert = pg_insert(AccountExport).values(
-            user_id=owner.user_id, object_key=key, generated_at=now, expires_at=expires_at
+            user_id=owner.user_id,
+            object_key=key,
+            format=format,
+            generated_at=now,
+            expires_at=expires_at,
         )
         await session.execute(
             upsert.on_conflict_do_update(
                 index_elements=[AccountExport.user_id],
                 set_={
                     "object_key": upsert.excluded.object_key,
+                    "format": upsert.excluded.format,
                     "generated_at": upsert.excluded.generated_at,
                     "expires_at": upsert.excluded.expires_at,
                 },
@@ -278,7 +325,7 @@ async def export(
     else:
         expires_at = existing.expires_at
 
-    filename = f"ai-daily-memory-export-{now.date().isoformat()}.json"
+    filename = f"ai-daily-memory-export-{now.date().isoformat()}.{format}"
     url = store.presign_get(
         key,
         expires_in=settings.export_url_ttl_seconds,

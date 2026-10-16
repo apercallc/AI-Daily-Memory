@@ -3215,6 +3215,22 @@
     "/v1/export": {
       "get": {
         "operationId": "export_v1_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "jsonl"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

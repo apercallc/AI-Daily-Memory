@@ -522,8 +522,9 @@ class AccountExport(Base):
     """The most recently generated self-service export object for one user (TODO.md Phase 8
     "deliver large server-side exports through scoped, short-TTL signed URLs ... idempotent;
     re-requests within TTL must not regenerate"). One row per user, upserted in place: a fresh
-    request within `expires_at` gets a freshly presigned URL to the *same* stored object
-    instead of re-running the whole export query.
+    request within `expires_at` *for the same format* gets a freshly presigned URL to the
+    *same* stored object instead of re-running the whole export query. Switching format (JSON
+    <-> JSONL) always regenerates, since the cached object is for the other format.
     """
 
     __tablename__ = "account_exports"
@@ -532,5 +533,7 @@ class AccountExport(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     object_key: Mapped[str] = mapped_column(String(200))
+    # "json" (one document) or "jsonl" (one record per line; TODO.md Phase 8 "JSON + JSONL").
+    format: Mapped[str] = mapped_column(String(5), server_default="json")
     generated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     expires_at: Mapped[datetime]
