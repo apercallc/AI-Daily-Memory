@@ -340,7 +340,7 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     (`tests/test_email.py`, renamed from `tests/test_email_and_billing.py`). Full backend
     suite (526 tests, 97% coverage), ruff, mypy, pip-audit, and the regenerated
     `docs/api/openapi.v1.json` all verified green.
-- [ ] Verify the release security controls
+- [x] Verify the release security controls
   - Complete the authentication threat model and authorization tests for every user-owned resource.
   - Verify object-storage path isolation and signed URL scope/TTL tests.
   - Establish rate and abuse limits; shared edge throttling must precede horizontal scaling or
@@ -353,14 +353,24 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     (token theft, cross-user access, scope escalation, forged uploads, presigned-URL abuse,
     storage-outage leakage, brute force, availability abuse, user-provider credential handling)
     each with its code-level mitigation cited, plus an explicit "Open items" list.
-  - Still open: the authorization-test audit that document's own "Open items" section calls
-    for (a single matrix of every endpoint × required scope × negative test, rather than the
-    per-endpoint tests that already exist scattered through `backend/tests/`), object-storage
-    path isolation and signed-URL scope/TTL *tests reviewed together as the named control*
-    (the controls themselves — ownership checks, TTL-bounded presigned URLs — already exist
-    per-endpoint, e.g. `app/api/uploads.py`'s `_owned`/`presign_put`). Shared edge throttling is
-    correctly deferred: the in-process limiter is sized for the single-replica deployment that
-    exists today (`docs/product/LAUNCH_GAPS.md` "Single API replica").
+  - Authorization-test audit: done this pass. `backend/tests/test_authorization_matrix.py`
+    (83 parametrized cases) enumerates all 32 authenticated routes with their required
+    scope(s) and proves no-token -> 401 and wrong-scope -> 403 for every one of them, plus the
+    8 unauthenticated-by-design routes the other way (must not demand a token); separately,
+    every endpoint that takes a resource id in its path (uploads, notes, folders, memory items
+    + their evidence, tokens) is proven to 404 for a second account with full, correct scopes —
+    not merely insufficient scope, but the right scope and the wrong owner.
+  - Object-storage path isolation and signed-URL scope/TTL: done this pass — reviewed together
+    as the named control in `docs/security/OBJECT_STORAGE_REVIEW.md`, citing the exact existing
+    tests (`tests/test_storage.py`, `tests/test_uploads.py`, the new authorization matrix) and
+    stating the one residual risk plainly (a presigned URL outlives a mid-flight token
+    revocation; mitigated by a short TTL, not eliminated).
+  - Rate/abuse limits: per-user limits exist (upload bytes/day, Ask/day, export/hour — see T8 in
+    the threat model). Shared, cross-replica edge throttling is deliberately deferred, not a
+    gap: the in-process limiter is sized correctly for the single-replica deployment that exists
+    today, and adding a shared limiter before that changes would be infrastructure without a
+    measured need (AGENTS.md; `docs/product/LAUNCH_GAPS.md` "Single API replica"). Revisit if
+    and when a second replica is actually added.
 
 ## Reliability / operations
 
