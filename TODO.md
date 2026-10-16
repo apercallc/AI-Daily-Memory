@@ -262,10 +262,39 @@ phase does not block launch and no embedding or vector-index infrastructure is n
 
 # Phase 7 — Long-term memory
 
-- [ ] Add optional durable summaries and project memory for recurring commitments and relationships;
+- [x] Add optional durable summaries and project memory for recurring commitments and relationships;
   use local processing or a provider the user explicitly configured
-- [ ] Consolidate and supersede memories while supporting reprocessing by extraction/schema version
-- [ ] Provide retention controls and user-visible memory correction/deletion
+  - "People & commitments" on the memory timeline (`MemoryViewModel.projectMemory`,
+    `ProjectMemoryBuilder` in core/recording, pure/tested) groups every still-open commitment
+    and action by counterpart (falling back to owner) across every day, newest mention first —
+    durable, cross-day, and collapsible, unlike the per-day timeline. Deterministic local
+    aggregation over already-extracted items: no new AI call, no new provider dependency: it
+    works identically whether or not summaries are configured.
+- [x] Consolidate and supersede memories while supporting reprocessing by extraction/schema version
+  - Fixed a real data-loss gap this closes: `MemoryItemDao.replaceForSession` always deletes and
+    reinserts a session's items (fresh ids every run), which silently un-dismissed and orphaned
+    corrections on any reprocessing — a known limitation the entity's own kdoc called out
+    (ADR-0019). `MemoryReconciler` (core/recording, pure/tested, 11 tests) now matches a freshly
+    (re)extracted item back to the one it supersedes by evidence identity (kind + evidence
+    anchor + owner/counterpart/direction/due), greedily and one-to-one, and
+    `ProcessingPipeline` carries the dismissal forward and repoints the correction in the same
+    transaction as the replace. Covered end-to-end in `ProcessingPipelineTest` (a reworded
+    re-extraction keeps its dismissal and correction; an unrelated re-extraction leaves the old
+    correction inert, never misapplied).
+  - Still open: there is no in-app action that actually *triggers* reprocessing of an
+    already-COMPLETED session (e.g. after switching extraction providers) — the data-safety
+    fix above makes reprocessing safe whenever it happens, but nothing in the UI invokes it yet.
+- [x] Provide retention controls and user-visible memory correction/deletion
+  - Correction/deletion already existed and were verified: `MemoryViewModel.correct`/`.dismiss`
+    store a correction apart from the extracted row and hide an item without rewriting evidence
+    (AGENTS.md). What was missing was a retention *control* for structured memory itself — audio
+    retention (`AudioRetention`) already existed, but memory items, corrections, and daily
+    reports persisted forever with no setting. Added `MemoryRetention` (core/recording, pure
+    `MemoryRetentionCutoff`, tested) with 90-day / 1-year / until-deleted options (default:
+    until deleted, since memory is the point of the product, unlike audio); `MemoryRetentionSweep`
+    deletes corrections, then items, then daily reports past the cutoff in one transaction
+    (never touches the transcript evidence itself), runs on the same app-start/session-complete
+    hook as the existing audio sweep, and is exposed in Settings next to Audio.
 
 # Phase 8 — Production hardening
 
