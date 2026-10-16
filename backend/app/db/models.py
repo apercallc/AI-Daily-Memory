@@ -190,6 +190,13 @@ class AudioUpload(Base):
     sample_rate_hz: Mapped[int] = mapped_column(Integer)
     channel_count: Mapped[int] = mapped_column(Integer)
     captured_at: Mapped[datetime]
+    # The clip's own clock, as an IANA zone id (e.g. "America/Chicago"), from the phone that
+    # recorded it (TODO.md Phase 4 "preserve timestamp provenance... without deriving dates
+    # from server-local time"). Postgres stores `captured_at` as a plain instant and drops
+    # whatever UTC offset the client sent with it, so the clip's own calendar day can only be
+    # recovered from this column, never from `captured_at` alone. Optional: an older client, or
+    # one that never learned its zone, simply gets the UTC-derived day it always got.
+    source_timezone: Mapped[str | None] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(16), server_default="pending")
     object_key: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = _created()
@@ -321,8 +328,9 @@ class SealedDelivery(Base):
 class MemoryItem(Base):
     """One extracted decision/action/commitment/idea/question (Phase 2, ADR-0019). Extraction
     only ever runs for `full_cloud` accounts: it's the only mode where the server holds a
-    plaintext transcript to extract from (app/transcription.py). `memory_day` is currently the
-    UTC calendar date of the session's first clip — a placeholder for the phone's real
+    plaintext transcript to extract from (app/transcription.py). `memory_day` is the session's
+    first clip's calendar date in `AudioUpload.source_timezone` when the uploading client sent
+    one, else the UTC calendar date of that same instant — a placeholder for the phone's real
     sleep-midpoint memory day (ADR-0012), which the upload protocol doesn't carry yet."""
 
     __tablename__ = "memory_items"

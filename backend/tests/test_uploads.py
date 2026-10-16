@@ -119,6 +119,35 @@ def test_a_changed_capture_time_is_a_conflict_too(client: TestClient, account: A
     assert response.status_code == 409
 
 
+def test_source_timezone_is_optional_but_must_be_a_real_iana_zone(
+    client: TestClient, account: Account
+) -> None:
+    rejected = client.post(
+        "/v1/uploads", json=clip(source_timezone="Narnia/Cair_Paravel"), headers=account.headers
+    )
+    assert rejected.status_code == 422
+
+    accepted = client.post(
+        "/v1/uploads", json=clip(source_timezone="America/Chicago"), headers=account.headers
+    )
+    assert accepted.status_code == 201
+
+    omitted = client.post(
+        "/v1/uploads", json=clip(upload_id=str(uuid.uuid4())), headers=account.headers
+    )
+    assert omitted.status_code == 201
+
+
+def test_a_changed_source_timezone_is_a_conflict_too(client: TestClient, account: Account) -> None:
+    body = clip(source_timezone="America/Chicago")
+    client.post("/v1/uploads", json=body, headers=account.headers)
+
+    moved = {**body, "source_timezone": "America/New_York"}
+    response = client.post("/v1/uploads", json=moved, headers=account.headers)
+
+    assert response.status_code == 409
+
+
 def test_a_pending_clip_recreated_under_a_new_id_replaces_the_old_one(
     client: TestClient,
     account: Account,

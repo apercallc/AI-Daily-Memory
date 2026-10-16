@@ -18,6 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal, Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -46,6 +47,25 @@ _MAX_QUOTE = 280
 _MAX_NAME = 80
 _MAX_EVIDENCE_PER_ITEM = 5
 _MAX_ITEMS_PER_SESSION = 50
+
+
+def memory_day_for(captured_at: datetime, source_timezone: str | None) -> date:
+    """The clip's own calendar day (TODO.md Phase 4 "preserve timestamp provenance through
+    sync and recall... without deriving dates from server-local time").
+
+    Postgres stores `captured_at` as a bare instant and drops whatever UTC offset the
+    uploading client originally sent with it, so the only way the clip's own day survives at
+    all is [source_timezone] (`AudioUpload.source_timezone`), set at upload time. Its absence
+    (an older client, or one that never learned its zone) falls back to the pre-existing
+    UTC-derived day rather than failing the job.
+    """
+    if source_timezone is not None:
+        try:
+            return captured_at.astimezone(ZoneInfo(source_timezone)).date()
+        except (ZoneInfoNotFoundError, ValueError):
+            # Validated at upload time; only reachable if the server's tzdata changed since.
+            logger.warning("memory_day_zone_unresolvable", extra={"zone": source_timezone})
+    return captured_at.astimezone(UTC).date()
 
 
 @dataclass(frozen=True)
@@ -193,7 +213,10 @@ class ExtractHandler:
                     segments.append((span.id, at))
                     lines.append(Numbered(index=len(lines), speaker=span.speaker, text=span.text))
 
-            memory_day = min(upload.captured_at for upload, _ in rows).astimezone(UTC).date()
+            earliest_upload = min((upload for upload, _ in rows), key=lambda u: u.captured_at)
+            memory_day = memory_day_for(
+                earliest_upload.captured_at, earliest_upload.source_timezone
+            )
 
         if not lines:
             raise JobError("nothing_transcribed_yet", retryable=False)

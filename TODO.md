@@ -174,31 +174,56 @@ voiceprint.
 
 ## Time
 
-- [ ] Preserve timestamp provenance through sync and recall, with stable ordering across clock changes
+- [x] Preserve timestamp provenance through sync and recall, with stable ordering across clock changes
   - Phone capture already stores UTC, source timezone, local date, and monotonic time; verify the
     fields needed by recall survive sync without deriving dates from server-local time.
-- [ ] Resolve relative dates and dayparts across daylight-saving and travel changes
+  - The notes-sync path (`/v1/sync`, what the shipped Android app uses) already sends the
+    phone's own computed memory day directly — nothing to fix there. The separate `full_cloud`
+    raw-audio path (`/v1/uploads` + server-side extraction, for any REST client that chooses
+    that storage mode) did not: Postgres stores `captured_at` as a bare instant and drops
+    whatever UTC offset a client originally attached, so `memory_day` was always the UTC
+    calendar date of a session's first clip, which silently shifts late-evening/early-morning
+    sessions to the wrong local day. Uploads now carry an optional `source_timezone` (IANA zone
+    id, migration 0013); `extraction.memory_day_for` uses it when present and falls back to the
+    previous UTC-derived day when absent, so older clients are unaffected.
+- [x] Resolve relative dates and dayparts across daylight-saving and travel changes
   - Support today/yesterday/last week, morning/afternoon/evening, DST transitions, and timezone
     changes while traveling.
+  - Already implemented in `app/recall.py` (`resolve_range`): today/yesterday/this-or-last
+    week/month/last-N-days all resolve against the *caller's own* `today` (the phone's local
+    date, per `AskRequest.today`), clamped to within a day of the real UTC date so a traveling
+    phone's clock can shift what "today" means without opening a wider window than intended.
+    Dayparts (morning/afternoon/evening) are recognized as day-scoped phrasing, matching the
+    whole day: `MemoryItem` is day-granularity only, so there is no finer window to resolve
+    them into without a schema change this phase doesn't need.
 
 ## Retrieval
 
 Name mentions remain text evidence; never infer speaker identity from a name appearing in a transcript.
 
-- [ ] Deliver bounded, evidence-backed recall using structured and lexical search
+- [x] Deliver bounded, evidence-backed recall using structured and lexical search
   - Use structured SQL first, PostgreSQL full-text search, date/type filters, and evidence expansion
     around winning events.
   - Bound candidate sets, return evidence references, and abstain when evidence is insufficient.
+  - Already implemented: `POST /v1/ask` (`app/api/ask.py`) resolves a date window and item-kind
+    hint, runs PostgreSQL full-text search first and falls back to a bounded structured
+    date/kind query when the question names a time or kind but no useful keywords; every
+    candidate set is capped (`MAX_CANDIDATES`), every answer carries the evidence items behind
+    it, and the response abstains outright when nothing matches rather than guessing.
 
 ## Recall evaluation
 
 - [ ] Build a known-day recall benchmark and add regression tests for confirmed failures
   - Measure Recall@K, ranking, temporal accuracy, evidence-source accuracy, and
     insufficient-evidence abstention.
+  - Blocked on a human-reviewed benchmark (same constraint as AI evaluation's gold dataset
+    above): an agent session should not author the "known-good" answers it would then grade
+    itself against.
 
 ### Phase 4 exit gate
 
 - [ ] Known benchmark questions reliably retrieve the correct evidence without vector search.
+  - Blocked on the same benchmark as "Recall evaluation" above.
 
 # Phase 5 — CLI
 

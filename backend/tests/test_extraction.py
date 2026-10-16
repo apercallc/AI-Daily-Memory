@@ -22,6 +22,7 @@ from app.extraction import (
     ExtractHandler,
     ExtractionResult,
     Numbered,
+    memory_day_for,
     validate,
 )
 from app.jobs import ClaimedJob, enqueue
@@ -65,6 +66,8 @@ async def transcribed_session(
     storage_mode: str = "full_cloud",
     clips: int = 1,
     lines: tuple[tuple[int, str, str | None], ...] = ((0, "Let's ship Friday.", "A"),),
+    captured_at: datetime = NOW,
+    source_timezone: str | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     """[clips] transcribed uploads sharing one session, each carrying [lines]."""
     user = make_account(db).user_id
@@ -88,7 +91,8 @@ async def transcribed_session(
                 codec="aac-lc-adts",
                 sample_rate_hz=16_000,
                 channel_count=1,
-                captured_at=NOW + timedelta(minutes=i),
+                captured_at=captured_at + timedelta(minutes=i),
+                source_timezone=source_timezone,
                 state="transcribed",
                 object_key=f"users/{user}/audio/{i}.aac",
             )
@@ -227,6 +231,21 @@ def test_validate_rejects_too_many_items() -> None:
         validate(ExtractionResult(items=items), segment_count=1)
 
 
+# --- memory_day_for -------------------------------------------------------------------------
+
+
+def test_memory_day_uses_the_clips_own_zone_not_utc() -> None:
+    # 2 AM UTC on the 15th is still 9 PM on the 14th in Chicago (UTC-5 in October).
+    late_utc = datetime(2026, 10, 15, 2, 0, tzinfo=UTC)
+    assert memory_day_for(late_utc, "America/Chicago") == date(2026, 10, 14)
+    assert memory_day_for(late_utc, None) == date(2026, 10, 15)
+
+
+def test_memory_day_falls_back_to_utc_for_an_unresolvable_zone() -> None:
+    # Already rejected by the upload API's own validator; this is only a defensive fallback.
+    assert memory_day_for(NOW, "Not/AZone") == NOW.astimezone(UTC).date()
+
+
 # --- ExtractHandler -----------------------------------------------------------------------------
 
 
@@ -258,6 +277,27 @@ async def test_extraction_persists_items_with_evidence_and_builds_the_report(
         assert report.memory_day == date(2026, 9, 25)
         assert len(cast(list[object], report.report["action_items"])) == 1
         assert len(cast(list[object], report.report["commitments"])) == 1
+
+
+async def test_the_report_lands_on_the_clips_own_day_not_a_utc_shifted_one(
+    database: Database, db: Engine
+) -> None:
+    # 3 AM UTC on the 26th is still the evening of the 25th in Los Angeles (UTC-7 in
+    # September) — exactly the case `memory_day_for` exists for.
+    late_utc = datetime(2026, 9, 26, 3, 0, tzinfo=UTC)
+    user, session_id = await transcribed_session(
+        database, db, captured_at=late_utc, source_timezone="America/Los_Angeles"
+    )
+
+    await run_extraction(database, FakeExtractor(items=(action(),)), user, session_id)
+
+    async with database.sessions() as s:
+        report = await s.scalar(select(DailyReportRow).where(DailyReportRow.user_id == user))
+        assert report is not None
+        assert report.memory_day == date(2026, 9, 25)
+        item = await s.scalar(select(MemoryItem).where(MemoryItem.user_id == user))
+        assert item is not None
+        assert item.memory_day == date(2026, 9, 25)
 
 
 async def test_audio_still_pending_elsewhere_that_day_makes_the_report_partial(

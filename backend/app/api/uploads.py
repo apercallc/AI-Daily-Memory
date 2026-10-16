@@ -15,10 +15,11 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, cast, get_args
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +59,20 @@ class UploadCreate(BaseModel):
     sample_rate_hz: Literal[16_000, 22_050, 24_000, 32_000, 44_100, 48_000]
     channel_count: int = Field(ge=1, le=2)
     captured_at: AwareDatetime
+    # The clip's own clock (TODO.md Phase 4 "preserve timestamp provenance... without deriving
+    # dates from server-local time"); optional so an older client keeps working unchanged.
+    source_timezone: str | None = Field(default=None, max_length=64)
+
+    @field_validator("source_timezone")
+    @classmethod
+    def _known_zone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError("not a known IANA timezone id") from error
+        return value
 
 
 class UploadTarget(BaseModel):
@@ -109,6 +124,7 @@ def _same_clip(row: AudioUpload, body: UploadCreate) -> bool:
         and row.sample_rate_hz == body.sample_rate_hz
         and row.channel_count == body.channel_count
         and row.captured_at == body.captured_at
+        and row.source_timezone == body.source_timezone
     )
 
 
@@ -264,6 +280,7 @@ async def _create(
         sample_rate_hz=body.sample_rate_hz,
         channel_count=body.channel_count,
         captured_at=body.captured_at,
+        source_timezone=body.source_timezone,
         state="pending",
         object_key=audio_key(principal.user_id, body.upload_id),
         device_key_id=device_key.id if device_key else None,
