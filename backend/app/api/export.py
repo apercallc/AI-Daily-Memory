@@ -1,31 +1,38 @@
 """Self-service export of everything the server holds about you (a right, not an upsell).
 
-    GET /v1/export   one JSON document: account, memory items with your corrections, folders and
-                     how you organized each note, daily reports, transcripts the server holds,
-                     sign-ins and clip metadata
+    GET /v1/export   a short-lived, scoped signed URL to one JSON document: account, memory
+                     items with your corrections, folders and how you organized each note,
+                     daily reports, transcripts the server holds, sign-ins and clip metadata
 
-Streamed in batches so a large account never sits in memory whole. Raw audio is temporary
-(ADR-0003) and is not inlined; the clip list says what is still held. Sealed phone-mode
-transcripts are not readable by the server and so are not included: they live on the phone.
+Assembled in batches so a large account never sits in memory whole, then written once to
+object storage and delivered through a presigned GET — never inlined in the API response
+(TODO.md Phase 8). A request within the URL's TTL reuses the same stored object instead of
+rerunning the whole export (idempotent; TODO.md "re-requests within TTL must not regenerate").
+Raw audio is temporary (ADR-0003) and is never in the export; the clip list says what is still
+held. Sealed phone-mode transcripts are not readable by the server and so are not included:
+they live on the phone.
 """
 
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require
 from app.auth_rate_limit import auth_rate_limit
+from app.config import Settings
 from app.credentials import email_of
 from app.db import get_session
 from app.db.models import (
     AccessToken,
+    AccountExport,
     AudioUpload,
     DailyReportRow,
     MemoryItem,
@@ -37,13 +44,30 @@ from app.db.models import (
     User,
 )
 from app.errors import ErrorResponse
+from app.storage import ObjectStore, user_prefix
 
 router = APIRouter(tags=["export"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Owner = Annotated[Principal, Depends(require("upload:write", "account:manage"))]
-_ERRORS: dict[int | str, dict[str, object]] = {s: {"model": ErrorResponse} for s in (401, 403, 429)}
+_ERRORS: dict[int | str, dict[str, object]] = {
+    s: {"model": ErrorResponse} for s in (401, 403, 429, 503)
+}
 BATCH = 500
+
+
+class ExportOut(BaseModel):
+    url: str
+    expires_at: datetime
+
+
+def _object_key(user_id: uuid.UUID) -> str:
+    return f"{user_prefix(user_id)}export.json"
+
+
+def _settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
 
 
 def _dump(value: object) -> str:
@@ -216,16 +240,48 @@ async def _document(session: AsyncSession, user_id: uuid.UUID) -> AsyncIterator[
 
 @router.get(
     "/export",
+    response_model=ExportOut,
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("export", limit=3, window_seconds=3_600))],
 )
-async def export(session: Session, owner: Owner) -> StreamingResponse:
-    filename = f"ai-daily-memory-export-{datetime.now(UTC).date().isoformat()}.json"
-    return StreamingResponse(
-        _document(session, owner.user_id),
-        media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store",
-        },
+async def export(
+    request: Request,
+    session: Session,
+    owner: Owner,
+    settings: Annotated[Settings, Depends(_settings)],
+) -> ExportOut:
+    store: ObjectStore | None = getattr(request.app.state, "object_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Export storage isn't configured yet.")
+
+    now = datetime.now(UTC)
+    key = _object_key(owner.user_id)
+    existing = await session.get(AccountExport, owner.user_id)
+    if existing is None or existing.expires_at <= now:
+        document = "".join([chunk async for chunk in _document(session, owner.user_id)])
+        await store.write(key, document.encode(), content_type="application/json")
+        expires_at = now + timedelta(seconds=settings.export_url_ttl_seconds)
+        upsert = pg_insert(AccountExport).values(
+            user_id=owner.user_id, object_key=key, generated_at=now, expires_at=expires_at
+        )
+        await session.execute(
+            upsert.on_conflict_do_update(
+                index_elements=[AccountExport.user_id],
+                set_={
+                    "object_key": upsert.excluded.object_key,
+                    "generated_at": upsert.excluded.generated_at,
+                    "expires_at": upsert.excluded.expires_at,
+                },
+            ),
+        )
+        await session.commit()
+    else:
+        expires_at = existing.expires_at
+
+    filename = f"ai-daily-memory-export-{now.date().isoformat()}.json"
+    url = store.presign_get(
+        key,
+        expires_in=settings.export_url_ttl_seconds,
+        filename=filename,
     )
+    return ExportOut(url=url, expires_at=expires_at)

@@ -13,7 +13,7 @@ from sqlalchemy import Engine, text
 import app.api.notes as notes_api
 from app.main import create_app
 from app.notes import SessionContent, build_fields, clip
-from tests.conftest import Account, make_account, settings_for
+from tests.conftest import Account, FakeObjectStore, make_account, settings_for
 
 pytestmark = pytest.mark.anyio
 
@@ -25,8 +25,13 @@ T2 = T1 + 2 * 86_400_000
 
 
 @pytest.fixture
-def client(db: Engine, database_url: str) -> Iterator[TestClient]:
-    with TestClient(create_app(settings_for(database_url))) as test_client:
+def store() -> FakeObjectStore:
+    return FakeObjectStore()
+
+
+@pytest.fixture
+def client(db: Engine, database_url: str, store: FakeObjectStore) -> Iterator[TestClient]:
+    with TestClient(create_app(settings_for(database_url), object_store=store)) as test_client:
         yield test_client
 
 
@@ -646,7 +651,7 @@ def test_build_fields_orders_lines_and_never_invents_times() -> None:
 
 
 def test_export_includes_folders_and_how_each_note_was_organized(
-    client: TestClient, account: Account, library: dict[str, uuid.UUID]
+    client: TestClient, account: Account, library: dict[str, uuid.UUID], store: FakeObjectStore
 ) -> None:
     work = make_folder(client, account, "Work")
     client.patch(
@@ -655,7 +660,8 @@ def test_export_includes_folders_and_how_each_note_was_organized(
         json={"title": "Contract call", "folder_id": work["id"], "starred": True},
     )
 
-    document = json.loads(client.get("/v1/export", headers=account.headers).text)
+    assert client.get("/v1/export", headers=account.headers).status_code == 200
+    document = json.loads(store.objects[f"users/{account.user_id}/export.json"][0])
 
     assert [f["name"] for f in document["note_folders"]] == ["Work"]
     organized = {n["session_id"]: n for n in document["notes"]}[str(library["call"])]

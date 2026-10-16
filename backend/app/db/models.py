@@ -516,3 +516,21 @@ class DeletedNote(Base):
     )
     session_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = _created()
+
+
+class AccountExport(Base):
+    """The most recently generated self-service export object for one user (TODO.md Phase 8
+    "deliver large server-side exports through scoped, short-TTL signed URLs ... idempotent;
+    re-requests within TTL must not regenerate"). One row per user, upserted in place: a fresh
+    request within `expires_at` gets a freshly presigned URL to the *same* stored object
+    instead of re-running the whole export query.
+    """
+
+    __tablename__ = "account_exports"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    object_key: Mapped[str] = mapped_column(String(200))
+    generated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[datetime]

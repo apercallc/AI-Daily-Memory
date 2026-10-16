@@ -168,14 +168,11 @@ function exportCard() {
       button.disabled = true;
       status.replaceChildren(spinner("Preparing your file…"));
       try {
-        const response = await api("/export", { raw: true });
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = h("a", { href: url, download: `ai-daily-memory-export-${new Date().toISOString().slice(0, 10)}.json` });
+        const { url } = await api("/export");
+        const link = h("a", { href: url });
         document.body.append(link);
         link.click();
         link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
         status.replaceChildren(notice("ok", "Your file is downloading."));
       } catch (e) { status.replaceChildren(notice("error", e.status === 429 ? "You can export three times an hour. Try again later." : describe(e))); }
       finally { button.disabled = false; }

@@ -10,14 +10,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from app.main import create_app
-from tests.conftest import make_account, settings_for
+from tests.conftest import FakeObjectStore, make_account, settings_for
 
 PASSWORD = "correct horse battery"  # noqa: S105 - test credential
 
 
 @pytest.fixture
-def client(db: Engine, database_url: str) -> Iterator[TestClient]:
-    app = create_app(settings_for(database_url, daily_ask_limit=3))
+def store() -> FakeObjectStore:
+    return FakeObjectStore()
+
+
+@pytest.fixture
+def client(db: Engine, database_url: str, store: FakeObjectStore) -> Iterator[TestClient]:
+    app = create_app(settings_for(database_url, daily_ask_limit=3), object_store=store)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -576,7 +581,7 @@ def test_a_phone_still_deletes_with_its_token_alone(client: TestClient, db: Engi
 
 
 def test_export_contains_everything_with_corrections_and_no_secrets(
-    client: TestClient, db: Engine
+    client: TestClient, db: Engine, store: FakeObjectStore
 ) -> None:
     headers = web_session(client)
     user = user_of(db, "me@example.com")
@@ -589,18 +594,50 @@ def test_export_contains_everything_with_corrections_and_no_secrets(
     response = client.get("/v1/export", headers=headers)
 
     assert response.status_code == 200
-    assert "attachment" in response.headers["content-disposition"]
-    assert response.headers["cache-control"] == "no-store"
-    document = json.loads(response.text)
+    body = response.json()
+    assert "url" in body
+    assert "expires_at" in body
+    raw, _ = store.objects[f"users/{user}/export.json"]
+    document = json.loads(raw)
     assert document["account"]["email"] == "me@example.com"
     assert [(i["text"], i["your_text"]) for i in document["memory_items"]] == [
         ("Send the deck", "Send the deck Thursday")
     ]
-    assert str(stranger) not in response.text
+    assert str(stranger) not in raw.decode()
     assert {s["name"] for s in document["sign_ins"]} == {"Web"}
-    assert "adm_" not in response.text
+    assert "adm_" not in raw.decode()
     for section in ("daily_reports", "transcripts", "clips"):
         assert document[section] == []
+
+
+def test_export_is_idempotent_within_the_ttl_and_regenerates_after_it(
+    client: TestClient, db: Engine, store: FakeObjectStore
+) -> None:
+    headers = web_session(client)
+    user = user_of(db, "me@example.com")
+    add_item(db, user, "First")
+
+    first = client.get("/v1/export", headers=headers).json()
+    add_item(db, user, "Second")  # written after the first export; must not appear yet
+    second = client.get("/v1/export", headers=headers).json()
+
+    assert second["expires_at"] == first["expires_at"]  # same artifact, not regenerated
+    document = json.loads(store.objects[f"users/{user}/export.json"][0])
+    assert [i["text"] for i in document["memory_items"]] == ["First"]
+
+    with db.begin() as c:
+        c.execute(text("UPDATE account_exports SET expires_at = now() - interval '1 second'"))
+    third = client.get("/v1/export", headers=headers).json()
+    assert third["expires_at"] != first["expires_at"]
+    regenerated = json.loads(store.objects[f"users/{user}/export.json"][0])
+    assert {i["text"] for i in regenerated["memory_items"]} == {"First", "Second"}
+
+
+def test_export_without_object_storage_fails_closed(db: Engine, database_url: str) -> None:
+    app = create_app(settings_for(database_url, daily_ask_limit=3))  # no object_store
+    with TestClient(app) as no_store_client:
+        headers = web_session(no_store_client)
+        assert no_store_client.get("/v1/export", headers=headers).status_code == 503
 
 
 def test_export_is_rate_limited_and_needs_a_session(client: TestClient) -> None:
@@ -612,14 +649,16 @@ def test_export_is_rate_limited_and_needs_a_session(client: TestClient) -> None:
 
 
 def test_export_includes_reports_clips_and_the_transcripts_the_server_holds(
-    client: TestClient, db: Engine
+    client: TestClient, db: Engine, store: FakeObjectStore
 ) -> None:
     from tests.seed import seed_user_data
 
     headers = web_session(client)
-    seed_user_data(db, user_of(db, "me@example.com"), with_credential=False)
+    user = user_of(db, "me@example.com")
+    seed_user_data(db, user, with_credential=False)
 
-    document = json.loads(client.get("/v1/export", headers=headers).text)
+    client.get("/v1/export", headers=headers)
+    document = json.loads(store.objects[f"users/{user}/export.json"][0])
 
     assert len(document["daily_reports"]) == 1
     assert len(document["clips"]) == 1

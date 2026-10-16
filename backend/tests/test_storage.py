@@ -64,6 +64,33 @@ def test_presigned_put_pins_size_and_checksum(store: S3ObjectStore) -> None:
     }
 
 
+def test_presigned_get_scopes_the_key_and_sets_a_download_filename(store: S3ObjectStore) -> None:
+    signed_url = store.presign_get("users/u/export.json", expires_in=900, filename="export.json")
+
+    url = urlparse(signed_url)
+    query = parse_qs(url.query)
+    assert url.path == "/aidm-audio/users/u/export.json"
+    assert query["X-Amz-Expires"] == ["900"]
+    assert query["response-content-disposition"] == ['attachment; filename="export.json"']
+    assert query["response-cache-control"] == ["no-store"]
+
+
+async def test_write_puts_the_object_with_its_content_type(store: S3ObjectStore) -> None:
+    with Stubber(store.client) as stub:
+        stub.add_response(
+            "put_object",
+            {},
+            {
+                "Bucket": "aidm-audio",
+                "Key": "users/u/export.json",
+                "Body": b"{}",
+                "ContentType": "application/json",
+            },
+        )
+
+        await store.write("users/u/export.json", b"{}", content_type="application/json")
+
+
 async def test_stat_reports_size_and_checksum(store: S3ObjectStore) -> None:
     with Stubber(store.client) as stub:
         stub.add_response(

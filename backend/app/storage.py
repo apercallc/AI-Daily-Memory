@@ -62,6 +62,16 @@ class ObjectStore(Protocol):
         expires_in: int,
     ) -> PresignedPut: ...
 
+    def presign_get(
+        self,
+        key: str,
+        *,
+        expires_in: int,
+        filename: str,
+    ) -> str: ...
+
+    async def write(self, key: str, data: bytes, *, content_type: str) -> None: ...
+
     async def stat(self, key: str) -> StoredObject | None: ...
 
     async def read(self, key: str) -> bytes:
@@ -151,6 +161,34 @@ class S3ObjectStore:
                 "x-amz-checksum-sha256": checksum,
             },
             expires_at=datetime.now(UTC) + timedelta(seconds=expires_in),
+        )
+
+    def presign_get(
+        self,
+        key: str,
+        *,
+        expires_in: int,
+        filename: str,
+    ) -> str:
+        url: str = self.client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "ResponseContentDisposition": f'attachment; filename="{filename}"',
+                "ResponseCacheControl": "no-store",
+            },
+            ExpiresIn=expires_in,
+        )
+        return url
+
+    async def write(self, key: str, data: bytes, *, content_type: str) -> None:
+        await asyncio.to_thread(
+            self.client.put_object,
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
         )
 
     async def stat(self, key: str) -> StoredObject | None:

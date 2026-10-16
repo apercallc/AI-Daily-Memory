@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 import pytest
 from alembic import command
@@ -172,6 +173,12 @@ class FakeObjectStore:
             headers={"Content-Length": str(byte_size), "x-amz-checksum-sha256": sha256},
             expires_at=datetime.now(UTC) + timedelta(seconds=expires_in),
         )
+
+    def presign_get(self, key: str, *, expires_in: int, filename: str) -> str:
+        return f"https://store.test/{key}?sig=fake&filename={quote(filename)}"
+
+    async def write(self, key: str, data: bytes, *, content_type: str) -> None:
+        self.put(key, data)
 
     async def stat(self, key: str) -> StoredObject | None:
         if key not in self.objects:

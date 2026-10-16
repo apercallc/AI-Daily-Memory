@@ -770,6 +770,25 @@
         "title": "EvidenceOut",
         "type": "object"
       },
+      "ExportOut": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "ExportOut",
+        "type": "object"
+      },
       "FieldError": {
         "properties": {
           "location": {
@@ -3200,7 +3219,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3254,6 +3275,16 @@
               }
             },
             "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Export",
