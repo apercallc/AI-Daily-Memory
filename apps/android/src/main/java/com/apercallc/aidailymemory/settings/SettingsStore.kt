@@ -7,6 +7,7 @@ import com.apercallc.aidailymemory.recording.appearance.ThemeMode
 import com.apercallc.aidailymemory.recording.schedule.DailyRhythm
 import com.apercallc.aidailymemory.recording.schedule.RhythmCodec
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
+import com.apercallc.aidailymemory.recording.storage.MemoryRetention
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,9 @@ class SettingsStore(private val prefs: SharedPreferences) {
 
     private val _retention = MutableStateFlow(readRetention())
     val retention: StateFlow<AudioRetention> = _retention.asStateFlow()
+
+    private val _memoryRetention = MutableStateFlow(readMemoryRetention())
+    val memoryRetention: StateFlow<MemoryRetention> = _memoryRetention.asStateFlow()
 
     fun setRhythm(rhythm: DailyRhythm) {
         prefs.edit {
@@ -70,6 +74,11 @@ class SettingsStore(private val prefs: SharedPreferences) {
         _retention.value = retention
     }
 
+    fun setMemoryRetention(retention: MemoryRetention) {
+        prefs.edit { putString(KEY_MEMORY_RETENTION, retention.name) }
+        _memoryRetention.value = retention
+    }
+
     /** Last instant the rhythm was checked; catch-up only looks at changes after it. */
     var lastRhythmCheckEpochMs: Long?
         get() = prefs.getLong(KEY_LAST_CHECK, NONE).takeIf { it != NONE }
@@ -100,12 +109,21 @@ class SettingsStore(private val prefs: SharedPreferences) {
         }
     }
 
+    private fun readMemoryRetention(): MemoryRetention {
+        val raw = prefs.getString(KEY_MEMORY_RETENTION, null) ?: return MemoryRetention.Default
+        return MemoryRetention.entries.firstOrNull { it.name == raw } ?: run {
+            Log.e(TAG, "memory_retention_unreadable")
+            MemoryRetention.Default
+        }
+    }
+
     companion object {
         const val FILE_NAME = "settings"
         private const val TAG = "SettingsStore"
         private const val KEY_RHYTHM = "daily_rhythm"
         private const val KEY_RHYTHM_UNREADABLE = "daily_rhythm_unreadable"
         private const val KEY_RETENTION = "audio_retention"
+        private const val KEY_MEMORY_RETENTION = "memory_retention"
         private const val KEY_LAST_CHECK = "rhythm_last_check_epoch_ms"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"

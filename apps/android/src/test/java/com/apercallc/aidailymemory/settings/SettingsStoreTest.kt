@@ -31,6 +31,7 @@ class SettingsStoreTest {
 
         assertEquals(DailyRhythm.None, store.rhythm.value)
         assertEquals(AudioRetention.TRANSCRIPT_ONLY, store.retention.value)
+        assertEquals(com.apercallc.aidailymemory.recording.storage.MemoryRetention.KEEP_UNTIL_DELETED, store.memoryRetention.value)
         assertNull(store.lastRhythmCheckEpochMs)
         assertFalse(store.hadUnreadableRhythm)
     }
@@ -74,6 +75,24 @@ class SettingsStoreTest {
         prefs.edit { putString("audio_retention", "KEEP_FOREVER_AND_EVER") }
 
         assertEquals(AudioRetention.TRANSCRIPT_ONLY, SettingsStore(prefs).retention.value)
+    }
+
+    @Test
+    fun `memory retention persists across instances and an unknown value falls back to the default`() {
+        val store = SettingsStore(prefs)
+
+        store.setMemoryRetention(com.apercallc.aidailymemory.recording.storage.MemoryRetention.KEEP_90_DAYS)
+
+        assertEquals(
+            com.apercallc.aidailymemory.recording.storage.MemoryRetention.KEEP_90_DAYS,
+            SettingsStore(prefs).memoryRetention.value,
+        )
+
+        prefs.edit { putString("memory_retention", "KEEP_FOREVER_AND_EVER") }
+        assertEquals(
+            com.apercallc.aidailymemory.recording.storage.MemoryRetention.KEEP_UNTIL_DELETED,
+            SettingsStore(prefs).memoryRetention.value,
+        )
     }
 
     @Test

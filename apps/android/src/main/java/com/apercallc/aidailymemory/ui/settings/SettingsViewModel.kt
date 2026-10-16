@@ -73,6 +73,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val rhythm: StateFlow<DailyRhythm> = settings.rhythm
     val retention: StateFlow<AudioRetention> = settings.retention
+    val memoryRetention: StateFlow<com.apercallc.aidailymemory.recording.storage.MemoryRetention> = settings.memoryRetention
     val hadUnreadableRhythm: Boolean get() = settings.hadUnreadableRhythm
 
     /** Phone storage per recorded hour at the current capture settings. */
@@ -94,6 +95,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun updateRetention(retention: AudioRetention) = settings.setRetention(retention)
+
+    fun updateMemoryRetention(retention: com.apercallc.aidailymemory.recording.storage.MemoryRetention) =
+        settings.setMemoryRetention(retention)
 
     private val linker = container.accountLinker
     private val connecting = MutableStateFlow(false)

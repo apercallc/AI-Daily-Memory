@@ -61,6 +61,7 @@ import com.apercallc.aidailymemory.recording.schedule.QuietWindow
 import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
+import com.apercallc.aidailymemory.recording.storage.MemoryRetention
 import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.ui.TimeText
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -80,6 +81,8 @@ fun RhythmSettingsScreen(
     onRhythmChange: (DailyRhythm) -> Unit,
     onRetentionChange: (AudioRetention) -> Unit,
     modifier: Modifier = Modifier,
+    memoryRetention: MemoryRetention = MemoryRetention.Default,
+    onMemoryRetentionChange: (MemoryRetention) -> Unit = {},
     account: AccountUi? = null,
     accountCallbacks: AccountCallbacks = AccountCallbacks(),
     themeMode: ThemeMode = ThemeMode.Default,
@@ -127,6 +130,9 @@ fun RhythmSettingsScreen(
 
         GroupLabel(R.string.settings_group_audio)
         GroupCard { AudioSection(retention, bytesPerHour, onRetentionChange) }
+
+        GroupLabel(R.string.settings_group_memory)
+        GroupCard { MemorySection(memoryRetention, onMemoryRetentionChange) }
 
         GroupLabel(R.string.settings_group_appearance)
         GroupCard { AppearanceSection(themeMode, onThemeModeChange) }
@@ -747,6 +753,44 @@ private fun retentionTitle(option: AudioRetention): Int = when (option) {
     AudioRetention.KEEP_7_DAYS -> R.string.retention_7
     AudioRetention.KEEP_30_DAYS -> R.string.retention_30
     AudioRetention.KEEP_UNTIL_DELETED -> R.string.retention_forever
+}
+
+@Composable
+private fun MemorySection(
+    memoryRetention: MemoryRetention,
+    onChange: (MemoryRetention) -> Unit,
+) {
+    SectionTitle(R.string.memory_section)
+    Explainer(R.string.memory_retention_explainer)
+    Column(modifier = Modifier.selectableGroup()) {
+        MemoryRetention.entries.forEach { option ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = AiDailyMemoryTheme.spacing.minTouchTarget)
+                    .selectable(
+                        selected = option == memoryRetention,
+                        role = Role.RadioButton,
+                        onClick = { onChange(option) },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = option == memoryRetention, onClick = null)
+                Text(
+                    stringResource(memoryRetentionTitle(option)),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(start = AiDailyMemoryTheme.spacing.md),
+                )
+            }
+        }
+    }
+}
+
+@StringRes
+private fun memoryRetentionTitle(option: MemoryRetention): Int = when (option) {
+    MemoryRetention.KEEP_90_DAYS -> R.string.memory_retention_90
+    MemoryRetention.KEEP_1_YEAR -> R.string.memory_retention_1_year
+    MemoryRetention.KEEP_UNTIL_DELETED -> R.string.memory_retention_forever
 }
 
 /** Validation for the quiet-time dialog, kept out of Compose so it's unit-testable. */
