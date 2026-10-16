@@ -321,6 +321,7 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
             onDismiss = viewModel::dismiss,
             onCorrect = viewModel::correct,
             onOpenReport = onOpenReport,
+            onToggleEventBoundary = viewModel::toggleEventBoundary,
         )
     }
 }

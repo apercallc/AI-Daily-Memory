@@ -33,8 +33,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncDeletionQueueEntity::class,
         ProviderUsageEntity::class,
         MemoryItemCorrectionEntity::class,
+        SessionEventOverrideEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -52,6 +53,7 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun processingState(): ProcessingStateDao
     abstract fun syncDeletions(): SyncDeletionDao
     abstract fun providerUsage(): ProviderUsageDao
+    abstract fun sessionEventOverrides(): SessionEventOverrideDao
 
     companion object {
         const val NAME = "capture.db"
@@ -60,6 +62,7 @@ abstract class CaptureDatabase : RoomDatabase() {
         fun migrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+            MIGRATION_11_12,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -293,6 +296,17 @@ abstract class CaptureDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_memory_item_correction_item_id` " +
                         "ON `memory_item_correction` (`item_id`)",
+                )
+            }
+        }
+
+        /** Event grouping corrections (TODO.md "Event grouping"): new table only. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `session_event_override` (" +
+                        "`session_id` TEXT NOT NULL, `override` TEXT NOT NULL, " +
+                        "`updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`session_id`))",
                 )
             }
         }

@@ -146,6 +146,39 @@ class MemoryViewModelTest {
         assertEquals(null, report)
     }
 
+    @Test
+    fun `two close short sessions default to one joined event`() = runBlocking {
+        register("a", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        register("b", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:01:00Z").toEpochMilli())
+
+        val days = content(MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })).days
+        val sessions = days.single().sessions.associateBy { it.sessionId }
+
+        // Newest first: "b" is the later session and is the one carrying the boundary flag.
+        assertEquals(true, sessions.getValue("b").joinedWithOlderNeighbor)
+        assertEquals(false, sessions.getValue("a").joinedWithOlderNeighbor)
+    }
+
+    @Test
+    fun `toggling a joined boundary force-splits it, and toggling again restores automatic grouping`() = runBlocking {
+        register("a", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        register("b", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:01:00Z").toEpochMilli())
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        var latest: MemoryLoadState = MemoryLoadState.Loading
+        val collector = launch { vm.state.collect { latest = it } }
+        withTimeout(5_000) { while (latest.sessionJoined("b") != true) kotlinx.coroutines.yield() }
+
+        vm.toggleEventBoundary("b", currentlyJoined = true)
+        withTimeout(5_000) { while (latest.sessionJoined("b") != false) kotlinx.coroutines.yield() }
+
+        vm.clearEventBoundaryOverride("b")
+        withTimeout(5_000) { while (latest.sessionJoined("b") != true) kotlinx.coroutines.yield() }
+        collector.cancel()
+    }
+
+    private fun MemoryLoadState.sessionJoined(sessionId: String): Boolean? = (this as? MemoryLoadState.Content)
+        ?.days?.flatMap { it.sessions }?.firstOrNull { it.sessionId == sessionId }?.joinedWithOlderNeighbor
+
     private fun MemoryLoadState.itemCount(): Int = (this as? MemoryLoadState.Content)
         ?.days?.flatMap { it.sessions }?.flatMap { it.items }?.size ?: -1
 

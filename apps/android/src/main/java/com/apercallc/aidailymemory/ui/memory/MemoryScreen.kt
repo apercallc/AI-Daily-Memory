@@ -81,6 +81,12 @@ data class MemorySession(
     val transcriptLines: List<LocalTranscriptLineEntity>,
     val audioDeleted: Boolean,
     val freedBytes: Long,
+    /**
+     * True when this session is grouped with the session immediately before it in time into one
+     * event (TODO.md "Event grouping"). False (including for a day's chronologically first
+     * session, which has no predecessor) means it starts its own event.
+     */
+    val joinedWithOlderNeighbor: Boolean = false,
 )
 
 /** How a day is named. Localized at render time, so the view model never holds UI strings. */
@@ -111,6 +117,8 @@ fun MemoryScreen(
     onCorrect: (String, String) -> Unit = { _, _ -> },
     /** Opens the full report screen for one day (its raw memory-day key), to view and share. */
     onOpenReport: (String) -> Unit = {},
+    /** Corrects one session's grouping with the session right before it (TODO.md "Event grouping"). */
+    onToggleEventBoundary: (sessionId: String, currentlyJoined: Boolean) -> Unit = { _, _ -> },
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     LazyColumn(
@@ -142,7 +150,7 @@ fun MemoryScreen(
                 }
             } else {
                 items(state.days, key = { it.dateLabel }) { day ->
-                    MemoryDaySection(day, onDismiss, onCorrect, onOpenReport)
+                    MemoryDaySection(day, onDismiss, onCorrect, onOpenReport, onToggleEventBoundary)
                 }
             }
         }
@@ -155,6 +163,7 @@ private fun MemoryDaySection(
     onDismiss: (String) -> Unit,
     onCorrect: (String, String) -> Unit,
     onOpenReport: (String) -> Unit,
+    onToggleEventBoundary: (sessionId: String, currentlyJoined: Boolean) -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
@@ -177,8 +186,37 @@ private fun MemoryDaySection(
                 Text(stringResource(R.string.memory_view_report))
             }
         }
-        day.sessions.forEach { session ->
+        day.sessions.forEachIndexed { index, session ->
+            // A boundary sits between this card and the next-older one (TODO.md "Event
+            // grouping"); it reflects the newer (previous-in-display) session's relation to
+            // its chronological predecessor, which is this older session.
+            if (index > 0) {
+                val newer = day.sessions[index - 1]
+                EventBoundaryDivider(
+                    joined = newer.joinedWithOlderNeighbor,
+                    onToggle = { onToggleEventBoundary(newer.sessionId, newer.joinedWithOlderNeighbor) },
+                )
+            }
             MemorySessionCard(session, onDismiss, onCorrect)
+        }
+    }
+}
+
+@Composable
+private fun EventBoundaryDivider(joined: Boolean, onToggle: () -> Unit) {
+    val spacing = AiDailyMemoryTheme.spacing
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onToggle, modifier = Modifier.heightIn(min = spacing.minTouchTarget)) {
+            Text(
+                text = stringResource(
+                    if (joined) R.string.memory_split_event else R.string.memory_merge_event,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }

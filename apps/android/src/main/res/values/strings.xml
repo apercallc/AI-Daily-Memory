@@ -365,6 +365,8 @@
     <string name="memory_correct_dialog_save">Save</string>
     <string name="memory_correct_dialog_cancel">Cancel</string>
     <string name="memory_view_report">View report</string>
+    <string name="memory_merge_event">Merge with previous event</string>
+    <string name="memory_split_event">Split into separate event</string>
     <string name="nav_memory">Memory</string>
 
     <!-- Daily report screen -->

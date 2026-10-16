@@ -83,8 +83,13 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 
 ## Event grouping
 
-- [ ] Group short notes and long meetings into useful, correctable events
+- [x] Group short notes and long meetings into useful, correctable events
   - Avoid over-fragmented 30-second memories and support event-boundary corrections.
+  - `EventGrouper` (core/recording, pure/tested) clusters closely spaced short sessions into one
+    event and always keeps a long session (a meeting) standing alone. The timeline shows a
+    merge/split control between every two adjacent sessions; the person's choice is stored per
+    session (`session_event_override`, migration 11->12) and always wins over the automatic
+    rule, without changing the automatic algorithm itself.
 
 ## Structured extraction (ADR-0020 / ADR-0026)
 

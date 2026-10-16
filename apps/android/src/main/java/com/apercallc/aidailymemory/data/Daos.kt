@@ -233,6 +233,19 @@ interface SessionDao {
 }
 
 @Dao
+interface SessionEventOverrideDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SessionEventOverrideEntity)
+
+    @Query("DELETE FROM session_event_override WHERE session_id = :sessionId")
+    suspend fun clear(sessionId: String)
+
+    /** All overrides, for grouping; the set is small (one per corrected boundary, not per day). */
+    @Query("SELECT * FROM session_event_override")
+    suspend fun all(): List<SessionEventOverrideEntity>
+}
+
+@Dao
 interface MarkerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: MarkerEntity)

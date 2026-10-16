@@ -7,8 +7,14 @@ import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
+import com.apercallc.aidailymemory.data.SessionEventOverrideEntity
+import com.apercallc.aidailymemory.data.SessionEventOverrideKind
+import com.apercallc.aidailymemory.data.SessionRow
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
+import com.apercallc.aidailymemory.recording.session.EventGrouper
 import com.apercallc.aidailymemory.recording.session.PartOfDay
+import com.apercallc.aidailymemory.recording.session.SessionBoundaryOverride
+import com.apercallc.aidailymemory.recording.session.SessionSpan
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.session.SessionTitle
 import java.time.DateTimeException
@@ -67,6 +73,8 @@ class MemoryViewModel(
                         val correctionsDao = container.database.memoryCorrections()
                         val transcriptDao = container.database.localTranscripts()
                         val processingDao = container.database.processingState()
+                        val overrides = container.database.sessionEventOverrides().all()
+                            .associateBy { it.sessionId }
 
                         val sessions = rows.map { row ->
                             val sessionItems = itemsDao.forSession(row.sessionId)
@@ -91,17 +99,22 @@ class MemoryViewModel(
                                 transcriptLines = sessionLines,
                                 audioDeleted = procState?.audioDeleted == true,
                                 freedBytes = 0,
+                                // Filled in per day below, once every session in the day is known.
+                                joinedWithOlderNeighbor = false,
                             )
                         }
 
-                        val grouped = rows.zip(sessions) { row, session -> row.memoryDay to session }
+                        val grouped = rows.zip(sessions) { row, session -> row.memoryDay to (row to session) }
                             .groupBy({ it.first }, { it.second })
 
-                        emit(grouped.map { (day, daySessions) ->
+                        emit(grouped.map { (day, dayRowsAndSessions) ->
+                            val boundaries = eventBoundaries(dayRowsAndSessions.map { it.first }, overrides)
                             MemoryDay(
                                 dayLabel = formatDayLabel(day),
                                 dateLabel = day,
-                                sessions = daySessions,
+                                sessions = dayRowsAndSessions.map { (row, session) ->
+                                    session.copy(joinedWithOlderNeighbor = boundaries[row.sessionId] == true)
+                                },
                             )
                         })
                     }.flowOn(Dispatchers.IO)
@@ -150,6 +163,30 @@ class MemoryViewModel(
         reloadRequests.update { it + 1 }
     }
 
+    /**
+     * Toggles one session's grouping with its immediate predecessor (TODO.md "Event grouping":
+     * support event-boundary corrections). Joined -> forced apart; apart -> forced together.
+     * Has no effect when called for the day's chronologically first session, which has no
+     * predecessor to correct against.
+     */
+    fun toggleEventBoundary(sessionId: String, currentlyJoined: Boolean) = viewModelScope.launch {
+        val kind = if (currentlyJoined) {
+            SessionEventOverrideKind.FORCE_SPLIT
+        } else {
+            SessionEventOverrideKind.FORCE_JOIN
+        }
+        container.database.sessionEventOverrides().upsert(
+            SessionEventOverrideEntity(sessionId, kind, now().toEpochMilli()),
+        )
+        reloadRequests.update { it + 1 }
+    }
+
+    /** Clears a session's boundary correction, returning it to the automatic grouping. */
+    fun clearEventBoundaryOverride(sessionId: String) = viewModelScope.launch {
+        container.database.sessionEventOverrides().clear(sessionId)
+        reloadRequests.update { it + 1 }
+    }
+
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 
@@ -181,6 +218,32 @@ class MemoryViewModel(
             today -> DayLabel.Today
             today.minusDays(1) -> DayLabel.Yesterday
             else -> DayLabel.Date(date.format(dateFmt))
+        }
+    }
+
+    /**
+     * For one day's sessions: which are grouped with the session immediately before them in
+     * time (TODO.md "Event grouping"). A day's chronologically first session is never a key
+     * here — it has no predecessor to be joined with.
+     */
+    private fun eventBoundaries(
+        dayRows: List<SessionRow>,
+        overrides: Map<String, SessionEventOverrideEntity>,
+    ): Map<String, Boolean> {
+        if (dayRows.size <= 1) return emptyMap()
+        val spans = dayRows.map { SessionSpan(it.sessionId, it.startedAtEpochMs, it.capturedMs) }
+        val boundaryOverrides = overrides.mapNotNull { (sessionId, entity) ->
+            when (entity.override) {
+                SessionEventOverrideKind.FORCE_JOIN -> sessionId to SessionBoundaryOverride.FORCE_JOIN
+                SessionEventOverrideKind.FORCE_SPLIT -> sessionId to SessionBoundaryOverride.FORCE_SPLIT
+                else -> null
+            }
+        }.toMap()
+        val groups = EventGrouper.group(spans, boundaryOverrides)
+        val groupIndex = groups.flatMapIndexed { index, group -> group.sessionIds.map { it to index } }.toMap()
+        val chronological = dayRows.sortedBy { it.startedAtEpochMs }
+        return chronological.zipWithNext().associate { (previous, current) ->
+            current.sessionId to (groupIndex[current.sessionId] == groupIndex[previous.sessionId])
         }
     }
 

@@ -128,6 +128,25 @@ data class SessionInfoEntity(
     @ColumnInfo(name = "custom_title") val customTitle: String?,
 )
 
+/**
+ * The person's correction of the automatic event grouping for one session (TODO.md "Event
+ * grouping": support event-boundary corrections). [override] is "force_join" (always group with
+ * the immediately preceding session, even across the automatic gap/duration rules) or
+ * "force_split" (never group with it). No row means "use the automatic grouping". Keyed by
+ * session, not by day, so it survives independent of how many sessions a day ends up with.
+ */
+@Entity(tableName = "session_event_override")
+data class SessionEventOverrideEntity(
+    @PrimaryKey @ColumnInfo(name = "session_id") val sessionId: String,
+    val override: String,
+    @ColumnInfo(name = "updated_at_epoch_ms") val updatedAtEpochMs: Long,
+)
+
+object SessionEventOverrideKind {
+    const val FORCE_JOIN = "force_join"
+    const val FORCE_SPLIT = "force_split"
+}
+
 /** One row of the sessions list, with what was actually captured. */
 data class SessionRow(
     val sessionId: String,
