@@ -281,6 +281,18 @@ phase does not block launch and no embedding or vector-index infrastructure is n
   - Deliver large server-side exports through scoped, short-TTL signed URLs, never inline in the API response.
   - Rate-limit and make export requests idempotent; re-requests within TTL must not regenerate.
   - Exclude export from third-party/API-key scopes by default; keep it self-service only.
+  - Written and reconciled against the real schema in this pass: `docs/product/DATA_INVENTORY.md`,
+    `docs/product/RETENTION_AND_DELETION.md`, `docs/product/DATA_FLOW.md`,
+    `docs/security/THREAT_MODEL.md`. Consent/jurisdiction guidance already exists in
+    `website/privacy.html` ("Recording other people") and `website/terms.html`, both explicitly
+    marked draft pending a lawyer's review (`docs/product/LAUNCH_GAPS.md`).
+  - Still genuinely open, not done: JSONL export format and including retained raw audio in
+    an on-device export are not implemented. A lawyer's review of the privacy/terms drafts
+    remains outside what an agent session can do.
+  - Resolved in this pass: `GET /v1/export` now delivers through a scoped, short-TTL signed
+    URL (`AccountExport`, migration 0016) instead of streaming inline, and reuses the same
+    generated object for repeat requests within the TTL instead of regenerating — both
+    sub-bullets above are now met.
 
 ## Security
 
@@ -308,13 +320,18 @@ phase does not block launch and no embedding or vector-index infrastructure is n
   - Non-root container: done (`backend/Dockerfile` runs as `USER app`, not root).
   - SBOM: done — CI's backend job runs `pip-audit --format cyclonedx-json` and uploads
     `backend-sbom` as a build artifact on every run (`.github/workflows/ci.yml`).
-  - Still open: a written authentication threat model doc, an explicit authorization-test
-    audit across every endpoint, and object-storage/signed-URL scope+TTL tests reviewed as a
-    set (ownership checks and TTL-bounded presigned URLs already exist per-endpoint — e.g.
-    `app/api/uploads.py`'s `_owned`/`presign_put` — but have not been reviewed together as the
-    security control this item asks for). Shared edge throttling is correctly deferred: the
-    in-process limiter is sized for the single-replica deployment that exists today
-    (`docs/product/LAUNCH_GAPS.md` "Single API replica").
+  - Authentication threat model: written (`docs/security/THREAT_MODEL.md`) — nine threats
+    (token theft, cross-user access, scope escalation, forged uploads, presigned-URL abuse,
+    storage-outage leakage, brute force, availability abuse, user-provider credential handling)
+    each with its code-level mitigation cited, plus an explicit "Open items" list.
+  - Still open: the authorization-test audit that document's own "Open items" section calls
+    for (a single matrix of every endpoint × required scope × negative test, rather than the
+    per-endpoint tests that already exist scattered through `backend/tests/`), object-storage
+    path isolation and signed-URL scope/TTL *tests reviewed together as the named control*
+    (the controls themselves — ownership checks, TTL-bounded presigned URLs — already exist
+    per-endpoint, e.g. `app/api/uploads.py`'s `_owned`/`presign_put`). Shared edge throttling is
+    correctly deferred: the in-process limiter is sized for the single-replica deployment that
+    exists today (`docs/product/LAUNCH_GAPS.md` "Single API replica").
 
 ## Reliability / operations
 
