@@ -24,6 +24,12 @@ interface MemoryItemDao {
         insertAll(items)
     }
 
+    /** Every item for a session, dismissed or not — reprocessing (TODO.md Phase 7) needs the
+     *  dismissed ones too, to carry their dismissal forward onto whichever new item replaces
+     *  them, instead of silently un-dismissing on every rerun. */
+    @Query("SELECT * FROM memory_item WHERE session_id = :sessionId ORDER BY kind, extracted_at_epoch_ms")
+    suspend fun allForSession(sessionId: String): List<MemoryItemEntity>
+
     @Query("SELECT * FROM memory_item WHERE memory_day = :memoryDay AND dismissed_at_epoch_ms IS NULL ORDER BY extracted_at_epoch_ms")
     fun observeForDay(memoryDay: String): Flow<List<MemoryItemEntity>>
 
@@ -38,12 +44,31 @@ interface MemoryItemDao {
 
     @Query("SELECT * FROM memory_item WHERE memory_day = :memoryDay AND dismissed_at_epoch_ms IS NULL ORDER BY kind, extracted_at_epoch_ms")
     suspend fun forDay(memoryDay: String): List<MemoryItemEntity>
+
+    /** Every still-open commitment or action, across every day (TODO.md Phase 7 "project
+     *  memory"): the daily timeline already shows these per day; this feeds the durable,
+     *  cross-day "People & Commitments" grouping instead. */
+    @Query(
+        "SELECT * FROM memory_item WHERE kind IN ('commitment', 'action') " +
+            "AND dismissed_at_epoch_ms IS NULL ORDER BY extracted_at_epoch_ms DESC",
+    )
+    fun observeOpenCommitments(): Flow<List<MemoryItemEntity>>
+
+    /** Deletes items for a retention sweep (TODO.md Phase 7 "retention controls"); corrections
+     *  pointing at them must be deleted first by the caller, or they would orphan. */
+    @Query("DELETE FROM memory_item WHERE memory_day < :cutoffDay")
+    suspend fun deleteOlderThan(cutoffDay: String): Int
 }
 
 @Dao
 interface MemoryCorrectionDao {
     @Insert
     suspend fun insert(correction: MemoryItemCorrectionEntity)
+
+    /** Repoints a correction at the new item replacing the one it used to correct, so a
+     *  reprocessing run (TODO.md Phase 7) never silently orphans it. */
+    @Query("UPDATE memory_item_correction SET item_id = :newItemId WHERE item_id = :oldItemId")
+    suspend fun reassignItemId(oldItemId: String, newItemId: String)
 
     @Query(
         "SELECT * FROM memory_item_correction WHERE item_id = :itemId " +
@@ -58,6 +83,14 @@ interface MemoryCorrectionDao {
             "WHERE c2.item_id = c.item_id) AND c.item_id IN (:itemIds)",
     )
     suspend fun forItems(itemIds: List<String>): List<MemoryItemCorrectionEntity>
+
+    /** Deletes corrections for a retention sweep; must run before deleting the items they
+     *  point at (TODO.md Phase 7 "retention controls"), or the delete would orphan them. */
+    @Query(
+        "DELETE FROM memory_item_correction WHERE item_id IN " +
+            "(SELECT id FROM memory_item WHERE memory_day < :cutoffDay)",
+    )
+    suspend fun deleteForDaysOlderThan(cutoffDay: String): Int
 }
 
 @Dao
@@ -83,6 +116,10 @@ interface DailyReportDao {
     /** Marks a day's report as changed so the next sync sends it again (a rename, say). */
     @Query("UPDATE daily_report SET generated_at_epoch_ms = :epochMs WHERE memory_day = :memoryDay")
     suspend fun touch(memoryDay: String, epochMs: Long): Int
+
+    /** Deletes reports for a retention sweep (TODO.md Phase 7 "retention controls"). */
+    @Query("DELETE FROM daily_report WHERE memory_day < :cutoffDay")
+    suspend fun deleteOlderThan(cutoffDay: String): Int
 }
 
 @Dao

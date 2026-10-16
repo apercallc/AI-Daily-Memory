@@ -236,6 +236,15 @@ class AppContainer(context: Context) {
         )
     }
 
+    private val memoryRetentionSweep by lazy {
+        com.apercallc.aidailymemory.processing.MemoryRetentionSweep(
+            database = database,
+            memoryItemDao = database.memoryItems(),
+            memoryCorrectionDao = database.memoryCorrections(),
+            dailyReportDao = database.dailyReports(),
+        )
+    }
+
     /**
      * Effects while no service runs: never touches the microphone. A session that needs the
      * user gets a "tap to resume" notification instead of a silent gap (ADR-0010).
@@ -545,6 +554,7 @@ class AppContainer(context: Context) {
                 speechDao = database.speech(),
                 clipDao = database.clips(),
                 memoryItemDao = database.memoryItems(),
+                memoryCorrectionDao = database.memoryCorrections(),
                 dailyReportDao = database.dailyReports(),
                 localTranscriptDao = database.localTranscripts(),
                 processingStateDao = database.processingState(),
@@ -741,6 +751,15 @@ class AppContainer(context: Context) {
         } catch (e: Exception) {
             // Kept audio simply stays until the next pass; never silent.
             logFailure(TAG, "retention_failed", e)
+        }
+        try {
+            val deletedItems = memoryRetentionSweep.apply(settings.memoryRetention.value)
+            if (deletedItems > 0) Log.i(TAG, "memory_retention_deleted count=$deletedItems")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Kept memory simply stays until the next pass; never silent.
+            logFailure(TAG, "memory_retention_failed", e)
         }
     }
 

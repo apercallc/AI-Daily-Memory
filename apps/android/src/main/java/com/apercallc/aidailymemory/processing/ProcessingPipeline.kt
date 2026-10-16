@@ -13,6 +13,7 @@ import com.apercallc.aidailymemory.data.LocalTranscriptDao
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemDao
 import com.apercallc.aidailymemory.data.MemoryItemEntity
+import com.apercallc.aidailymemory.data.MemoryCorrectionDao
 import com.apercallc.aidailymemory.data.ProcessingStateDao
 import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.ProviderUsageDao
@@ -26,6 +27,9 @@ import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.processing.ExtractedItem
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
+import com.apercallc.aidailymemory.recording.processing.IdentifiedMemoryItem
+import com.apercallc.aidailymemory.recording.processing.MemoryItemIdentity
+import com.apercallc.aidailymemory.recording.processing.MemoryReconciler
 import com.apercallc.aidailymemory.recording.processing.NumberedLine
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
 import com.apercallc.aidailymemory.recording.processing.ProcessingValidation
@@ -61,6 +65,7 @@ class ProcessingPipeline(
     private val speechDao: SpeechDao,
     private val clipDao: ClipDao,
     private val memoryItemDao: MemoryItemDao,
+    private val memoryCorrectionDao: MemoryCorrectionDao,
     private val dailyReportDao: DailyReportDao,
     private val localTranscriptDao: LocalTranscriptDao,
     private val processingStateDao: ProcessingStateDao,
@@ -328,11 +333,15 @@ class ProcessingPipeline(
         }
         ProcessingValidation.validateExtraction(extractionResult, numberedLines.size)
 
-        // Store memory items (replace for session — idempotent by replacement)
+        // Store memory items (replace for session — idempotent by replacement). Reprocessing
+        // (TODO.md Phase 7) carries dismissals and corrections forward by evidence identity
+        // instead of losing them: extraction always assigns fresh ids, so matching on id alone
+        // would silently un-dismiss and orphan-correct every item on every rerun.
         val memoryDay = computeMemoryDay(allLines.first().startEpochMs)
         val extractionModel = extractionProvider?.let { "${it.name}:${it.model}" } ?: TRANSCRIPT_ONLY
         val nowMs = now()
-        val memoryItems = extractionResult.items.map { item ->
+        val previousItems = memoryItemDao.allForSession(sessionId)
+        val freshItems = extractionResult.items.map { item ->
             MemoryItemEntity(
                 id = ids.next().toString(),
                 sessionId = sessionId,
@@ -354,7 +363,17 @@ class ProcessingPipeline(
                 extractedAtEpochMs = nowMs,
             )
         }
-        memoryItemDao.replaceForSession(sessionId, memoryItems)
+        val reconciliation = MemoryReconciler.reconcile(
+            previous = previousItems.map { it.toIdentity() },
+            previousDismissedAt = previousItems.mapNotNull { old ->
+                old.dismissedAtEpochMs?.let { old.id to it }
+            }.toMap(),
+            current = freshItems.map { it.toIdentity() },
+        )
+        val memoryItems = freshItems.map { item ->
+            reconciliation.carriedDismissals[item.id]?.let { item.copy(dismissedAtEpochMs = it) } ?: item
+        }
+        replaceSessionMemoryItems(sessionId, memoryItems, reconciliation.correctionReassignments)
 
         // Build and store daily report, aggregated over every session in this memory day —
         // not just the one just processed — so a later session never overwrites an earlier
@@ -438,6 +457,23 @@ class ProcessingPipeline(
     }
 
     /**
+     * Replaces a session's memory items and repoints every correction [correctionReassignments]
+     * identifies as belonging to one of the new items, in one transaction (TODO.md Phase 7): a
+     * database fault here must never leave a correction pointed at an item that no longer
+     * exists, nor the old items still present alongside the new ones.
+     */
+    private suspend fun replaceSessionMemoryItems(
+        sessionId: String,
+        items: List<MemoryItemEntity>,
+        correctionReassignments: Map<String, String>,
+    ) = database.withTransaction {
+        memoryItemDao.replaceForSession(sessionId, items)
+        for ((oldItemId, newItemId) in correctionReassignments) {
+            memoryCorrectionDao.reassignItemId(oldItemId, newItemId)
+        }
+    }
+
+    /**
      * A retryable failure counts against a bounded budget (ADR-0020): most are transient
      * (network, a momentary disk fault) and resolve themselves, but a failure that repeats on
      * every attempt must eventually surface rather than retry forever. [ProcessingSettings]'s
@@ -464,3 +500,16 @@ class ProcessingPipeline(
         private val TERMINAL_STATES = setOf("COMPLETED", "FAILED")
     }
 }
+
+/** This item's matching identity for reconciling it across a reprocessing run. */
+private fun MemoryItemEntity.toIdentity() = IdentifiedMemoryItem(
+    id = id,
+    identity = MemoryItemIdentity(
+        kind = kind,
+        evidenceEpochMs = evidenceEpochMs,
+        owner = owner,
+        counterpart = counterpart,
+        direction = direction,
+        due = due,
+    ),
+)

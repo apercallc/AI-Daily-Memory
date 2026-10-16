@@ -52,9 +52,11 @@ data class MemoryItemEntity(
  * text is its latest correction by [correctedAtEpochMs], falling back to the extracted text when
  * none exists.
  *
- * Known limitation shared with dismissal (ADR-0019): [MemoryItemDao.replaceForSession] deletes
- * and reinserts a session's items on every (re)extraction run, so a correction tied to an old
- * item id is orphaned if that session is ever reprocessed.
+ * [MemoryItemDao.replaceForSession] deletes and reinserts a session's items on every
+ * (re)extraction run, which by itself would orphan a correction tied to an old item id; the
+ * caller (see [com.apercallc.aidailymemory.processing.ProcessingPipeline]) uses
+ * `MemoryReconciler` to repoint a correction at the new item replacing the old one by matching
+ * on evidence identity first, so reprocessing (TODO.md Phase 7) does not silently lose it.
  */
 @Entity(
     tableName = "memory_item_correction",

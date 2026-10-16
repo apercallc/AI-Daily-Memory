@@ -629,6 +629,117 @@ class ProcessingPipelineTest {
         assertEquals(setOf("from chunk 1", "from chunk 2"), items.map { it.text }.toSet())
     }
 
+    @Test
+    fun `reprocessing a session carries its dismissal and correction forward instead of losing them`() = runTest {
+        addTranscribedSession()
+        val firstRun = pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "action", text = "Send the deck", confidence = "likely",
+                            quote = null, owner = "Sam", due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+        assertEquals(ProcessingRun(1, 0, 0), firstRun)
+        val original = database.memoryItems().forSession(SESSION_ID).single()
+        database.memoryItems().dismiss(original.id, epochMs = 500L)
+        database.memoryCorrections().insert(
+            com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity(
+                id = "correction-1",
+                itemId = original.id,
+                correctedText = "Send the updated deck",
+                correctedAtEpochMs = 600L,
+            ),
+        )
+
+        // Simulate a reprocessing run (e.g. after the user switches to a better extraction
+        // model): the pipeline redoes extraction for an already-COMPLETED session.
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L))
+        val secondRun = pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "better-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        // Same real-world fact (same kind, same evidence anchor, same owner),
+                        // reworded by the better model — must be recognized as the same item.
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "action", text = "Send the deck to the team", confidence = "confirmed",
+                            quote = null, owner = "Sam", due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+        assertEquals(ProcessingRun(1, 0, 0), secondRun)
+
+        val replaced = database.memoryItems().allForSession(SESSION_ID).single()
+        assertFalse(replaced.id == original.id, "extraction always assigns a fresh id")
+        assertEquals(500L, replaced.dismissedAtEpochMs, "the dismissal must survive reprocessing")
+        val carriedCorrection = database.memoryCorrections().latestForItem(replaced.id)
+        assertEquals(
+            "Send the updated deck",
+            carriedCorrection?.correctedText,
+            "the correction must be repointed at the new item, not orphaned",
+        )
+    }
+
+    @Test
+    fun `reprocessing with no matching item leaves the old correction inert, not misapplied`() = runTest {
+        addTranscribedSession()
+        pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "idea", text = "An idea", confidence = "possible",
+                            quote = null, owner = null, due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+        val original = database.memoryItems().forSession(SESSION_ID).single()
+        database.memoryCorrections().insert(
+            com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity(
+                id = "correction-1", itemId = original.id, correctedText = "A better idea", correctedAtEpochMs = 600L,
+            ),
+        )
+
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L))
+        pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                // A different real-world fact entirely: no identity match is possible.
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "question", text = "A question", confidence = "possible",
+                            quote = null, owner = null, due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+
+        val replaced = database.memoryItems().allForSession(SESSION_ID).single()
+        assertEquals(null, replaced.dismissedAtEpochMs)
+        assertEquals(null, database.memoryCorrections().latestForItem(replaced.id))
+    }
+
     private fun transcriptProvider(result: suspend () -> TranscriptResult) = object : TranscriptionProvider {
         override val name = "test"
         override val model = "test-model"
@@ -725,6 +836,7 @@ class ProcessingPipelineTest {
         speechDao = database.speech(),
         clipDao = database.clips(),
         memoryItemDao = database.memoryItems(),
+        memoryCorrectionDao = database.memoryCorrections(),
         dailyReportDao = database.dailyReports(),
         localTranscriptDao = database.localTranscripts(),
         processingStateDao = database.processingState(),
