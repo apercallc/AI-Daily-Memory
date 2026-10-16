@@ -416,8 +416,19 @@ and complete data rights. The product remains free under ADR-0028.
 
 ## Data portability
 
-- [ ] Verify export completeness against the data inventory and account deletion across derived data,
+- [x] Verify export completeness against the data inventory and account deletion across derived data,
   embeddings, jobs, and retained objects (SECURITY.md)
+  - Done: `docs/product/DATA_PORTABILITY_AUDIT.md`. Every one of the 21 tables in
+    `backend/app/db/models.py` checked directly against `docs/product/DATA_INVENTORY.md`:
+    18 cascade straight off `users.id`, `login_failures` cascades two hops through
+    `credentials`, and `pending_account_object_deletions` deliberately has no FK at all (it
+    must outlive the user row by design). No embeddings table exists yet (Gate E not crossed).
+    Export's seven field-generating functions in `app/api/export.py` checked field-by-field
+    against every inventory row marked "Yes"/"No" — all confirmed accurate. One real
+    documentation gap found and fixed: `processing_jobs` was missing from the inventory table
+    entirely (now added, Internal, no export, like `usage_counters`); one ambiguous
+    relationship clarified (`notes.transcript_text`'s content is exported via `daily_reports`'
+    `transcriptLines`, not duplicated onto the note row — not a gap, but unclear until traced).
 
 ### Phase 10 exit gate
 

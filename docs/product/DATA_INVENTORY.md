@@ -38,8 +38,9 @@ Classification bands used below:
 | `sealed_deliveries` (transcript, HPKE-sealed to the phone's key) | Highly sensitive (ciphertext; server cannot read it) | 7-day hold or until the phone acknowledges | No (the server can't decrypt it) |
 | `memory_items` / `memory_item_evidence` / `memory_item_corrections` | Sensitive | Until the session/account is deleted | Yes, including corrections |
 | `daily_reports` | Sensitive | Until the account is deleted; regenerated per extraction pass | Yes |
-| `notes` / `note_folders` / `deleted_notes` | Sensitive; **Highly sensitive** when `notes.transcript_text` is populated (raw spoken words, filled only if the user turns on full transcript sync — see `Note` model docstring) | Until deleted | Yes |
+| `notes` / `note_folders` / `deleted_notes` | Sensitive; **Highly sensitive** when `notes.transcript_text` is populated (raw spoken words, filled only if the user turns on full transcript sync — see `Note` model docstring) | Until deleted | Yes — titles/organization directly; the raw spoken words themselves are exported as part of `daily_reports` (the `transcriptLines` the report JSON carries), not duplicated onto the note row itself. |
 | `usage_counters` | Internal | Per-day counters; not separately purged (low-sensitivity, no content) | No |
+| `processing_jobs` | Internal | Job-queue state (kind, attempts, lease, error code) referencing an upload/session id; no transcript or memory content | No |
 | `email_tokens` (password reset / verify — hash only) | Internal (credential-adjacent) | Single-use, expires | No |
 | `login_failures` (keyed hash of client address, never the address) | Internal | Pruned after a day idle | No |
 | `pending_account_object_deletions` | Internal | Deleted once the purge completes (or dead-lettered — see `app/retention.py`) | No |
