@@ -65,6 +65,11 @@ audio, transcripts, or memory content.
 
 ## Open items before public release (TODO.md Phase 8)
 
-The published retention/deletion matrix, privacy data-flow diagram, and data inventory
-remain release gates. Self-service export and account deletion are available in the web app.
-The landing page (website/) must continue to match these claims.
+The retention/deletion matrix, privacy data-flow diagram, data inventory, and threat model are
+now written: `docs/product/RETENTION_AND_DELETION.md`, `docs/product/DATA_FLOW.md`,
+`docs/product/DATA_INVENTORY.md`, `docs/security/THREAT_MODEL.md`. What remains a release gate:
+a lawyer's review of this page and `/terms.html` (both still marked "Draft"), the
+authorization-test audit the threat model's "Open items" section names, and the operational
+work (uptime monitoring, backup drill, load/chaos tests) `docs/product/LAUNCH_GAPS.md` tracks.
+Self-service export and account deletion are available in the web app. The landing page
+(website/) must continue to match these claims.
