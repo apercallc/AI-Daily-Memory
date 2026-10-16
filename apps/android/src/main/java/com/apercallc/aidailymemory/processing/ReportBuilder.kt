@@ -20,6 +20,12 @@ object ReportBuilder {
         encodeDefaults = true
     }
 
+    /** Items beyond this many per kind are counted ("(+N more)"), not spelled out in the summary. */
+    private const val MAX_ITEMS_PER_KIND = 8
+
+    /** Hard cap on the whole summary string, after per-kind bounding (TODO.md "bound processing context"). */
+    private const val MAX_SUMMARY_CHARS = 1_000
+
     fun build(
         memoryDay: String,
         items: List<MemoryItemEntity>,
@@ -77,18 +83,30 @@ object ReportBuilder {
         val grouped = items.groupBy { it.kind }
         val parts = mutableListOf<String>()
         grouped["decision"]?.let { decisions ->
-            parts.add("Decided: " + decisions.joinToString("; ") { it.text })
+            parts.add("Decided: " + joinBounded(decisions.map { it.text }))
         }
         grouped["action"]?.let { actions ->
-            parts.add("To do: " + actions.joinToString("; ") { it.text })
+            parts.add("To do: " + joinBounded(actions.map { it.text }))
         }
         grouped["commitment"]?.let { commitments ->
-            parts.add("Committed: " + commitments.joinToString("; ") { it.text })
+            parts.add("Committed: " + joinBounded(commitments.map { it.text }))
         }
         grouped["idea"]?.let { ideas ->
-            parts.add("Ideas: " + ideas.joinToString("; ") { it.text })
+            parts.add("Ideas: " + joinBounded(ideas.map { it.text }))
         }
-        return parts.joinToString(". ")
+        // A day with a very long session can produce far more items than a headline summary
+        // should ever hold (TODO.md "bound processing context"): cap the whole string too, on
+        // top of the per-kind cap above, rather than regenerating a summary of the summary.
+        return parts.joinToString(". ").let {
+            if (it.length <= MAX_SUMMARY_CHARS) it else it.take(MAX_SUMMARY_CHARS).trimEnd() + "…"
+        }
+    }
+
+    /** Joins up to [MAX_ITEMS_PER_KIND] texts; any remainder is counted, never silently dropped. */
+    private fun joinBounded(texts: List<String>): String {
+        val shown = texts.take(MAX_ITEMS_PER_KIND).joinToString("; ")
+        val remaining = texts.size - MAX_ITEMS_PER_KIND
+        return if (remaining > 0) "$shown (+$remaining more)" else shown
     }
 
     private fun MemoryItemEntity.toReportItem(): ReportItem = ReportItem(

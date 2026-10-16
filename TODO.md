@@ -116,10 +116,15 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
     summary, coverage, items by kind); its Share action renders the same report as Markdown and
     hands it to the Android share sheet. Days without a generated report show a truthful empty
     state instead of a blank screen.
-- [ ] Keep reports grounded and bound processing context
+- [x] Keep reports grounded and bound processing context
   - Avoid summary-of-summary drift; add chunking/truncation for very long days before generating a
     report. Headlines and deterministic summaries already exist; keep generated content tied to
     evidence and avoid claiming unsupported summary quality.
+  - `TranscriptChunker` (core/recording, pure/tested) bounds one extraction call's transcript so
+    a long session never becomes a single unbounded prompt; chunk results are concatenated, not
+    re-summarized, and line indices are preserved so evidence citations stay correct.
+    `ReportBuilder`'s per-kind and whole-string caps keep the generated summary itself bounded
+    even when a day produces far more items than a headline should ever spell out.
 
 ## Owner voice attribution (deferred, not a launch requirement)
 

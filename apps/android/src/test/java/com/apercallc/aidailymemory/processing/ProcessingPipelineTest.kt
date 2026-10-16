@@ -19,6 +19,7 @@ import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.NumberedLine
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
+import com.apercallc.aidailymemory.recording.processing.TranscriptChunker
 import com.apercallc.aidailymemory.recording.processing.TranscriptionProvider
 import com.apercallc.aidailymemory.recording.processing.TranscriptResult
 import com.apercallc.aidailymemory.recording.processing.TranscribedSpan
@@ -523,6 +524,59 @@ class ProcessingPipelineTest {
         assertEquals("FAILED", database.processingState().forSession(SESSION_ID)?.state)
     }
 
+    @Test
+    fun `a long transcript is chunked into bounded extraction calls, and results are concatenated`() = runTest {
+        database.segments().insert(
+            SegmentEntity(
+                segmentId = SEGMENT_ID, sessionId = SESSION_ID, sequence = 0, state = "DELETED",
+                byteSize = 0, durationMs = 1_000, sha256 = null, acknowledgedAtEpochMs = null, defect = null,
+                fileName = "$SEGMENT_ID.seg", codec = "aac-lc-adts", sampleRateHz = 16_000, channelCount = 1,
+                continuesPrevious = false, start = CaptureTimeColumns(1_000L, "UTC", 0, "1970-01-01", 0L, "boot"),
+            ),
+        )
+        database.localTranscripts().insertAll(
+            listOf(
+                LocalTranscriptLineEntity(
+                    "line-a", SESSION_ID, SEGMENT_ID, 1_000L, 1_050L, null, "aaaaa", 0.9, "test", "test-model",
+                ),
+                LocalTranscriptLineEntity(
+                    "line-b", SESSION_ID, SEGMENT_ID, 1_050L, 1_100L, null, "bbbbb", 0.9, "test", "test-model",
+                ),
+            ),
+        )
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L))
+
+        val callLines = mutableListOf<List<NumberedLine>>()
+        val run = pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>): ExtractionResult {
+                    callLines.add(lines)
+                    return ExtractionResult(
+                        listOf(
+                            com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                                kind = "idea", text = "from chunk ${callLines.size}", confidence = "likely",
+                                quote = null, owner = null, due = null, direction = null, counterpart = null,
+                                evidenceSegmentIndices = listOf(lines.first().index),
+                            ),
+                        ),
+                    )
+                }
+            },
+            // Each line is 5 chars; a budget of 5 forces one line per chunk.
+            extractionChunkMaxChars = 5,
+        ).processPending()
+
+        assertEquals(ProcessingRun(1, 0, 0), run)
+        assertEquals(2, callLines.size, "two chunks, one extraction call each")
+        // Indices are preserved from the full line list, never renumbered per chunk.
+        assertEquals(listOf(0), callLines[0].map { it.index })
+        assertEquals(listOf(1), callLines[1].map { it.index })
+        val items = database.memoryItems().forSession(SESSION_ID)
+        assertEquals(setOf("from chunk 1", "from chunk 2"), items.map { it.text }.toSet())
+    }
+
     private fun transcriptProvider(result: suspend () -> TranscriptResult) = object : TranscriptionProvider {
         override val name = "test"
         override val model = "test-model"
@@ -603,6 +657,7 @@ class ProcessingPipelineTest {
         },
         configGaps: () -> List<com.apercallc.aidailymemory.recording.processing.ConfigGap> = { emptyList() },
         segmentStore: SegmentStore? = null,
+        extractionChunkMaxChars: Int = TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK,
     ) = ProcessingPipeline(
         segments = segmentStore ?: SegmentStore(
             directory = ApplicationProvider.getApplicationContext<Context>().cacheDir,
@@ -630,6 +685,7 @@ class ProcessingPipelineTest {
         ids = UuidV7Generator(),
         now = { 42L },
         configGaps = configGaps,
+        extractionChunkMaxChars = extractionChunkMaxChars,
     )
 
     private fun encryptedSegmentStore(): Pair<SegmentStore, File> {

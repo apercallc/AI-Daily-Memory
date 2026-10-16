@@ -114,4 +114,26 @@ class ReportBuilderTest {
 
         assertEquals(report, ReportBuilder.deserialize(ReportBuilder.serialize(report)))
     }
+
+    @Test
+    fun `more than 8 items of one kind are counted, not all spelled out`() {
+        val items = (1..12).map { item("decision", "d$it", id = "d$it") }
+
+        val report = build(items)
+
+        assertTrue(report.summary.startsWith("Decided: d1; d2; d3; d4; d5; d6; d7; d8 (+4 more)"))
+        assertEquals(12, report.items.size)
+    }
+
+    @Test
+    fun `a very long summary is capped with an ellipsis, not left unbounded`() {
+        val longText = "decision text padded to be unusually long so that even just the first eight of " +
+            "them, before any per-kind truncation marker is even added, already exceed the whole-summary cap "
+        val items = (1..50).map { item("decision", "$longText$it", id = "d$it") }
+
+        val report = build(items)
+
+        assertTrue(report.summary.length <= 1_001)
+        assertTrue(report.summary.endsWith("…"))
+    }
 }

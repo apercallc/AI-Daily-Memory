@@ -29,7 +29,9 @@ import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.NumberedLine
 import com.apercallc.aidailymemory.recording.processing.ProcessingException
 import com.apercallc.aidailymemory.recording.processing.ProcessingValidation
+import com.apercallc.aidailymemory.recording.processing.TokenUsage
 import com.apercallc.aidailymemory.recording.processing.TranscriptionProvider
+import com.apercallc.aidailymemory.recording.processing.TranscriptChunker
 import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.segment.SegmentState
 import com.apercallc.aidailymemory.recording.speech.VoiceVad
@@ -78,6 +80,9 @@ class ProcessingPipeline(
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
     /** Non-empty = settings are incomplete: sessions wait instead of failing (see settings UI). */
     private val configGaps: () -> List<ConfigGap> = { emptyList() },
+    /** Bounds one extraction call's transcript (TODO.md "bound processing context"); override
+     *  only in tests — production always uses [TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK]. */
+    private val extractionChunkMaxChars: Int = TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK,
 ) {
     /**
      * Processes up to [limit] sessions, oldest first. Cancellation stops between sessions.
@@ -287,8 +292,23 @@ class ProcessingPipeline(
 
         updateState(sessionId, "EXTRACTING", null)
 
-        // Extract memory items; with summaries off there are none and the transcript stands alone.
-        val extractionResult = extractionProvider?.extract(numberedLines) ?: ExtractionResult(emptyList())
+        // Extract memory items; with summaries off there are none and the transcript stands
+        // alone. A very long session is chunked first (TODO.md "bound processing context") so
+        // one meeting's transcript never goes to a provider as a single unbounded prompt; each
+        // chunk is extracted independently and the results concatenated, not re-summarized.
+        val extractionResult = extractionProvider?.let { provider ->
+            val chunks = TranscriptChunker.chunk(numberedLines, extractionChunkMaxChars)
+            val results = chunks.map { provider.extract(it) }
+            ExtractionResult(
+                items = results.flatMap { it.items },
+                tokenUsage = results.mapNotNull { it.tokenUsage }.takeIf { it.isNotEmpty() }?.let { usages ->
+                    TokenUsage(
+                        inputTokens = usages.sumOf { it.inputTokens },
+                        outputTokens = usages.sumOf { it.outputTokens },
+                    )
+                },
+            )
+        } ?: ExtractionResult(emptyList())
         if (extractionProvider?.isExternalProvider == true) {
             providerUsageDao.record(
                 ProviderUsageEntity(
