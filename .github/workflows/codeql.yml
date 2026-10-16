@@ -52,7 +52,11 @@ jobs:
           languages: java-kotlin
           build-mode: manual
       - name: Compile debug phone and Wear OS variants
-        run: ./gradlew --no-daemon --no-configuration-cache :apps:android:assembleDebug :apps:wear:assembleDebug
+        # --no-build-cache: the regular CI workflow runs on the same push and can populate the
+        # Gradle build cache first; a cache hit here means the compiler never actually runs, and
+        # CodeQL's tracer (which hooks compiler invocations, not Gradle task execution) then
+        # analyzes nothing ("no source code seen during build").
+        run: ./gradlew --no-daemon --no-configuration-cache --no-build-cache :apps:android:assembleDebug :apps:wear:assembleDebug
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:java-kotlin"
