@@ -39,6 +39,12 @@ class RhythmRunner(
     private val onWakeReminder: () -> Unit,
     /** Recording came back on its own after a night paused (day not ended at bedtime). */
     private val onResumedAfterSleep: () -> Unit = {},
+    /** The day just ended at bedtime (TODO.md "Generate reports at bedtime"): a chance to kick
+     *  off on-device processing right away instead of waiting for the next opportunistic check. */
+    private val onDayEnded: () -> Unit = {},
+    /** Wake time after a day that ended at bedtime: deliver that day's report, if one was
+     *  generated (TODO.md "deliver them at wake time"). Runs after [onWakeReminder]. */
+    private val onWakeDeliverReport: suspend () -> Unit = {},
     private val now: () -> Instant = Instant::now,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
@@ -114,13 +120,19 @@ class RhythmRunner(
         when (action) {
             RhythmAction.PAUSE -> controller.dispatch(RecordingCommand.ScheduledPause)
             RhythmAction.RESUME -> controller.dispatch(RecordingCommand.ScheduledResume)
-            RhythmAction.END_DAY -> controller.dispatch(RecordingCommand.ScheduledStop)
+            RhythmAction.END_DAY -> {
+                controller.dispatch(RecordingCommand.ScheduledStop)
+                onDayEnded()
+            }
             RhythmAction.WAKE_REMINDER -> {
                 val status = controller.state.value.status
                 val idle = status == RecordingStatus.IDLE || status == RecordingStatus.COMPLETED
                 // A "good morning" hours late (phone off overnight) or while already
                 // recording is noise, not help.
-                if (idle && lateBy <= REMINDER_GRACE) onWakeReminder()
+                if (idle && lateBy <= REMINDER_GRACE) {
+                    onWakeReminder()
+                    onWakeDeliverReport()
+                }
             }
         }
     }

@@ -497,6 +497,58 @@ class ProcessingPipelineTest {
             report.items.map { it.text }.toSet(),
         )
         assertEquals(2, report.coverage.sessions)
+        assertEquals(com.apercallc.aidailymemory.recording.processing.DailyReportStatus.COMPLETE, report.status)
+    }
+
+    @Test
+    fun `a day's report is partial until every session registered for it finishes processing`() = runTest {
+        // The pipeline computes a session's memory day from its first transcript line's epoch
+        // time in the device zone; register sessions under that same computed value so this
+        // test doesn't depend on which zone it happens to run in.
+        val day = java.time.Instant.ofEpochMilli(1_000L).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+        database.sessions().register(SessionInfoEntity("s1", day, "UTC", 1_000L, null))
+        database.sessions().register(SessionInfoEntity("s2", day, "UTC", 2_000L, null))
+        database.segments().insert(
+            SegmentEntity(
+                segmentId = "seg-s1", sessionId = "s1", sequence = 0, state = "DELETED",
+                byteSize = 0, durationMs = 1_000, sha256 = null, acknowledgedAtEpochMs = null, defect = null,
+                fileName = "seg-s1.seg", codec = "aac-lc-adts", sampleRateHz = 16_000, channelCount = 1,
+                continuesPrevious = false, start = CaptureTimeColumns(1_000L, "UTC", 0, day, 0L, "boot"),
+            ),
+        )
+        database.localTranscripts().insertAll(
+            listOf(LocalTranscriptLineEntity("line-s1", "s1", "seg-s1", 1_000L, 1_050L, null, "hello", 0.9, "test", "test-model")),
+        )
+        database.processingState().upsert(ProcessingStateEntity("s1", "PENDING", true, null, 0L))
+
+        val run1 = pipeline(extractionProvider = null).processPending()
+
+        assertEquals(ProcessingRun(1, 0, 0), run1)
+        val afterS1 = ReportBuilder.deserialize(database.dailyReports().observeRecent(1).first().single().reportJson)
+        assertEquals(
+            com.apercallc.aidailymemory.recording.processing.DailyReportStatus.PARTIAL,
+            afterS1.status,
+            "s2 is registered for this day but hasn't started processing yet",
+        )
+
+        database.segments().insert(
+            SegmentEntity(
+                segmentId = "seg-s2", sessionId = "s2", sequence = 0, state = "DELETED",
+                byteSize = 0, durationMs = 1_000, sha256 = null, acknowledgedAtEpochMs = null, defect = null,
+                fileName = "seg-s2.seg", codec = "aac-lc-adts", sampleRateHz = 16_000, channelCount = 1,
+                continuesPrevious = false, start = CaptureTimeColumns(2_000L, "UTC", 0, day, 0L, "boot"),
+            ),
+        )
+        database.localTranscripts().insertAll(
+            listOf(LocalTranscriptLineEntity("line-s2", "s2", "seg-s2", 2_000L, 2_050L, null, "world", 0.9, "test", "test-model")),
+        )
+        database.processingState().upsert(ProcessingStateEntity("s2", "PENDING", true, null, 0L))
+
+        val run2 = pipeline(extractionProvider = null).processPending()
+
+        assertEquals(ProcessingRun(1, 0, 0), run2)
+        val afterBoth = ReportBuilder.deserialize(database.dailyReports().observeRecent(1).first().single().reportJson)
+        assertEquals(com.apercallc.aidailymemory.recording.processing.DailyReportStatus.COMPLETE, afterBoth.status)
     }
 
     @Test

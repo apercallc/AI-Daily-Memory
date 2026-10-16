@@ -87,6 +87,31 @@ class CaptureNotifications(private val context: Context) {
     fun cancelMorningReminder() = manager.cancel(ID_REMINDER)
 
     /**
+     * Wake time after a day that ended at bedtime, and that day's report finished generating
+     * (TODO.md "deliver them at wake time"): names what the day held, and says plainly when
+     * some of it is still processing rather than implying the report is the final word.
+     */
+    @SuppressLint("MissingPermission") // Guarded by areNotificationsEnabled().
+    fun dailyReportReady(headline: String, partial: Boolean) {
+        if (!manager.areNotificationsEnabled()) return
+        val body = if (partial) {
+            context.getString(R.string.report_ready_body_partial, headline)
+        } else {
+            context.getString(R.string.report_ready_body, headline)
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_RHYTHM)
+            .setSmallIcon(R.drawable.ic_stat_recording)
+            .setContentTitle(context.getString(R.string.report_ready_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(openApp())
+            .build()
+        manager.notify(ID_REPORT_READY, notification)
+    }
+
+    /**
      * Recording reopened by itself after a night paused (the day isn't ended at bedtime). The
      * status notification is silent, so say so once, audibly, on the rhythm channel.
      */
@@ -270,5 +295,6 @@ class CaptureNotifications(private val context: Context) {
         const val ID_ALERT = 2
         const val ID_REMINDER = 3
         const val ID_RESUMED = 4
+        const val ID_REPORT_READY = 5
     }
 }

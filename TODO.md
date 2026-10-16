@@ -108,9 +108,16 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 
 ## Daily summary / daily report
 
-- [ ] Generate reports at bedtime and deliver them at wake time from structured memory + evidence
+- [x] Generate reports at bedtime and deliver them at wake time from structured memory + evidence
   - Connect existing report timing calculations to scheduled processing and wake-time delivery;
     show partial status while audio is pending.
+  - Bedtime (rhythm END_DAY) now kicks off the on-device processing job immediately instead of
+    waiting for the next opportunistic charging check; wake time (the existing morning reminder)
+    now also delivers the most recent generated report as a notification. `DailyReport` carries
+    a `status` (`complete`/`partial`, core/recording), computed from whether every session
+    known to belong to that memory day has reached a terminal processing outcome; the report
+    screen, the shared Markdown, and the wake notification all state plainly when a day is only
+    partially processed instead of implying it is final.
 - [x] Add an in-app report screen and share reports as Markdown through the Android share sheet
   - Each day in the timeline has a "View report" action into a read-only report screen (headline,
     summary, coverage, items by kind); its Share action renders the same report as Markdown and

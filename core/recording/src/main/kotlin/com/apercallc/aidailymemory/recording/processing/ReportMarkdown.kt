@@ -24,6 +24,9 @@ fun renderMarkdown(report: DailyReport): String {
     body.append("**${report.headline}**\n\n")
     body.append("${report.summary}\n\n")
     body.append(coverageLine(report.coverage))
+    if (report.status == DailyReportStatus.PARTIAL) {
+        body.append(PARTIAL_NOTICE)
+    }
 
     val sections = itemSections(report.items)
     if (sections.isNotEmpty()) {
@@ -32,6 +35,9 @@ fun renderMarkdown(report: DailyReport): String {
     }
     return body.toString()
 }
+
+private const val PARTIAL_NOTICE =
+    "Still processing — not all of today's audio has been analyzed yet.\n"
 
 private fun coverageLine(coverage: ReportCoverage): String {
     val minutes = (coverage.recordedMs + 30_000) / 60_000

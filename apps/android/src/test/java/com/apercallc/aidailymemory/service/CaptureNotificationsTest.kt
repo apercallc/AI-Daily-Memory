@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.service
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.presentation.IndicatorVisibility
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -26,6 +27,29 @@ class CaptureNotificationsTest {
 
         val ids = shadowOf(system).allNotifications.size
         assertEquals(2, ids)
+    }
+
+    @Test
+    fun `a partial daily report notice mentions the day is still processing`() {
+        val notifications = CaptureNotifications(context).also { it.createChannels() }
+
+        notifications.dailyReportReady(headline = "2 decisions", partial = true)
+
+        val posted = shadowOf(system).allNotifications.single()
+        assertEquals(
+            context.getString(R.string.report_ready_body_partial, "2 decisions"),
+            shadowOf(posted).contentText,
+        )
+    }
+
+    @Test
+    fun `a complete daily report notice just states the headline`() {
+        val notifications = CaptureNotifications(context).also { it.createChannels() }
+
+        notifications.dailyReportReady(headline = "2 decisions", partial = false)
+
+        val posted = shadowOf(system).allNotifications.single()
+        assertEquals("2 decisions", shadowOf(posted).contentText)
     }
 
     @Test

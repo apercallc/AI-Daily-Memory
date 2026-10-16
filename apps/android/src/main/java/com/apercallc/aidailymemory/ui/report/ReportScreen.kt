@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.processing.DailyReport
+import com.apercallc.aidailymemory.recording.processing.DailyReportStatus
 import com.apercallc.aidailymemory.recording.processing.ReportItem
 import com.apercallc.aidailymemory.ui.EmptyState
 import com.apercallc.aidailymemory.ui.LoadingState
@@ -60,6 +61,15 @@ fun ReportScreen(state: ReportLoadState, modifier: Modifier = Modifier) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.semantics { heading() },
                 )
+            }
+            if (state.report.status == DailyReportStatus.PARTIAL) {
+                item {
+                    Text(
+                        text = stringResource(R.string.report_partial_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             if (state.report.summary.isNotBlank()) {
                 item {

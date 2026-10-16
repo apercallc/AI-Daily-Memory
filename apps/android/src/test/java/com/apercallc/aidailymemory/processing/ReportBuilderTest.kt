@@ -136,4 +136,21 @@ class ReportBuilderTest {
         assertTrue(report.summary.length <= 1_001)
         assertTrue(report.summary.endsWith("…"))
     }
+
+    @Test
+    fun `a report defaults to complete status`() {
+        assertEquals(
+            com.apercallc.aidailymemory.recording.processing.DailyReportStatus.COMPLETE,
+            build(listOf(item("decision", "go"))).status,
+        )
+    }
+
+    @Test
+    fun `a report built with isComplete false is marked partial`() {
+        val report = ReportBuilder.build(
+            "2026-10-12", listOf(item("decision", "go")), emptyList(), 42L, "user-key:m", isComplete = false,
+        )
+
+        assertEquals(com.apercallc.aidailymemory.recording.processing.DailyReportStatus.PARTIAL, report.status)
+    }
 }

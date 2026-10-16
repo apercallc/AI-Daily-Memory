@@ -43,6 +43,8 @@ class RhythmRunnerTest {
     private val alarms = mutableListOf<Instant?>()
     private var reminders = 0
     private var resumedAfterSleep = 0
+    private var dayEndedCount = 0
+    private var reportsDelivered = 0
 
     // 2026-09-22 is a Tuesday.
     private fun at(hour: Int, minute: Int = 0, day: Int = 22): Instant =
@@ -90,6 +92,8 @@ class RhythmRunnerTest {
             alarms = { alarms += it },
             onWakeReminder = { reminders++ },
             onResumedAfterSleep = { resumedAfterSleep++ },
+            onDayEnded = { dayEndedCount++ },
+            onWakeDeliverReport = { reportsDelivered++ },
             now = { now },
             zone = { zone },
         )
@@ -142,10 +146,12 @@ class RhythmRunnerTest {
         now = at(23, 0)
         runner.catchUp()
         assertEquals(RecordingStatus.COMPLETED, controller.state.value.status)
+        assertEquals(1, dayEndedCount, "bedtime is a chance to kick off processing right away")
 
         now = at(7, 2, day = 23)
         runner.catchUp()
         assertEquals(1, reminders)
+        assertEquals(1, reportsDelivered, "wake time delivers whatever report was generated")
         assertEquals(RecordingStatus.COMPLETED, controller.state.value.status)
     }
 

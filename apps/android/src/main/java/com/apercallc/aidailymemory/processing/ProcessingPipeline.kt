@@ -362,7 +362,16 @@ class ProcessingPipeline(
         val daySessionIds = sessionDao.sessionIdsForDay(memoryDay)
         val dayItems = memoryItemDao.forDay(memoryDay)
         val dayLines = if (daySessionIds.isEmpty()) allLines else localTranscriptDao.forSessions(daySessionIds)
-        val report = ReportBuilder.build(memoryDay, dayItems, dayLines, nowMs, extractionModel)
+        // Honest status (TODO.md "show partial status while audio is pending"): the day is
+        // only "complete" once every session known to belong to it — by registration, or by
+        // already having items/lines filed under it — has reached a terminal outcome. This
+        // session's own processing_state row still reads EXTRACTING at this point (it reaches
+        // COMPLETED right below), so it counts as done without a stale self-check.
+        val knownSessionIds = daySessionIds.toSet() + dayItems.map { it.sessionId } + dayLines.map { it.sessionId } + sessionId
+        val dayComplete = knownSessionIds.all {
+            it == sessionId || processingStateDao.forSession(it)?.state in TERMINAL_STATES
+        }
+        val report = ReportBuilder.build(memoryDay, dayItems, dayLines, nowMs, extractionModel, dayComplete)
         val reportJson = ReportBuilder.serialize(report)
         dailyReportDao.upsert(
             DailyReportEntity(
@@ -450,5 +459,8 @@ class ProcessingPipeline(
 
         /** Recorded as the report's model when no summary engine ran. */
         const val TRANSCRIPT_ONLY = "none:transcript-only"
+
+        /** A session past these states will not change again on its own; retry is manual. */
+        private val TERMINAL_STATES = setOf("COMPLETED", "FAILED")
     }
 }

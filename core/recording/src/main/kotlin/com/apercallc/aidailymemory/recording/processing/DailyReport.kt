@@ -26,7 +26,21 @@ data class DailyReport(
     val generatedAtEpochMs: Long,
     val extractionModel: String,
     val extractionVersion: Int,
+    /**
+     * [DailyReportStatus.COMPLETE] once every session in [memoryDay] has finished processing
+     * (or permanently failed); [DailyReportStatus.PARTIAL] while some of the day's audio is
+     * still pending (TODO.md "show partial status while audio is pending"). Defaults to
+     * complete so existing callers that don't yet track pending sessions keep building valid
+     * reports.
+     */
+    val status: String = DailyReportStatus.COMPLETE,
 )
+
+/** The two honest states a generated report can be in (TODO.md "bound processing context"). */
+object DailyReportStatus {
+    const val COMPLETE = "complete"
+    const val PARTIAL = "partial"
+}
 
 /**
  * One memory item in a daily report, with its evidence quote for verification.

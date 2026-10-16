@@ -4,6 +4,7 @@ import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.recording.processing.CoverageGap
 import com.apercallc.aidailymemory.recording.processing.DailyReport
+import com.apercallc.aidailymemory.recording.processing.DailyReportStatus
 import com.apercallc.aidailymemory.recording.processing.ReportCoverage
 import com.apercallc.aidailymemory.recording.processing.ReportItem
 import kotlinx.serialization.json.Json
@@ -32,6 +33,9 @@ object ReportBuilder {
         transcriptLines: List<LocalTranscriptLineEntity>,
         generatedAtEpochMs: Long,
         extractionModel: String,
+        /** False while some of this memory day's sessions have not finished processing yet
+         *  (TODO.md "show partial status while audio is pending"). */
+        isComplete: Boolean = true,
     ): DailyReport {
         val headline = items.firstOrNull()?.let { summarizeHeadline(items) } ?: "Transcript only"
         val summary = buildSummary(items)
@@ -54,6 +58,7 @@ object ReportBuilder {
             generatedAtEpochMs = generatedAtEpochMs,
             extractionModel = extractionModel,
             extractionVersion = 1,
+            status = if (isComplete) DailyReportStatus.COMPLETE else DailyReportStatus.PARTIAL,
         )
     }
 

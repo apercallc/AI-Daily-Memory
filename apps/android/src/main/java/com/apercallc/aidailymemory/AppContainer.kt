@@ -101,6 +101,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -395,6 +396,31 @@ class AppContainer(context: Context) {
             alarms = AndroidRhythmAlarms(app),
             onWakeReminder = notifications::morningReminder,
             onResumedAfterSleep = notifications::resumedAfterSleep,
+            onDayEnded = {
+                // Bedtime (TODO.md "Generate reports at bedtime"): kick off on-device
+                // processing right away rather than waiting for the next opportunistic check.
+                if (processingSettings.processingEnabled.value) processingScheduler.schedule()
+            },
+            onWakeDeliverReport = { deliverLatestReport() },
+        )
+    }
+
+    /**
+     * Wake time after a day ended at bedtime (TODO.md "deliver them at wake time"): shows the
+     * most recently generated report, whatever its status, so a phone that never charged
+     * overnight still gets a truthful partial notice instead of silence.
+     */
+    private suspend fun deliverLatestReport() {
+        val entity = database.dailyReports().observeRecent(1).first().firstOrNull() ?: return
+        val report = try {
+            com.apercallc.aidailymemory.processing.ReportBuilder.deserialize(entity.reportJson)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            logFailure(TAG, "report_delivery_unparseable", e, warning = true)
+            return
+        }
+        notifications.dailyReportReady(
+            headline = report.headline,
+            partial = report.status == com.apercallc.aidailymemory.recording.processing.DailyReportStatus.PARTIAL,
         )
     }
 

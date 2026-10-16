@@ -125,6 +125,9 @@
     <string name="resumed_after_sleep_title">Recording resumed</string>
     <string name="resumed_after_sleep_body">Your sleep schedule ended, so recording picked up again. Tap Pause any time.</string>
     <string name="reminder_body">Tap Start My Day when you\'re ready. Recording never starts on its own.</string>
+    <string name="report_ready_title">Yesterday\'s memory is ready</string>
+    <string name="report_ready_body">%1$s</string>
+    <string name="report_ready_body_partial">%1$s (still finishing up some of yesterday\'s audio)</string>
     <string name="channel_alerts_description">Tells you when recording stopped unexpectedly and needs you.</string>
 
     <!-- Navigation -->
@@ -376,6 +379,7 @@
     <string name="report_not_generated_title">No report yet</string>
     <string name="report_not_generated_body">This day has no generated report. Reports are produced after an AI-summarized session finishes processing.</string>
     <string name="report_loading">Loading report…</string>
+    <string name="report_partial_notice">Still processing — not all of today\'s audio has been analyzed yet.</string>
     <string name="report_coverage">Recorded %1$d min across %2$d %3$s.</string>
     <string name="report_coverage_session">session</string>
     <string name="report_coverage_sessions">sessions</string>

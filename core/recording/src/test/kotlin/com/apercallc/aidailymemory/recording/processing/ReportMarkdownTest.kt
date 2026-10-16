@@ -113,4 +113,18 @@ class ReportMarkdownTest {
 
         assertTrue(!md.contains("##"))
     }
+
+    @Test
+    fun `a partial report notes that processing is still in progress`() {
+        val md = renderMarkdown(report().copy(status = DailyReportStatus.PARTIAL))
+
+        assertTrue(md.contains("Still processing — not all of today's audio has been analyzed yet.\n"))
+    }
+
+    @Test
+    fun `a complete report carries no partial notice`() {
+        val md = renderMarkdown(report().copy(status = DailyReportStatus.COMPLETE))
+
+        assertTrue(!md.contains("Still processing"))
+    }
 }
