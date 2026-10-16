@@ -110,3 +110,39 @@ async def test_dead_jobs_are_listed_and_can_be_requeued_once(db: Engine, databas
     empty = io.StringIO()
     assert await run(["dead-jobs"], settings, empty) == 0
     assert empty.getvalue() == ""
+
+
+@pytest.mark.anyio
+async def test_dead_account_purges_are_listed_and_can_be_requeued_once(
+    db: Engine, database_url: str
+) -> None:
+    account = uuid.uuid4()
+    with db.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO pending_account_object_deletions "
+                "(account_id, purge_after, attempts, last_error_code, dead_at) "
+                "VALUES (:a, now(), 10, 'RuntimeError', now())"
+            ),
+            {"a": account},
+        )
+    settings = settings_for(database_url)
+
+    listing = io.StringIO()
+    assert await run(["dead-account-purges"], settings, listing) == 0
+    assert f"{account}  RuntimeError  attempts 10/10" in listing.getvalue()
+
+    first = io.StringIO()
+    assert await run(["requeue-account-purge", "--account-id", str(account)], settings, first) == 0
+    assert "Requeued." in first.getvalue()
+    with db.connect() as c:
+        row = c.execute(
+            text("SELECT attempts, last_error_code, dead_at FROM pending_account_object_deletions")
+        ).one()
+    assert tuple(row) == (0, None, None)
+
+    again = io.StringIO()
+    assert await run(["requeue-account-purge", "--account-id", str(account)], settings, again) == 1
+    empty = io.StringIO()
+    assert await run(["dead-account-purges"], settings, empty) == 0
+    assert empty.getvalue() == ""

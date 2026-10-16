@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import Engine, text
 
 from app.db import Database
-from app.retention import MAX_HOLD, PENDING_GRACE, SweepResult, sweep
+from app.retention import MAX_ACCOUNT_PURGE_ATTEMPTS, MAX_HOLD, PENDING_GRACE, SweepResult, sweep
 from tests.conftest import FakeObjectStore, make_account
 
 pytestmark = pytest.mark.anyio
@@ -214,6 +214,51 @@ async def test_failed_delayed_prefix_purge_is_retained_for_retry(
             )
             == 1
         )
+
+
+async def test_a_prefix_purge_is_dead_lettered_after_the_retry_budget(
+    database: Database,
+    db: Engine,
+) -> None:
+    """A permanent storage failure must surface to an operator, not retry forever."""
+    account_id = uuid.uuid4()
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pending_account_object_deletions "
+                "(account_id, purge_after, attempts) "
+                "VALUES (:account_id, :purge_after, :attempts)"
+            ),
+            {
+                "account_id": account_id,
+                "purge_after": NOW - timedelta(seconds=1),
+                "attempts": MAX_ACCOUNT_PURGE_ATTEMPTS - 1,
+            },
+        )
+
+    class DownPrefixStore(FakeObjectStore):
+        async def delete_prefix(self, prefix: str) -> int:
+            raise RuntimeError("store unavailable")
+
+    result = await sweep(database.sessions, DownPrefixStore(), url_ttl_seconds=TTL, now=NOW)
+
+    assert result.account_prefixes_dead_lettered == 1
+    with db.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT attempts, last_error_code, dead_at IS NOT NULL AS dead "
+                "FROM pending_account_object_deletions WHERE account_id = :account_id"
+            ),
+            {"account_id": account_id},
+        ).one()
+    assert row.attempts == MAX_ACCOUNT_PURGE_ATTEMPTS
+    assert row.last_error_code == "RuntimeError"
+    assert row.dead
+
+    # A dead-lettered row is never picked up again on its own.
+    again = await sweep(database.sessions, DownPrefixStore(), url_ttl_seconds=TTL, now=NOW)
+    assert again.errors == 0
+    assert again.account_prefixes_dead_lettered == 0
 
 
 async def test_nothing_to_sweep_is_quiet(database: Database) -> None:

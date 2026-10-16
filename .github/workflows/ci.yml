@@ -124,6 +124,18 @@ jobs:
       - name: Dependency audit
         run: uv run pip-audit
 
+      - name: Generate SBOM (CycloneDX)
+        if: matrix.python-version == '3.13'
+        run: uv run pip-audit --format cyclonedx-json --output sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-sbom
+          path: backend/sbom.cdx.json
+          retention-days: 90
+
   website:
     name: Website and web app
     runs-on: ubuntu-latest

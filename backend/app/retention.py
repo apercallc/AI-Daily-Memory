@@ -28,6 +28,9 @@ logger = logging.getLogger("app.retention")
 
 PENDING_GRACE: Final = timedelta(hours=1)
 MAX_HOLD: Final = timedelta(days=7)
+# A storage outage must eventually surface to an operator rather than retry forever
+# (AGENTS.md "no silent failure"); mirrors app.jobs's bounded-retry dead-letter pattern.
+MAX_ACCOUNT_PURGE_ATTEMPTS: Final = 10
 # Finished upload rows say when the user spoke; keep them only as long as duplicate
 # detection needs them, then remove even that metadata (ADR-0014).
 FINISHED_METADATA: Final = timedelta(days=30)
@@ -44,6 +47,7 @@ class SweepResult:
     deliveries_expired: int = 0
     metadata_purged: int = 0
     account_prefixes_purged: int = 0
+    account_prefixes_dead_lettered: int = 0
 
 
 async def sweep(
@@ -115,20 +119,16 @@ async def sweep(
             )
             counts[code] += int(getattr(moved, "rowcount", 0))
         await session.commit()
-    account_prefixes_purged, account_purge_errors = await _purge_deleted_account_prefixes(
-        sessions,
-        store,
-        clock,
-        limit=limit,
-    )
+    account_purge = await _purge_deleted_account_prefixes(sessions, store, clock, limit=limit)
     result = SweepResult(
         abandoned=counts["upload_abandoned"],
         dead=counts["transcription_failed"],
         expired=counts["retention_expired"],
-        errors=errors + account_purge_errors,
+        errors=errors + account_purge.errors,
         deliveries_expired=await _expire_deliveries(sessions, clock, limit=limit),
         metadata_purged=await _purge_finished(sessions, clock, limit=limit),
-        account_prefixes_purged=account_prefixes_purged,
+        account_prefixes_purged=account_purge.purged,
+        account_prefixes_dead_lettered=account_purge.dead_lettered,
     )
     if rows or result.deliveries_expired or result.account_prefixes_purged:
         logger.info(
@@ -140,9 +140,17 @@ async def sweep(
                 "errors": result.errors,
                 "deliveries_expired": result.deliveries_expired,
                 "account_prefixes_purged": result.account_prefixes_purged,
+                "account_prefixes_dead_lettered": result.account_prefixes_dead_lettered,
             },
         )
     return result
+
+
+@dataclass(frozen=True)
+class _AccountPurgeResult:
+    purged: int
+    dead_lettered: int
+    errors: int
 
 
 async def _purge_deleted_account_prefixes(
@@ -151,15 +159,25 @@ async def _purge_deleted_account_prefixes(
     clock: datetime | ColumnElement[datetime],
     *,
     limit: int,
-) -> tuple[int, int]:
-    """Retry prefix deletion after every presigned PUT URL for the deleted account has expired."""
+) -> _AccountPurgeResult:
+    """Retry prefix deletion after every presigned PUT URL for the deleted account has expired.
+
+    Bounded (AGENTS.md "no silent failure"): a row that keeps failing is dead-lettered after
+    MAX_ACCOUNT_PURGE_ATTEMPTS with an operator-visible error code, instead of retrying a
+    permanent failure forever. `python -m app.admin dead-account-purges` lists it; `requeue-
+    account-purge` resets the attempt budget once the operator believes the cause is fixed.
+    """
     purged = 0
+    dead_lettered = 0
     errors = 0
     async with sessions() as session:
         rows = (
             await session.scalars(
                 select(DeletedAccountObjectPurge)
-                .where(DeletedAccountObjectPurge.purge_after <= clock)
+                .where(
+                    DeletedAccountObjectPurge.purge_after <= clock,
+                    DeletedAccountObjectPurge.dead_at.is_(None),
+                )
                 .order_by(DeletedAccountObjectPurge.purge_after)
                 .limit(limit)
                 .with_for_update(skip_locked=True),
@@ -168,14 +186,24 @@ async def _purge_deleted_account_prefixes(
         for row in rows:
             try:
                 await store.delete_prefix(user_prefix(row.account_id))
-            except Exception:
-                logger.exception("account_deletion_object_purge_failed")
+            except Exception as error:
                 errors += 1
+                row.attempts += 1
+                row.last_error_code = type(error).__name__[:64]
+                if row.attempts >= MAX_ACCOUNT_PURGE_ATTEMPTS:
+                    row.dead_at = clock if isinstance(clock, datetime) else func.now()
+                    dead_lettered += 1
+                    logger.error(
+                        "account_purge_dead_lettered",
+                        extra={"account_id": str(row.account_id), "attempts": row.attempts},
+                    )
+                else:
+                    logger.exception("account_deletion_object_purge_failed")
                 continue
             await session.delete(row)
             purged += 1
         await session.commit()
-    return purged, errors
+    return _AccountPurgeResult(purged=purged, dead_lettered=dead_lettered, errors=errors)
 
 
 async def _expire_deliveries(

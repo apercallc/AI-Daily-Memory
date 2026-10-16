@@ -59,7 +59,9 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
 
 - **Database backups** are not yet configured and verified; backup monitoring and a restore drill are production gates.
 - **Uptime and alerting.** Sentry is wired; no uptime monitor or status page.
-- **Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).
+- ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
+  Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
+  state (migration 0015); see `python -m app.admin dead-account-purges`.
 - **Single API replica.** The per-address limiter is in-process; scaling out needs a shared limiter.
 - **Cost per user** is unmeasured and needs real provider usage and operating-cost data.
 

@@ -6,6 +6,8 @@
     python -m app.admin revoke-token --user-id <uuid> --token-id <uuid>
     python -m app.admin dead-jobs
     python -m app.admin requeue-job --job-id <uuid>
+    python -m app.admin dead-account-purges
+    python -m app.admin requeue-account-purge --account-id <uuid>
 
 The token is printed once and never stored in plaintext; paste it into the app's
 "Connect account" screen. Output goes to stdout only, never to the logs.
@@ -23,7 +25,8 @@ from sqlalchemy import func, select, update
 from app.auth import issue_token, revoke_token
 from app.config import Settings
 from app.db import Database
-from app.db.models import AccessToken, ProcessingJob, User
+from app.db.models import AccessToken, DeletedAccountObjectPurge, ProcessingJob, User
+from app.retention import MAX_ACCOUNT_PURGE_ATTEMPTS
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,33 @@ async def requeue_job(database: Database, job_id: uuid.UUID) -> bool:
         return result.rowcount > 0  # type: ignore[attr-defined,no-any-return]
 
 
+async def dead_account_purges(database: Database) -> list[DeletedAccountObjectPurge]:
+    """Account-object purges that gave up, oldest first: storage left behind for a human."""
+    async with database.sessions() as session:
+        rows = await session.scalars(
+            select(DeletedAccountObjectPurge)
+            .where(DeletedAccountObjectPurge.dead_at.isnot(None))
+            .order_by(DeletedAccountObjectPurge.dead_at)
+            .limit(200)
+        )
+        return list(rows.all())
+
+
+async def requeue_account_purge(database: Database, account_id: uuid.UUID) -> bool:
+    """Resets a dead-lettered purge's attempt budget. False if it isn't dead-lettered."""
+    async with database.sessions() as session:
+        result = await session.execute(
+            update(DeletedAccountObjectPurge)
+            .where(
+                DeletedAccountObjectPurge.account_id == account_id,
+                DeletedAccountObjectPurge.dead_at.isnot(None),
+            )
+            .values(attempts=0, last_error_code=None, dead_at=None, purge_after=func.now())
+        )
+        await session.commit()
+        return result.rowcount > 0  # type: ignore[attr-defined,no-any-return]
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.admin")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -116,6 +146,9 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("dead-jobs")
     requeue = commands.add_parser("requeue-job")
     requeue.add_argument("--job-id", type=uuid.UUID, required=True)
+    commands.add_parser("dead-account-purges")
+    requeue_purge = commands.add_parser("requeue-account-purge")
+    requeue_purge.add_argument("--account-id", type=uuid.UUID, required=True)
     return parser
 
 
@@ -152,6 +185,19 @@ async def run(argv: list[str], settings: Settings, out: TextIO) -> int:
         elif args.command == "requeue-job":
             done = await requeue_job(database, args.job_id)
             print("Requeued." if done else "Not found, or not dead.", file=out)
+            return 0 if done else 1
+        elif args.command == "dead-account-purges":
+            for purge in await dead_account_purges(database):
+                print(
+                    f"{purge.account_id}  {purge.last_error_code or '-'}  "
+                    f"attempts {purge.attempts}/{MAX_ACCOUNT_PURGE_ATTEMPTS}  "
+                    f"{purge.dead_at.isoformat() if purge.dead_at else '-'}",
+                    file=out,
+                )
+            return 0
+        elif args.command == "requeue-account-purge":
+            done = await requeue_account_purge(database, args.account_id)
+            print("Requeued." if done else "Not found, or not dead-lettered.", file=out)
             return 0 if done else 1
         else:
             done = await revoke(database, args.user_id, args.token_id)

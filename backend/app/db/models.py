@@ -98,6 +98,11 @@ class DeletedAccountObjectPurge(Base):
 
     account_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     purge_after: Mapped[datetime]
+    # Bounded retry (AGENTS.md "no infinite retry"): a storage outage must eventually surface
+    # to an operator instead of retrying this row forever.
+    attempts: Mapped[int] = mapped_column(server_default="0")
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    dead_at: Mapped[datetime | None]
 
 
 class Credential(Base):
