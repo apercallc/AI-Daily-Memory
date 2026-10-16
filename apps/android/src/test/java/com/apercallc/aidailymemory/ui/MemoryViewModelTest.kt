@@ -176,6 +176,59 @@ class MemoryViewModelTest {
         collector.cancel()
     }
 
+    @Test
+    fun `project memory groups open commitments and actions by counterpart`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(
+            listOf(
+                item("i1", "s1", "2026-10-12", kind = "commitment", counterpart = "Alex", text = "Send the deck"),
+                item("i2", "s1", "2026-10-12", kind = "action", counterpart = "Alex", text = "Follow up"),
+                item("i3", "s1", "2026-10-12", kind = "decision", counterpart = "Alex", text = "Not a commitment"),
+            ),
+        )
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+
+        val sections = withTimeout(5_000) { vm.projectMemory.first { it.isNotEmpty() } }
+
+        assertEquals(1, sections.size)
+        assertEquals("Alex", sections.single().subject)
+        assertEquals(setOf("Send the deck", "Follow up"), sections.single().items.map { it.text }.toSet())
+    }
+
+    @Test
+    fun `project memory falls back to owner when no counterpart was extracted`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(
+            listOf(item("i1", "s1", "2026-10-12", kind = "action", counterpart = null, owner = "Sam")),
+        )
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+
+        val sections = withTimeout(5_000) { vm.projectMemory.first { it.isNotEmpty() } }
+
+        assertEquals("Sam", sections.single().subject)
+    }
+
+    @Test
+    fun `project memory excludes dismissed items and reflects a correction's text`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(
+            listOf(
+                item("i1", "s1", "2026-10-12", kind = "commitment", counterpart = "Alex"),
+                item("i2", "s1", "2026-10-12", kind = "action", counterpart = "Alex"),
+            ),
+        )
+        container.database.memoryItems().dismiss("i2", 1L)
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        vm.correct("i1", "Updated text")
+
+        val sections = withTimeout(5_000) {
+            vm.projectMemory.first { it.isNotEmpty() && it.single().items.single().text == "Updated text" }
+        }
+
+        assertEquals(1, sections.single().items.size)
+        assertEquals(true, sections.single().items.single().isCorrected)
+    }
+
     private fun MemoryLoadState.sessionJoined(sessionId: String): Boolean? = (this as? MemoryLoadState.Content)
         ?.days?.flatMap { it.sessions }?.firstOrNull { it.sessionId == sessionId }?.joinedWithOlderNeighbor
 
@@ -185,18 +238,26 @@ class MemoryViewModelTest {
     private fun MemoryLoadState.firstItemOrNull() = (this as? MemoryLoadState.Content)
         ?.days?.flatMap { it.sessions }?.flatMap { it.items }?.firstOrNull()
 
-    private fun item(id: String, sessionId: String, memoryDay: String) = com.apercallc.aidailymemory.data.MemoryItemEntity(
+    private fun item(
+        id: String,
+        sessionId: String,
+        memoryDay: String,
+        kind: String = "decision",
+        text: String = "Original text",
+        counterpart: String? = null,
+        owner: String? = null,
+    ) = com.apercallc.aidailymemory.data.MemoryItemEntity(
         id = id,
         sessionId = sessionId,
         memoryDay = memoryDay,
-        kind = "decision",
-        text = "Original text",
+        kind = kind,
+        text = text,
         confidence = "likely",
         quote = null,
-        owner = null,
+        owner = owner,
         due = null,
         direction = null,
-        counterpart = null,
+        counterpart = counterpart,
         extractionModel = "user-key:m",
         extractionVersion = 1,
         evidenceEpochMs = null,

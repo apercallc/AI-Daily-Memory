@@ -11,6 +11,8 @@ import com.apercallc.aidailymemory.data.SessionEventOverrideEntity
 import com.apercallc.aidailymemory.data.SessionEventOverrideKind
 import com.apercallc.aidailymemory.data.SessionRow
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
+import com.apercallc.aidailymemory.recording.processing.ProjectMemoryBuilder
+import com.apercallc.aidailymemory.recording.processing.ProjectMemoryItem
 import com.apercallc.aidailymemory.recording.session.EventGrouper
 import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.recording.session.SessionBoundaryOverride
@@ -45,6 +47,14 @@ sealed interface MemoryLoadState {
     data class Content(val days: List<MemoryDay>) : MemoryLoadState
     data object Failed : MemoryLoadState
 }
+
+/**
+ * Every open commitment/action involving one [subject] (a counterpart, or an owner when no
+ * counterpart was extracted; null when neither exists). Mirrors
+ * [com.apercallc.aidailymemory.recording.processing.ProjectMemoryGroup] with full display rows
+ * instead of bare text, so the UI renders it exactly like any other memory item.
+ */
+data class ProjectMemorySection(val subject: String?, val items: List<MemoryDisplayItem>)
 
 /** ViewModel for the daily memory timeline. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -128,6 +138,28 @@ class MemoryViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MemoryLoadState.Loading)
 
+    /**
+     * Durable, cross-day view of every still-open commitment and action, grouped by who it
+     * involves (TODO.md Phase 7 "project memory for recurring commitments and relationships").
+     * Deterministic local aggregation over already-extracted items — no new AI call, no new
+     * provider dependency — so it works identically whether or not summaries are configured.
+     */
+    val projectMemory: StateFlow<List<ProjectMemorySection>> = container.database.memoryItems()
+        .observeOpenCommitments()
+        .flatMapLatest { items ->
+            flow {
+                val corrections = container.database.memoryCorrections()
+                    .forItems(items.map { it.id })
+                    .associateBy { it.itemId }
+                emit(buildProjectMemory(items, corrections))
+            }.flowOn(Dispatchers.IO)
+        }
+        .catch {
+            logFailure(TAG, "project_memory_load_failed", it)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
     fun retry() {
         reloadRequests.update { it + 1 }
     }
@@ -204,6 +236,39 @@ class MemoryViewModel(
     private fun buildSummary(items: List<MemoryItemEntity>, corrections: Map<String, MemoryItemCorrectionEntity>): String {
         if (items.isEmpty()) return ""
         return items.joinToString(". ") { corrections[it.id]?.correctedText ?: it.text }
+    }
+
+    /**
+     * Groups open commitments/actions by subject (counterpart, falling back to owner) via the
+     * pure [ProjectMemoryBuilder], then resolves each matched item back to a display row so the
+     * grouping reuses the exact same correction-aware text the daily timeline shows.
+     */
+    private fun buildProjectMemory(
+        items: List<MemoryItemEntity>,
+        corrections: Map<String, MemoryItemCorrectionEntity>,
+    ): List<ProjectMemorySection> {
+        val byId = items.associateBy { it.id }
+        val groups = ProjectMemoryBuilder.build(
+            items = items,
+            subjectOf = { it.counterpart ?: it.owner },
+            toItem = {
+                ProjectMemoryItem(
+                    id = it.id,
+                    text = corrections[it.id]?.correctedText ?: it.text,
+                    kind = it.kind,
+                    due = it.due,
+                    // The evidence anchor is the moment it was actually said; fall back to
+                    // extraction time only for the rare item with none (e.g. transcript-only).
+                    lastMentionedEpochMs = it.evidenceEpochMs ?: it.extractedAtEpochMs,
+                )
+            },
+        )
+        return groups.map { group ->
+            ProjectMemorySection(
+                subject = group.subject,
+                items = group.items.mapNotNull { byId[it.id]?.toDisplayItem(corrections[it.id]) },
+            )
+        }
     }
 
     private fun formatDayLabel(day: String): DayLabel {

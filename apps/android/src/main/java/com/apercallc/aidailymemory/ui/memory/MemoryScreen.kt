@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -119,12 +120,19 @@ fun MemoryScreen(
     onOpenReport: (String) -> Unit = {},
     /** Corrects one session's grouping with the session right before it (TODO.md "Event grouping"). */
     onToggleEventBoundary: (sessionId: String, currentlyJoined: Boolean) -> Unit = { _, _ -> },
+    /** Durable cross-day view of open commitments/actions (TODO.md "project memory"). */
+    projectMemory: List<ProjectMemorySection> = emptyList(),
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
+        if (projectMemory.isNotEmpty()) {
+            item(key = "project-memory") {
+                ProjectMemorySectionView(projectMemory, onDismiss, onCorrect)
+            }
+        }
         when (state) {
             MemoryLoadState.Loading -> item { LoadingState(stringResource(R.string.sessions_loading)) }
             MemoryLoadState.Failed -> item {
@@ -151,6 +159,62 @@ fun MemoryScreen(
             } else {
                 items(state.days, key = { it.dateLabel }) { day ->
                     MemoryDaySection(day, onDismiss, onCorrect, onOpenReport, onToggleEventBoundary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectMemorySectionView(
+    sections: List<ProjectMemorySection>,
+    onDismiss: (String) -> Unit,
+    onCorrect: (String, String) -> Unit,
+) {
+    val spacing = AiDailyMemoryTheme.spacing
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val totalCount = sections.sumOf { it.items.size }
+    val toggleDescription = stringResource(
+        if (expanded) R.string.memory_project_memory_hide else R.string.memory_project_memory_show,
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        Column(modifier = Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = spacing.minTouchTarget)
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .semantics { contentDescription = toggleDescription },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = pluralStringResource(R.plurals.memory_project_memory_title, totalCount, totalCount),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = if (expanded) "▲" else "▼",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    sections.forEach { section ->
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                            Text(
+                                text = section.subject ?: stringResource(R.string.memory_project_memory_no_subject),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            section.items.forEach { item -> MemoryItemRow(item, onDismiss, onCorrect) }
+                        }
+                    }
                 }
             }
         }

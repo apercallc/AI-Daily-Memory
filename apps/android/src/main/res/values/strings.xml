@@ -247,6 +247,11 @@
     <string name="retention_forever">Keep audio until I delete it</string>
     <string name="retention_estimate">Uses about %1$s of this phone\'s storage at 10 recorded hours a day.</string>
     <string name="retention_grows">Grows every day. If storage fills up, recording stops; nothing you kept is deleted.</string>
+    <string name="memory_section">Extracted memory</string>
+    <string name="memory_retention_explainer">This controls how long decisions, actions, and other extracted memory stay on this phone. It never deletes the transcript evidence those items came from.</string>
+    <string name="memory_retention_90">Keep memory for 90 days</string>
+    <string name="memory_retention_1_year">Keep memory for 1 year</string>
+    <string name="memory_retention_forever">Keep memory until I delete it (recommended)</string>
     <string name="next_quiet">Next: %1$s starts at %2$s</string>
     <string name="next_resume">Next: recording resumes at %1$s</string>
     <string name="next_pause_bedtime">Next: recording pauses at bedtime, %1$s</string>
@@ -277,6 +282,7 @@
     <string name="update_title">App update</string>
     <string name="settings_group_schedule">Daily schedule</string>
     <string name="settings_group_audio">Audio</string>
+    <string name="settings_group_memory">Memory</string>
     <string name="settings_group_appearance">Appearance</string>
     <string name="settings_group_account">Account &amp; server</string>
     <string name="settings_group_app">About this app</string>
@@ -369,6 +375,13 @@
     <string name="memory_correct_dialog_cancel">Cancel</string>
     <string name="memory_view_report">View report</string>
     <string name="memory_merge_event">Merge with previous event</string>
+    <string name="memory_project_memory_no_subject">Open commitments</string>
+    <plurals name="memory_project_memory_title">
+        <item quantity="one">People &amp; commitments (%1$d open)</item>
+        <item quantity="other">People &amp; commitments (%1$d open)</item>
+    </plurals>
+    <string name="memory_project_memory_show">Show people and commitments</string>
+    <string name="memory_project_memory_hide">Hide people and commitments</string>
     <string name="memory_split_event">Split into separate event</string>
     <string name="nav_memory">Memory</string>
 

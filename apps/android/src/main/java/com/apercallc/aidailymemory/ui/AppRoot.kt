@@ -312,6 +312,7 @@ private fun SessionsRoute(
 @Composable
 private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Unit, onOpenReport: (String) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val projectMemory by viewModel.projectMemory.collectAsStateWithLifecycle()
     SecondaryScreen(stringResource(R.string.memory_title), null, snackbar = null) { modifier ->
         MemoryScreen(
             state = state,
@@ -322,6 +323,7 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
             onCorrect = viewModel::correct,
             onOpenReport = onOpenReport,
             onToggleEventBoundary = viewModel::toggleEventBoundary,
+            projectMemory = projectMemory,
         )
     }
 }
@@ -399,6 +401,7 @@ private fun SettingsRoute(
 ) {
     val rhythm by viewModel.rhythm.collectAsStateWithLifecycle()
     val retention by viewModel.retention.collectAsStateWithLifecycle()
+    val memoryRetention by viewModel.memoryRetention.collectAsStateWithLifecycle()
     val account by viewModel.account.collectAsStateWithLifecycle()
     val update by updates.state.collectAsStateWithLifecycle()
     val processing by viewModel.processing.collectAsStateWithLifecycle()
@@ -426,6 +429,8 @@ private fun SettingsRoute(
             showUnreadableNotice = viewModel.hadUnreadableRhythm,
             onRhythmChange = viewModel::updateRhythm,
             onRetentionChange = viewModel::updateRetention,
+            memoryRetention = memoryRetention,
+            onMemoryRetentionChange = viewModel::updateMemoryRetention,
             account = account,
             accountCallbacks = remember(viewModel, uriHandler, context) {
                 AccountCallbacks(
