@@ -155,11 +155,19 @@ voiceprint.
 
 # Phase 3 — Wear OS
 
-- [ ] Session duration
+- [x] Session duration
+  - The watch shows a live elapsed-time readout ("12 min" / "1h 5m") beside the existing session
+    start time, for any live phone-acknowledged session (same gate as the start-time display);
+    it ticks on its own 30s timer so it keeps advancing between phone snapshots, and clamps to
+    zero so watch/phone clock drift never shows a negative duration. `WearPresentation.
+    sessionDurationMs` is pure and unit-tested; nothing here claims a command succeeded before
+    phone acknowledgement, matching the existing exit-gate rule below.
 
 ### Phase 3 exit gate
 
 - [ ] Watch controls phone reliably during normal daily use.
+  - Not verifiable from this session: needs sustained use on physical Wear hardware (ADR-0008 /
+    the "no infrastructure or hardware claim without measured evidence" rule), not a desk check.
 - [x] UI never claims a command succeeded before phone acknowledgement.
 
 # Phase 4 — Recall engine

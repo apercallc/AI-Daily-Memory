@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +49,7 @@ import com.apercallc.aidailymemory.recording.health.HealthLevel
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
 import com.apercallc.aidailymemory.recording.wear.WatchControls
+import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
 
@@ -55,6 +58,12 @@ private val RecordingRed = Color(0xFFFF3B30)
 
 private const val PULSE_MS = 900
 private const val PULSE_LOW_ALPHA = 0.3f
+
+/** How often the on-screen session duration ticks over; a watch screen is glanced at, not read
+ *  continuously, so this trades live-second precision for battery. */
+private const val DURATION_TICK_MS = 30_000L
+private const val MS_PER_MINUTE = 60_000L
+private const val MINUTES_PER_HOUR = 60L
 
 @Composable
 internal fun WearHome(
@@ -160,7 +169,36 @@ private fun TransformingLazyColumnItemScope.StatusHeader(state: WearControlState
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Ticks on its own clock so the duration keeps advancing between phone snapshots,
+            // not just when a new one arrives ("Session duration" — TODO.md Phase 3).
+            val now by produceState(initialValue = System.currentTimeMillis()) {
+                while (true) {
+                    value = System.currentTimeMillis()
+                    delay(DURATION_TICK_MS)
+                }
+            }
+            WearPresentation.sessionDurationMs(state, now)?.let { durationMs ->
+                Text(
+                    text = sessionDurationText(durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun sessionDurationText(ms: Long): String {
+    val minutes = ms / MS_PER_MINUTE
+    return when {
+        minutes < 1 -> stringResource(R.string.duration_under_minute)
+        minutes < MINUTES_PER_HOUR -> stringResource(R.string.duration_minutes, minutes)
+        else -> stringResource(
+            R.string.duration_hours_minutes,
+            minutes / MINUTES_PER_HOUR,
+            minutes % MINUTES_PER_HOUR,
+        )
     }
 }
 

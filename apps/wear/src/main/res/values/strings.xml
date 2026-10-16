@@ -61,4 +61,7 @@
     <string name="action_highlight_hint">Last 30 seconds</string>
     <string name="action_quick_note_hint">Next minute</string>
     <string name="session_since">Since %1$s</string>
+    <string name="duration_under_minute">Just started</string>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="duration_hours_minutes">%1$dh %2$dm</string>
 </resources>

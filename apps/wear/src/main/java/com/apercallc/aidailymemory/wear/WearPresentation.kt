@@ -36,6 +36,17 @@ internal object WearPresentation {
         return snapshot.status in LIVE_STATUSES
     }
 
+    /**
+     * How long the open session has run, for the same live+connected+known-start session
+     * [showsSessionStart] gates ("Session duration" — TODO.md Phase 3). Clamped to zero so a
+     * watch clock that drifts ahead of the phone's reported start never shows a negative time.
+     */
+    fun sessionDurationMs(state: WearControlState, nowEpochMs: Long): Long? {
+        if (!showsSessionStart(state)) return null
+        val startedAt = state.snapshot?.sessionStartedAt ?: return null
+        return (nowEpochMs - startedAt).coerceAtLeast(0L)
+    }
+
     /** Most-used first: a marker while recording, then pause, with Stop last and apart. */
     fun displayOrder(commands: List<WatchCommand>): List<WatchCommand> =
         commands.sortedBy { ORDER.indexOf(it) }

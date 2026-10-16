@@ -90,6 +90,16 @@ class WearPresentationTest {
         assertNull(WearPresentation.hint(WatchCommand.Stop))
     }
 
+    @Test
+    fun `session duration shows only alongside session start, and never goes negative`() {
+        assertEquals(5_000L, WearPresentation.sessionDurationMs(state(startedAt = 1_000L), nowEpochMs = 6_000L))
+        // Watch clock briefly behind the phone's reported start: clamp, don't go negative.
+        assertEquals(0L, WearPresentation.sessionDurationMs(state(startedAt = 6_000L), nowEpochMs = 1_000L))
+        assertNull(WearPresentation.sessionDurationMs(state(startedAt = null), nowEpochMs = 6_000L))
+        assertNull(WearPresentation.sessionDurationMs(state(startedAt = 1_000L, status = "IDLE"), nowEpochMs = 6_000L))
+        assertNull(WearPresentation.sessionDurationMs(state(startedAt = 1_000L, connected = false), nowEpochMs = 6_000L))
+    }
+
     private fun snapshot(status: String = "RECORDING", health: String = "OK", problem: String? = null, startedAt: Long? = null) =
         PhoneRecordingSnapshot(
             revision = 1,
