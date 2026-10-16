@@ -40,7 +40,7 @@ class ReportBuilderTest {
     )
 
     private fun build(items: List<MemoryItemEntity>, lines: List<LocalTranscriptLineEntity> = emptyList()) =
-        ReportBuilder.build("2026-10-12", "s1", items, lines, 42L, "user-key:m")
+        ReportBuilder.build("2026-10-12", items, lines, 42L, "user-key:m")
 
     @Test
     fun `no items gives the neutral headline and an empty summary`() {
@@ -90,6 +90,22 @@ class ReportBuilderTest {
         assertEquals(2_500L, report.coverage.transcribedMs)
         assertEquals(1, report.coverage.sessions)
         assertEquals(42L, report.generatedAtEpochMs)
+    }
+
+    @Test
+    fun `coverage counts every distinct session across items and transcript lines`() {
+        val report = ReportBuilder.build(
+            "2026-10-12",
+            listOf(item("action", "send", id = "a1").copy(sessionId = "s1")),
+            listOf(
+                line(0, 1_000).copy(sessionId = "s1"),
+                line(1_000, 2_000).copy(sessionId = "s2"),
+            ),
+            42L,
+            "user-key:m",
+        )
+
+        assertEquals(2, report.coverage.sessions)
     }
 
     @Test

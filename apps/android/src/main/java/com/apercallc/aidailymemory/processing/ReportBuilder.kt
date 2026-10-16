@@ -22,7 +22,6 @@ object ReportBuilder {
 
     fun build(
         memoryDay: String,
-        sessionId: String,
         items: List<MemoryItemEntity>,
         transcriptLines: List<LocalTranscriptLineEntity>,
         generatedAtEpochMs: Long,
@@ -31,11 +30,12 @@ object ReportBuilder {
         val headline = items.firstOrNull()?.let { summarizeHeadline(items) } ?: "Transcript only"
         val summary = buildSummary(items)
         val reportItems = items.map { it.toReportItem() }
+        val sessionCount = (items.map { it.sessionId } + transcriptLines.map { it.sessionId }).toSet().size
         val coverage = ReportCoverage(
             recordedMs = transcriptLines.sumOf { it.endEpochMs - it.startEpochMs },
             speechMs = transcriptLines.sumOf { it.endEpochMs - it.startEpochMs },
             transcribedMs = transcriptLines.sumOf { it.endEpochMs - it.startEpochMs },
-            sessions = 1,
+            sessions = sessionCount,
             gaps = emptyList(),
         )
         return DailyReport(

@@ -523,6 +523,7 @@ class AppContainer(context: Context) {
                 localTranscriptDao = database.localTranscripts(),
                 processingStateDao = database.processingState(),
                 providerUsageDao = database.providerUsage(),
+                sessionDao = database.sessions(),
                 database = database,
                 transcriptionProvider = tp,
                 extractionProvider = ep,

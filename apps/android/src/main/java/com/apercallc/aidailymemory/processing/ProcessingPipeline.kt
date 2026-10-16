@@ -19,6 +19,7 @@ import com.apercallc.aidailymemory.data.ProviderUsageDao
 import com.apercallc.aidailymemory.data.ProviderUsageEntity
 import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.data.SegmentEntity
+import com.apercallc.aidailymemory.data.SessionDao
 import com.apercallc.aidailymemory.data.SpeechDao
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
@@ -62,6 +63,9 @@ class ProcessingPipeline(
     private val localTranscriptDao: LocalTranscriptDao,
     private val processingStateDao: ProcessingStateDao,
     private val providerUsageDao: ProviderUsageDao,
+    /** Looks up every session that belongs to the same memory day, so the day's stored report
+     * covers all of that day's sessions rather than only the one just processed. */
+    private val sessionDao: SessionDao,
     /** Wraps a segment's transcript write and its progress checkpoint in one transaction, so a
      * crash or database fault between them can never leave one committed without the other. */
     private val database: CaptureDatabase,
@@ -332,8 +336,13 @@ class ProcessingPipeline(
         }
         memoryItemDao.replaceForSession(sessionId, memoryItems)
 
-        // Build and store daily report
-        val report = ReportBuilder.build(memoryDay, sessionId, memoryItems, allLines, nowMs, extractionModel)
+        // Build and store daily report, aggregated over every session in this memory day —
+        // not just the one just processed — so a later session never overwrites an earlier
+        // one's contribution (dailyReportDao.upsert replaces the whole day's single row).
+        val daySessionIds = sessionDao.sessionIdsForDay(memoryDay)
+        val dayItems = memoryItemDao.forDay(memoryDay)
+        val dayLines = if (daySessionIds.isEmpty()) allLines else localTranscriptDao.forSessions(daySessionIds)
+        val report = ReportBuilder.build(memoryDay, dayItems, dayLines, nowMs, extractionModel)
         val reportJson = ReportBuilder.serialize(report)
         dailyReportDao.upsert(
             DailyReportEntity(

@@ -430,6 +430,75 @@ class ProcessingPipelineTest {
     }
 
     @Test
+    fun `the day's report accumulates items and transcript coverage across sessions`() = runTest {
+        database.sessions().register(SessionInfoEntity("session-1", "1970-01-01", "UTC", 0L, null))
+        database.sessions().register(SessionInfoEntity("session-2", "1970-01-01", "UTC", 0L, null))
+        addTranscribedSession()
+        val run1 = pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "action", text = "from session one", confidence = "likely",
+                            quote = null, owner = null, due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+        assertEquals(ProcessingRun(1, 0, 0), run1)
+
+        database.segments().insert(
+            SegmentEntity(
+                segmentId = "segment-2", sessionId = "session-2", sequence = 0, state = "DELETED",
+                byteSize = 0, durationMs = 1_000, sha256 = null, acknowledgedAtEpochMs = null, defect = null,
+                fileName = "segment-2.seg", codec = "aac-lc-adts", sampleRateHz = 16_000, channelCount = 1,
+                continuesPrevious = false, start = CaptureTimeColumns(1_000L, "UTC", 0, "1970-01-01", 0L, "boot"),
+            ),
+        )
+        database.localTranscripts().insertAll(
+            listOf(
+                LocalTranscriptLineEntity(
+                    lineId = "line-2", sessionId = "session-2", segmentId = "segment-2",
+                    startEpochMs = 3_000L, endEpochMs = 4_000L, speaker = null,
+                    text = "A second session's transcript line", confidence = 0.9,
+                    provider = "test", model = "test-model",
+                ),
+            ),
+        )
+        database.processingState().upsert(ProcessingStateEntity("session-2", "PENDING", true, null, 0L))
+
+        val run2 = pipeline(
+            object : ExtractionProvider {
+                override val name = "test"
+                override val model = "test-model"
+                override suspend fun extract(lines: List<NumberedLine>) = ExtractionResult(
+                    listOf(
+                        com.apercallc.aidailymemory.recording.processing.ExtractedItem(
+                            kind = "action", text = "from session two", confidence = "likely",
+                            quote = null, owner = null, due = null, direction = null, counterpart = null,
+                            evidenceSegmentIndices = listOf(0),
+                        ),
+                    ),
+                )
+            },
+        ).processPending()
+        assertEquals(ProcessingRun(1, 0, 0), run2)
+
+        val reports = database.dailyReports().observeRecent(2).first()
+        assertEquals(1, reports.size, "one day, one report row")
+        val report = ReportBuilder.deserialize(reports.single().reportJson)
+        assertEquals(
+            setOf("from session one", "from session two"),
+            report.items.map { it.text }.toSet(),
+        )
+        assertEquals(2, report.coverage.sessions)
+    }
+
+    @Test
     fun `cancellation preserves the existing failure budget`() = runTest {
         addTranscribedSession()
         var cancel = false
@@ -553,6 +622,7 @@ class ProcessingPipelineTest {
         localTranscriptDao = database.localTranscripts(),
         processingStateDao = database.processingState(),
         providerUsageDao = database.providerUsage(),
+        sessionDao = database.sessions(),
         database = database,
         transcriptionProvider = transcriptionProvider,
         extractionProvider = extractionProvider,
