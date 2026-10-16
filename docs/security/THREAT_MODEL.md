@@ -47,9 +47,10 @@ dependency, not a convention callers must remember to check.
   `users/<uuid>/...` and `S3ObjectStore.delete_prefix` refuses any prefix that doesn't match
   exactly one user (`_USER_PREFIX` regex) — a bug that constructed a broader prefix would raise
   rather than delete across users.
-- **Gap (this item).** This is enforced consistently by code pattern, not yet verified by a
-  single audit pass that lists every endpoint against its expected scope/ownership check — see
-  "Open items" below.
+- **Resolved.** `tests/test_authorization_matrix.py` is the consolidated audit this item asked
+  for: every resource-owning endpoint (uploads, notes, folders, memory items + their evidence,
+  tokens) is checked against a second account's valid-scope token and must 404, never return or
+  modify the first account's data.
 
 ### T3 — Scope escalation (a read-only API key doing a write, or reading transcripts)
 
@@ -58,9 +59,11 @@ dependency, not a convention callers must remember to check.
   include what the endpoint asks for. An API key can never create or revoke another key or
   token (`tokens.py`'s `Manager` dependency requires `upload:write` or `account:manage`,
   neither of which an API key carries) — so a leaked read-only key cannot escalate itself.
-- **Gap.** No test enumerates *every* endpoint's required scope against the three actors above
-  in one place (closest today: per-endpoint tests exist, but not a single cross-cutting matrix
-  test) — see "Open items."
+- **Resolved.** `tests/test_authorization_matrix.py` enumerates every one of the 32
+  authenticated routes with its required scope(s) and proves, for each: no bearer token -> 401,
+  a valid token missing every accepted scope -> 403. The 8 unauthenticated-by-design routes
+  (signup/login, health/ready/capabilities, the password-reset and email-verify flows) are
+  checked the other way — they must not demand a bearer token at all.
 
 ### T4 — Forged or tampered uploads (fake clip, oversized clip, wrong user's clip id reused)
 
@@ -80,8 +83,10 @@ account's prefix)
   (`upload_url_ttl_seconds`). A presigned URL cannot be redirected to write a different key —
   S3-compatible presigning binds the key into the signature.
 - **Gap.** TTL/scope behavior is exercised by `tests/test_uploads.py` and `tests/test_storage.py`
-  but has not been reviewed as a named security control set (the specific ask in TODO.md
-  Phase 8) — see "Open items."
+  and has now been reviewed as a named security control set (the specific ask in TODO.md Phase
+  8): see `docs/security/OBJECT_STORAGE_REVIEW.md`. Its own residual-risk note stands: a
+  presigned URL is valid for its full TTL even if the token that requested it is revoked a
+  moment later — mitigated by a short TTL, not eliminated by revocation.
 
 ### T6 — Storage-outage or partial-failure data leakage (an account deletion that silently
 leaves audio behind)
@@ -131,10 +136,6 @@ leaves audio behind)
 
 ## Open items (do not claim these are resolved)
 
-- **A single authorization-test audit pass**: list every endpoint, its required scope(s), and
-  confirm a test exists proving a token lacking that scope gets 401/403 and a token for a
-  *different* user gets 404 (not another user's data). Per-endpoint tests exist throughout
-  `backend/tests/`; what's missing is the consolidated matrix this item specifically asks for.
 - **Login/API-key anomaly monitoring** (new-geography alerts, per-key volume spikes) — Phase 10.
 - **A shared, cross-replica rate limiter** — deferred until horizontal scaling is a measured
   need, not before (AGENTS.md "no infrastructure without a measured need").
