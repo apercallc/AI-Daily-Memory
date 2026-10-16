@@ -44,22 +44,24 @@ fun TranscriptScreen(
     lines: List<TranscriptText>?,
     modifier: Modifier = Modifier,
     processingState: ProcessingStateEntity? = null,
+    /** True once analysis is complete and found no speech: a terminal outcome, not a wait. */
+    noSpeechDetected: Boolean = false,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-        processingState?.takeIf { it.state != "COMPLETED" }?.let { state ->
+        processingState?.takeIf { it.state != "COMPLETED" && !noSpeechDetected }?.let { state ->
             item(key = "processing_status") { ProcessingStatusCard(state) }
         }
         when {
-            lines == null -> item { LoadingState(stringResource(R.string.transcript_loading)) }
-            lines.isEmpty() && processingState?.state == "COMPLETED" -> item {
+            noSpeechDetected || (lines.isNullOrEmpty() && processingState?.state == "COMPLETED") -> item {
                 EmptyState(
                     icon = R.drawable.ic_nav_sessions,
                     title = stringResource(R.string.transcript_no_words_title),
                     body = stringResource(R.string.transcript_no_words_body),
                 )
             }
+            lines == null -> item { LoadingState(stringResource(R.string.transcript_loading)) }
             lines.isEmpty() -> item {
                 EmptyState(
                     icon = R.drawable.ic_nav_sessions,

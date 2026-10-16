@@ -208,6 +208,28 @@ interface SessionDao {
         """,
     )
     fun observeSince(sinceDay: String): Flow<List<SessionRow>>
+
+    /** One session's capture/analysis/speech totals, for a truthful "no speech" terminal state. */
+    @Query(
+        """
+        SELECT i.session_id AS sessionId, i.memory_day AS memoryDay, i.zone_id AS zoneId,
+            i.started_at_epoch_ms AS startedAtEpochMs, i.custom_title AS customTitle,
+            (SELECT MAX(t.occurred_at_epoch_ms) FROM recording_transition t
+                WHERE t.session_id = i.session_id) AS lastActivityEpochMs,
+            (SELECT COALESCE(SUM(s.duration_ms), 0) FROM audio_segment s
+                WHERE s.session_id = i.session_id
+                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED', 'DELETED')) AS capturedMs,
+            (SELECT COALESCE(SUM(a.total_ms), 0) FROM segment_speech a
+                JOIN audio_segment s ON s.segment_id = a.segment_id
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS analyzedMs,
+            (SELECT COALESCE(SUM(a.speech_ms), 0) FROM segment_speech a
+                JOIN audio_segment s ON s.segment_id = a.segment_id
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs
+        FROM session_info i
+        WHERE i.session_id = :sessionId
+        """,
+    )
+    fun observeSpeechSummary(sessionId: String): Flow<SessionRow?>
 }
 
 @Dao

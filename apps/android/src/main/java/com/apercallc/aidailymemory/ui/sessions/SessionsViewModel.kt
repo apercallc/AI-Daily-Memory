@@ -134,6 +134,16 @@ class SessionsViewModel(
     fun processingState(sessionId: String) =
         container.database.processingState().observeForSession(sessionId)
 
+    /**
+     * True once every captured segment has been fully analyzed for speech (ADR-0015) and none
+     * was found: a truthful terminal outcome, since this session is never queued for
+     * transcription and would otherwise show a "waiting" status forever.
+     */
+    fun noSpeechDetected(sessionId: String): Flow<Boolean> =
+        container.database.sessions().observeSpeechSummary(sessionId).map { row ->
+            row != null && row.capturedMs > 0 && row.analyzedMs >= row.capturedMs && row.speechMs == 0L
+        }
+
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 

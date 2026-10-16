@@ -295,8 +295,15 @@ private fun TranscriptRoute(viewModel: SessionsViewModel, sessionId: String, tit
         .collectAsStateWithLifecycle(initialValue = null)
     val processing by remember(sessionId) { viewModel.processingState(sessionId) }
         .collectAsStateWithLifecycle(initialValue = null)
+    val noSpeechDetected by remember(sessionId) { viewModel.noSpeechDetected(sessionId) }
+        .collectAsStateWithLifecycle(initialValue = false)
     SecondaryScreen(title.ifEmpty { stringResource(R.string.transcript_title) }, onBack, snackbar = null) { modifier ->
-        TranscriptScreen(lines = lines, processingState = processing, modifier = modifier)
+        TranscriptScreen(
+            lines = lines,
+            processingState = processing,
+            noSpeechDetected = noSpeechDetected,
+            modifier = modifier,
+        )
     }
 }
 

@@ -80,6 +80,35 @@ class SessionsViewModelTest {
         assertEquals("America/New_York", rows.single().zoneId)
     }
 
+    @Test
+    fun `no speech detected only once the session is fully analyzed and silent`() = runBlocking {
+        val db = container.database
+        db.sessions().register(SessionInfoEntity("quiet", "2026-10-15", "UTC", 1_000, null))
+        db.segments().insert(segmentEntity("quiet", state = "SEALED").copy(durationMs = 60_000))
+        val vm = model()
+        assertEquals(false, withTimeout(5_000) { vm.noSpeechDetected("quiet").first() })
+
+        db.speech().upsert(
+            com.apercallc.aidailymemory.data.SegmentSpeechEntity(
+                "quiet-0", "energy-v1", "OK", 60_000, 0, 0, 0, 1,
+            ),
+        )
+        assertEquals(true, withTimeout(5_000) { vm.noSpeechDetected("quiet").first() })
+    }
+
+    @Test
+    fun `speech found is never reported as no speech detected`() = runBlocking {
+        val db = container.database
+        db.sessions().register(SessionInfoEntity("talking", "2026-10-15", "UTC", 1_000, null))
+        db.segments().insert(segmentEntity("talking", state = "SEALED").copy(durationMs = 60_000))
+        db.speech().upsert(
+            com.apercallc.aidailymemory.data.SegmentSpeechEntity(
+                "talking-0", "energy-v1", "OK", 60_000, 5_000, 5_000, 1, 1,
+            ),
+        )
+        assertEquals(false, withTimeout(5_000) { model().noSpeechDetected("talking").first() })
+    }
+
     private fun line(session: String, id: String, start: Long) = LocalTranscriptLineEntity(
         lineId = id, sessionId = session, segmentId = "$session-0",
         startEpochMs = start, endEpochMs = start + 500, speaker = null, text = id,

@@ -73,9 +73,9 @@ phone-to-hosted-server copy of notes and never sends audio; the phone remains th
 
 ### Phase 1 exit gate
 
-- [ ] Every captured segment reaches a visible processing outcome. After the one-time model download,
+- [x] Every captured segment reaches a visible processing outcome. After the one-time model download,
   the on-device default works offline; before then, audio remains local and visibly pending.
-- [ ] Reprocessing and sync retries are idempotent; local transcripts remain until user deletion.
+- [x] Reprocessing and sync retries are idempotent; local transcripts remain until user deletion.
   Deletions of data already synced to the hosted server remain queued and propagate after reconnect,
   including when sync has since been disabled.
 

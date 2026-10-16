@@ -90,6 +90,46 @@ class CaptureDatabaseTest {
     )
 
     @Test
+    fun `one session's speech summary totals its own fully analyzed segments only`() = runTest {
+        val segments = db.segments()
+        val transitions = db.transitions()
+        val ready = db.speech()
+        db.sessions().register(sessionInfo("quiet"))
+        segments.insert(segmentEntity(sessionId = "quiet", sequence = 0, state = "SEALED").copy(durationMs = 60_000))
+        ready.upsert(speech("quiet-0", "OK", speechMs = 0))
+        transitions.append(TransitionEntity(1, "COMPLETED", "quiet", null, "stop", captureTime()))
+
+        db.sessions().register(sessionInfo("talking"))
+        segments.insert(segmentEntity(sessionId = "talking", sequence = 0, state = "SEALED").copy(durationMs = 60_000))
+        ready.upsert(speech("talking-0", "OK", speechMs = 5_000))
+        transitions.append(TransitionEntity(2, "COMPLETED", "talking", null, "stop", captureTime()))
+
+        db.sessions().register(sessionInfo("still-analyzing"))
+        segments.insert(segmentEntity(sessionId = "still-analyzing", sequence = 0, state = "SEALED").copy(durationMs = 60_000))
+
+        val quiet = requireNotNull(db.sessions().observeSpeechSummary("quiet").first())
+        assertEquals(60_000L, quiet.capturedMs)
+        assertEquals(60_000L, quiet.analyzedMs)
+        assertEquals(0L, quiet.speechMs)
+
+        val talking = requireNotNull(db.sessions().observeSpeechSummary("talking").first())
+        assertEquals(5_000L, talking.speechMs)
+
+        val stillAnalyzing = requireNotNull(db.sessions().observeSpeechSummary("still-analyzing").first())
+        assertEquals(0L, stillAnalyzing.analyzedMs)
+
+        assertEquals(null, db.sessions().observeSpeechSummary("unknown").first())
+    }
+
+    private fun sessionInfo(id: String) = SessionInfoEntity(
+        sessionId = id,
+        memoryDay = "2026-10-11",
+        zoneId = "UTC",
+        startedAtEpochMs = 1,
+        customTitle = null,
+    )
+
+    @Test
     fun `interrupted processing stages are eligible for restart recovery`() = runTest {
         val processing = db.processingState()
         val recoverableStates = listOf("PENDING", "TRANSCRIBING", "TRANSCRIBED", "EXTRACTING")

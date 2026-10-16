@@ -57,6 +57,30 @@ class TranscriptScreenTest {
     }
 
     @Test
+    fun `no speech detected is a terminal outcome once the session is never queued for it`() {
+        compose.setContent {
+            AiDailyMemoryTheme { TranscriptScreen(lines = emptyList(), noSpeechDetected = true) }
+        }
+        compose.onNodeWithText("No words recognized").assertExists()
+        compose.onNodeWithText("No transcript yet").assertDoesNotExist()
+    }
+
+    @Test
+    fun `no speech detected wins over a stale pending processing card`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(
+                    lines = emptyList(),
+                    processingState = ProcessingStateEntity("session", "PENDING", false, null, 0L),
+                    noSpeechDetected = true,
+                )
+            }
+        }
+        compose.onNodeWithText("No words recognized").assertExists()
+        compose.onNodeWithText("Waiting for the phone to charge before transcription starts.").assertDoesNotExist()
+    }
+
+    @Test
     fun `completed processing with no words shows a final outcome rather than pending`() {
         compose.setContent {
             AiDailyMemoryTheme {
