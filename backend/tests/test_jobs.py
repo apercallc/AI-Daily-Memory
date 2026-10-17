@@ -1,5 +1,6 @@
+import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -259,3 +260,40 @@ async def test_run_after_delays_the_first_claim(database: Database, db: Engine) 
 
     assert later is not None
     assert later.kind == "extract"
+
+
+async def test_concurrent_workers_never_double_claim_or_lose_a_job(
+    database: Database,
+    db: Engine,
+) -> None:
+    """Load/chaos test (TODO.md Phase 8 "chaos/fault tests for worker retry behavior"): many
+    real concurrent workers racing against a shared pool of jobs, not a single simulated lock
+    holder. Every job must be claimed by exactly one worker, and every job must be claimed —
+    `FOR UPDATE SKIP LOCKED` must never let two workers walk away with the same row, and must
+    never let contention starve a job out entirely."""
+    user = make_account(db).user_id
+    job_count = 12
+    worker_count = 6
+    subjects = [await queue_one(database, user) for _ in range(job_count)]
+
+    async def worker(name: str) -> list[uuid.UUID]:
+        claimed: list[uuid.UUID] = []
+        async with database.sessions() as session:
+            while True:
+                job = await claim(session, kinds=("transcribe",), worker=name, now=NOW)
+                if job is None:
+                    return claimed
+                claimed.append(job.subject_id)
+                assert await complete(session, job)
+
+    results = await asyncio.gather(*(worker(f"w{i}") for i in range(worker_count)))
+    all_claimed = [subject for worker_claims in results for subject in worker_claims]
+
+    # Every job claimed exactly once across every worker: no duplicate, none dropped.
+    assert sorted(all_claimed) == sorted(subjects)
+    with db.connect() as connection:
+        states: Sequence[str] = (
+            connection.execute(text("SELECT state FROM processing_jobs")).scalars().all()
+        )
+    assert all(state == "succeeded" for state in states)
+    assert len(states) == job_count

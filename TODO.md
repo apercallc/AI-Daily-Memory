@@ -460,6 +460,26 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     cadence); load/chaos tests for worker retry behavior (the legacy upload-processing worker
     is not deployed at all today — Gate B providers are disabled, ADR-0026 — so there is no
     live worker to load-test; this becomes relevant again only if that gate reopens).
+  - Re-verified this pass: `SENTRY_DSN` is genuinely set in production and points at the right
+    project; Railway logs show a clean run (no 5xx/exceptions), which is the real reason
+    `firstEvent` is still null — not a wiring bug. Attempted to configure alert rules via the
+    Sentry API (full `alerts:write` scope confirmed) — every issue-alert-rule endpoint tried
+    404s consistently across both the default and region (`us.sentry.io`) hosts while
+    project-list/detail calls against the same org succeed, so this Sentry plan appears to
+    restrict alert-rule CRUD to its web UI. Concrete default recommendations (not a final
+    policy) are recorded in `docs/product/LAUNCH_GAPS.md` for a human to enter in ~2 minutes.
+    Checked Railway's Postgres backup settings: no CLI or public-API surface exists for them on
+    this plan either — dashboard-only, genuinely outside what this session can verify or set.
+  - Closed this pass, for the part that is actually agent-doable: "load/chaos tests for worker
+    retry behavior" already had extensive fault-injection coverage in `app/jobs.py`/
+    `app/retention.py` (dead-lettering, lease-expiry races, fenced stale owners, bounded retry,
+    mid-sweep races) — the one real gap was that concurrency was only ever simulated via a
+    single held raw-SQL lock, never real concurrent workers. Added
+    `test_concurrent_workers_never_double_claim_or_lose_a_job` (`tests/test_jobs.py`): 6 real
+    async workers racing over a shared pool of 12 jobs via `asyncio.gather`, asserting every job
+    is claimed exactly once and none are lost; stable across 5 repeated runs. The *load*-test
+    half (volume, not just correctness under concurrency) and the legacy worker's own chaos
+    testing remain moot while that worker isn't deployed, as already noted above.
 
 # Phase 10 — Public launch: free user API and data portability
 
