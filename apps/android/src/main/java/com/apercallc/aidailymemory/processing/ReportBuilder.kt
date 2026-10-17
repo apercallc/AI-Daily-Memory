@@ -2,13 +2,11 @@ package com.apercallc.aidailymemory.processing
 
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
-import com.apercallc.aidailymemory.recording.processing.CoverageGap
 import com.apercallc.aidailymemory.recording.processing.DailyReport
 import com.apercallc.aidailymemory.recording.processing.DailyReportStatus
 import com.apercallc.aidailymemory.recording.processing.ReportCoverage
 import com.apercallc.aidailymemory.recording.processing.ReportItem
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
 
 /**
  * Builds a [DailyReport] from extracted memory items and transcript lines (ADR-0020).

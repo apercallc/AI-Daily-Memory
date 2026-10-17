@@ -3,7 +3,6 @@ package com.apercallc.aidailymemory.capture
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
-import android.util.Log
 import com.apercallc.aidailymemory.platform.logFailure
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

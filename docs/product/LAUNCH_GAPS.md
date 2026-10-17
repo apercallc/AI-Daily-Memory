@@ -43,7 +43,6 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
 | Feature | What exists | To turn on |
 | --- | --- | --- |
 | Password reset, email verification | Single-use hashed links, no account enumeration, web pages, resend | `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM` (a domain with SPF/DKIM), `PUBLIC_BASE_URL` |
-| Dormant Stripe billing (ADR-0028) | Legacy checkout, portal, webhook, and plan limits remain in the codebase but must not be enabled; remove them before production | none; never configure Stripe for this product |
 | Privacy policy, terms | Plain-language drafts at `/privacy.html` and `/terms.html`, linked from the site and app | A lawyer's review before relying on them |
 | CLI | `interfaces/cli/adm.py`: `ask`, `day`, `search`, `decisions`, `tasks`, `commitments`, `--json`, key saved owner-only | Create an API key in Account |
 | Dead-job tooling | `python -m app.admin dead-jobs` and `requeue-job` | none |

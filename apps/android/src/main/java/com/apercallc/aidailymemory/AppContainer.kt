@@ -26,7 +26,6 @@ import com.apercallc.aidailymemory.ondevice.VoskRecognizers
 import com.apercallc.aidailymemory.processing.StubTranscriptionProvider
 import com.apercallc.aidailymemory.processing.ProcessingPipeline
 import com.apercallc.aidailymemory.processing.ProcessingScheduler
-import com.apercallc.aidailymemory.processing.StubExtractionProvider
 import com.apercallc.aidailymemory.processing.ApiKeyTranscriptionProvider
 import com.apercallc.aidailymemory.processing.ApiKeyExtractionProvider
 import com.apercallc.aidailymemory.capture.AudioCaptureEngine
@@ -562,8 +561,6 @@ class AppContainer(context: Context) {
             return ProcessingPipeline(
                 segments = segments,
                 segmentDao = database.segments(),
-                speechDao = database.speech(),
-                clipDao = database.clips(),
                 memoryItemDao = database.memoryItems(),
                 memoryCorrectionDao = database.memoryCorrections(),
                 dailyReportDao = database.dailyReports(),

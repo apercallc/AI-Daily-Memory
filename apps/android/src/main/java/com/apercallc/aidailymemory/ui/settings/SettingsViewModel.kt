@@ -26,9 +26,7 @@ import com.apercallc.aidailymemory.recording.schedule.RhythmAction
 import com.apercallc.aidailymemory.recording.schedule.RhythmPlanner
 import com.apercallc.aidailymemory.recording.storage.AudioRetention
 import com.apercallc.aidailymemory.settings.ProcessingSettings
-import com.apercallc.aidailymemory.net.ApiException
 import com.apercallc.aidailymemory.net.ConnectError
-import com.apercallc.aidailymemory.net.ServerLink
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -42,7 +40,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -565,7 +562,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private const val STOP_TIMEOUT_MS = 5_000L
         private const val BYTES_PER_MB = 1_000_000L
         private const val USAGE_WINDOW_MS = 7L * 24L * 60L * 60L * 1_000L
-        private const val HTTP_UNAUTHORIZED = 401
 
         fun nextChange(rhythm: DailyRhythm, now: Instant, zone: ZoneId): NextChange? =
             RhythmPlanner.nextAction(rhythm, now, zone)?.let { (transition, action) ->

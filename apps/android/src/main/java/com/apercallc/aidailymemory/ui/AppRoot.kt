@@ -81,7 +81,6 @@ import com.apercallc.aidailymemory.ui.settings.AccountCallbacks
 import com.apercallc.aidailymemory.ui.settings.RhythmSettingsScreen
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
-import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.update.UpdateViewModel
 import java.time.Instant
 import java.time.ZoneId

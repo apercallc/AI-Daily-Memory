@@ -1,7 +1,6 @@
 package com.apercallc.aidailymemory.ui.memory
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
 import com.apercallc.aidailymemory.data.DailyReportEntity

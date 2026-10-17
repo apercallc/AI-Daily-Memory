@@ -5,7 +5,6 @@ import android.database.sqlite.SQLiteException
 import androidx.room.withTransaction
 import com.apercallc.aidailymemory.capture.SegmentAudioRead
 import com.apercallc.aidailymemory.capture.SegmentStore
-import com.apercallc.aidailymemory.data.ClipDao
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportDao
 import com.apercallc.aidailymemory.data.DailyReportEntity
@@ -19,13 +18,10 @@ import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.ProviderUsageDao
 import com.apercallc.aidailymemory.data.ProviderUsageEntity
 import com.apercallc.aidailymemory.data.SegmentDao
-import com.apercallc.aidailymemory.data.SegmentEntity
 import com.apercallc.aidailymemory.data.SessionDao
-import com.apercallc.aidailymemory.data.SpeechDao
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
-import com.apercallc.aidailymemory.recording.processing.ExtractedItem
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.IdentifiedMemoryItem
 import com.apercallc.aidailymemory.recording.processing.MemoryItemIdentity
@@ -39,7 +35,6 @@ import com.apercallc.aidailymemory.recording.processing.TranscriptChunker
 import com.apercallc.aidailymemory.recording.processing.ExtractionProvider
 import com.apercallc.aidailymemory.recording.segment.SegmentState
 import com.apercallc.aidailymemory.recording.speech.VoiceVad
-import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.settings.ProcessingSettings
 import java.time.Instant
 import java.time.ZoneId
@@ -62,8 +57,6 @@ data class ProcessingRun(val processed: Int, val failed: Int, val remaining: Int
 class ProcessingPipeline(
     private val segments: SegmentStore,
     private val segmentDao: SegmentDao,
-    private val speechDao: SpeechDao,
-    private val clipDao: ClipDao,
     private val memoryItemDao: MemoryItemDao,
     private val memoryCorrectionDao: MemoryCorrectionDao,
     private val dailyReportDao: DailyReportDao,

@@ -833,8 +833,6 @@ class ProcessingPipelineTest {
             ),
         ),
         segmentDao = database.segments(),
-        speechDao = database.speech(),
-        clipDao = database.clips(),
         memoryItemDao = database.memoryItems(),
         memoryCorrectionDao = database.memoryCorrections(),
         dailyReportDao = database.dailyReports(),

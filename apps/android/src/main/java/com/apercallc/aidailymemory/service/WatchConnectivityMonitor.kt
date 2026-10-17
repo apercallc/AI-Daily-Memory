@@ -5,7 +5,6 @@ import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.health.WatchLink
 import com.apercallc.aidailymemory.recording.health.watchLinkFromCapabilityState
 import com.google.android.gms.wearable.CapabilityClient
-import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.Wearable
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.ExperimentalCoroutinesApi

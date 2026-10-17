@@ -49,7 +49,6 @@ import com.apercallc.aidailymemory.ui.LoadingState
 import com.apercallc.aidailymemory.ui.durationText
 import com.apercallc.aidailymemory.ui.sessions.sessionTitleText
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
-import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
 import java.time.DateTimeException
 import java.time.Instant
