@@ -47,10 +47,9 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
     /** The APK downloaded this process, if any. */
     private var downloaded: File? = null
 
-    /** Auto-check at most once per process; manual taps re-run it. */
-    private var autoChecked = false
-
-    /** Silent check on app open: only runs while still Idle so it never clobbers user action. */
+    /** Silent check on app open: only runs while still Idle so it never clobbers user action.
+     * This naturally checks at most once per process -- once the check lands in any non-Idle
+     * state, this short-circuits; manual taps call [check] directly and re-run regardless. */
     fun checkIfIdle() {
         if (_state.value == UpdateState.Idle) check()
     }
