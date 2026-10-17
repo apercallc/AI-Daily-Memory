@@ -2,6 +2,7 @@ package com.apercallc.aidailymemory.ui
 
 import androidx.test.core.app.ApplicationProvider
 import com.apercallc.aidailymemory.AiDailyMemoryApplication
+import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.data.SessionInfoEntity
 import com.apercallc.aidailymemory.recording.session.PartOfDay
 import com.apercallc.aidailymemory.recording.session.SessionTitle
@@ -174,6 +175,52 @@ class MemoryViewModelTest {
         vm.clearEventBoundaryOverride("b")
         withTimeout(5_000) { while (latest.sessionJoined("b") != true) kotlinx.coroutines.yield() }
         collector.cancel()
+    }
+
+    @Test
+    fun `dismissing surfaces an error instead of crashing when the write fails`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(listOf(item("i1", "s1", "2026-10-12")))
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        container.database.openHelper.writableDatabase.execSQL("DROP TABLE memory_item")
+
+        vm.dismiss("i1")
+
+        assertEquals(R.string.memory_dismiss_failed, withTimeout(5_000) { vm.messages.first() })
+    }
+
+    @Test
+    fun `correcting surfaces an error instead of crashing when the write fails`() = runBlocking {
+        register("s1", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        container.database.memoryItems().insertAll(listOf(item("i1", "s1", "2026-10-12")))
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        container.database.openHelper.writableDatabase.execSQL("DROP TABLE memory_item_correction")
+
+        vm.correct("i1", "The corrected version")
+
+        assertEquals(R.string.memory_correct_failed, withTimeout(5_000) { vm.messages.first() })
+    }
+
+    @Test
+    fun `toggling an event boundary surfaces an error instead of crashing when the write fails`() = runBlocking {
+        register("a", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        container.database.openHelper.writableDatabase.execSQL("DROP TABLE session_event_override")
+
+        vm.toggleEventBoundary("a", currentlyJoined = false)
+
+        assertEquals(R.string.memory_event_boundary_failed, withTimeout(5_000) { vm.messages.first() })
+    }
+
+    @Test
+    fun `clearing an event boundary override surfaces an error instead of crashing when the write fails`() = runBlocking {
+        register("a", "2026-10-12", "UTC", Instant.parse("2026-10-12T09:00:00Z").toEpochMilli())
+        val vm = MemoryViewModel(container, { noon }, { ZoneId.of("UTC") })
+        container.database.openHelper.writableDatabase.execSQL("DROP TABLE session_event_override")
+
+        vm.clearEventBoundaryOverride("a")
+
+        assertEquals(R.string.memory_event_boundary_failed, withTimeout(5_000) { vm.messages.first() })
     }
 
     @Test

@@ -80,7 +80,7 @@ fun SessionsScreen(
             days == null -> item { LoadingState(stringResource(R.string.sessions_loading)) }
             days.isEmpty() -> item {
                 EmptyState(
-                    icon = R.drawable.ic_nav_sessions,
+                    icon = R.drawable.ic_empty_sessions,
                     title = stringResource(R.string.sessions_empty_title),
                     body = stringResource(R.string.sessions_empty_body),
                     action = onStartRecording?.let { stringResource(R.string.sessions_empty_action) to it },

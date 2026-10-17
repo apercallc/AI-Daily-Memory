@@ -85,7 +85,7 @@ class ScheduleScreensTest {
         )
 
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 SessionsScreen(days = days, today = today, onRename = { _, _ -> })
             }
         }
@@ -154,7 +154,7 @@ class ScheduleScreensTest {
             ),
         )
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 SessionsScreen(days = days, today = today, onRename = { id, text -> renames += id to text })
             }
         }
@@ -177,7 +177,7 @@ class ScheduleScreensTest {
     fun `turning on a sleep schedule and adding a quiet time produce a valid rhythm`() {
         var rhythm = DailyRhythm.None
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 RhythmSettingsScreen(
                     rhythm = rhythm,
                     retention = AudioRetention.TRANSCRIPT_ONLY,
@@ -199,7 +199,7 @@ class ScheduleScreensTest {
     fun `the quiet time dialog blocks saving until the form is valid`() {
         var rhythm = DailyRhythm.None
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 RhythmSettingsScreen(
                     rhythm = rhythm,
                     retention = AudioRetention.TRANSCRIPT_ONLY,
@@ -226,7 +226,7 @@ class ScheduleScreensTest {
     fun `picking keep-audio shows the storage cost`() {
         var retention = AudioRetention.TRANSCRIPT_ONLY
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 RhythmSettingsScreen(
                     rhythm = DailyRhythm.None,
                     retention = retention,
@@ -248,7 +248,7 @@ class ScheduleScreensTest {
     @Test
     fun `memory processing and daily reports stay collapsed until opened`() {
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 RhythmSettingsScreen(
                     rhythm = DailyRhythm.None,
                     retention = AudioRetention.TRANSCRIPT_ONLY,
@@ -274,7 +274,7 @@ class ScheduleScreensTest {
     fun `the theme can be picked, and following the phone is the default`() {
         var picked: ThemeMode? = null
         compose.setContent {
-            AiDailyMemoryTheme(dynamicColor = false) {
+            AiDailyMemoryTheme {
                 RhythmSettingsScreen(
                     rhythm = DailyRhythm.None,
                     retention = AudioRetention.TRANSCRIPT_ONLY,

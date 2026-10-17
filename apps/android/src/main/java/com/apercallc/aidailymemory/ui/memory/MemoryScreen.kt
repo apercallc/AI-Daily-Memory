@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -21,12 +22,18 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +48,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.recording.session.SessionTitle
@@ -55,6 +63,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 
 /** One memory item with its display metadata, ready for the UI. */
 data class MemoryDisplayItem(
@@ -105,6 +116,26 @@ data class MemoryDay(
     val sessions: List<MemorySession>,
 )
 
+/** [days] with any item whose id is in [pending] hidden, without touching stored data. */
+private fun daysWithoutPendingDismissals(days: List<MemoryDay>, pending: Set<String>): List<MemoryDay> {
+    if (pending.isEmpty()) return days
+    return days.map { day ->
+        day.copy(sessions = day.sessions.map { it.copy(items = it.items.filterNot { item -> item.id in pending }) })
+    }
+}
+
+/** [sections] with any pending-dismissed item removed; a section left with none is dropped. */
+private fun projectMemoryWithoutPendingDismissals(
+    sections: List<ProjectMemorySection>,
+    pending: Set<String>,
+): List<ProjectMemorySection> {
+    if (pending.isEmpty()) return sections
+    return sections.mapNotNull { section ->
+        val items = section.items.filterNot { it.id in pending }
+        if (items.isEmpty()) null else section.copy(items = items)
+    }
+}
+
 /** Stateless: renders the daily memory timeline. */
 @Composable
 fun MemoryScreen(
@@ -121,46 +152,85 @@ fun MemoryScreen(
     onToggleEventBoundary: (sessionId: String, currentlyJoined: Boolean) -> Unit = { _, _ -> },
     /** Durable cross-day view of open commitments/actions (TODO.md "project memory"). */
     projectMemory: List<ProjectMemorySection> = emptyList(),
+    /** One-shot write-failure messages from the view model (dismiss/correct/boundary edits
+     * that hit a database error); shown in the same snackbar as the dismiss-undo affordance. */
+    errorMessages: Flow<Int> = emptyFlow(),
 ) {
     val spacing = AiDailyMemoryTheme.spacing
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(spacing.md),
-    ) {
-        if (projectMemory.isNotEmpty()) {
-            item(key = "project-memory") {
-                ProjectMemorySectionView(projectMemory, onDismiss, onCorrect)
+    // A dismiss hides the item at once but offers Undo before it is final (no accidental,
+    // un-recoverable tap): [onDismiss] only fires once the snackbar closes without Undo.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val resources = LocalResources.current
+    LaunchedEffect(errorMessages) {
+        errorMessages.collect { snackbarHostState.showSnackbar(resources.getString(it)) }
+    }
+    var pendingDismissIds by remember { mutableStateOf(emptySet<String>()) }
+    val dismissedMessage = stringResource(R.string.memory_dismiss_undo_message)
+    val undoLabel = stringResource(R.string.action_undo)
+    val dismissWithUndo: (String) -> Unit = { itemId ->
+        pendingDismissIds = pendingDismissIds + itemId
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = dismissedMessage,
+                actionLabel = undoLabel,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                pendingDismissIds = pendingDismissIds - itemId
+            } else {
+                onDismiss(itemId)
             }
         }
-        when (state) {
-            MemoryLoadState.Loading -> item { LoadingState(stringResource(R.string.sessions_loading)) }
-            MemoryLoadState.Failed -> item {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    Text(
-                        text = stringResource(R.string.memory_load_error),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Button(onClick = onRetry) {
-                        Text(stringResource(R.string.memory_retry))
+    }
+    val visibleState = if (state is MemoryLoadState.Content) {
+        MemoryLoadState.Content(daysWithoutPendingDismissals(state.days, pendingDismissIds))
+    } else {
+        state
+    }
+    val visibleProjectMemory = projectMemoryWithoutPendingDismissals(projectMemory, pendingDismissIds)
+
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            if (visibleProjectMemory.isNotEmpty()) {
+                item(key = "project-memory") {
+                    ProjectMemorySectionView(visibleProjectMemory, dismissWithUndo, onCorrect)
+                }
+            }
+            when (visibleState) {
+                MemoryLoadState.Loading -> item { LoadingState(stringResource(R.string.sessions_loading)) }
+                MemoryLoadState.Failed -> item {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        Text(
+                            text = stringResource(R.string.memory_load_error),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Button(onClick = onRetry) {
+                            Text(stringResource(R.string.memory_retry))
+                        }
+                    }
+                }
+                is MemoryLoadState.Content -> if (visibleState.days.isEmpty()) {
+                    item {
+                        EmptyState(
+                            icon = R.drawable.ic_empty_memory,
+                            title = stringResource(R.string.memory_empty_title),
+                            body = stringResource(R.string.memory_empty),
+                            action = onSetUpProcessing?.let { stringResource(R.string.memory_empty_action) to it },
+                        )
+                    }
+                } else {
+                    items(visibleState.days, key = { it.dateLabel }) { day ->
+                        MemoryDaySection(day, dismissWithUndo, onCorrect, onOpenReport, onToggleEventBoundary)
                     }
                 }
             }
-            is MemoryLoadState.Content -> if (state.days.isEmpty()) {
-                item {
-                    EmptyState(
-                        icon = R.drawable.ic_nav_memory,
-                        title = stringResource(R.string.memory_empty_title),
-                        body = stringResource(R.string.memory_empty),
-                        action = onSetUpProcessing?.let { stringResource(R.string.memory_empty_action) to it },
-                    )
-                }
-            } else {
-                items(state.days, key = { it.dateLabel }) { day ->
-                    MemoryDaySection(day, onDismiss, onCorrect, onOpenReport, onToggleEventBoundary)
-                }
-            }
         }
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 

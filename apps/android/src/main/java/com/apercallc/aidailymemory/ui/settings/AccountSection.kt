@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
@@ -105,6 +106,9 @@ fun AccountSection(account: AccountUi, callbacks: AccountCallbacks) {
 @Composable
 private fun Connected(account: AccountUi, callbacks: AccountCallbacks) {
     val spacing = AiDailyMemoryTheme.spacing
+    // A mis-tap must never instantly revoke the server link, so disconnect is confirmed first,
+    // the same way a session delete is (see SessionsScreen's delete confirmation).
+    var confirmingDisconnect by rememberSaveable { mutableStateOf(false) }
     Text(
         text = stringResource(R.string.account_connected, account.host.orEmpty()),
         style = MaterialTheme.typography.bodyLarge,
@@ -122,9 +126,27 @@ private fun Connected(account: AccountUi, callbacks: AccountCallbacks) {
         Text(stringResource(if (account.testing) R.string.test_running else R.string.test_connection))
     }
     OutlinedButton(
-        onClick = callbacks.onDisconnect,
+        onClick = { confirmingDisconnect = true },
         modifier = Modifier.heightIn(min = spacing.minTouchTarget),
     ) { Text(stringResource(R.string.account_disconnect)) }
+    if (confirmingDisconnect) {
+        AlertDialog(
+            onDismissRequest = { confirmingDisconnect = false },
+            title = { Text(stringResource(R.string.account_disconnect_title)) },
+            text = { Text(stringResource(R.string.account_disconnect_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingDisconnect = false
+                    callbacks.onDisconnect()
+                }) { Text(stringResource(R.string.account_disconnect)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDisconnect = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
 
 /**

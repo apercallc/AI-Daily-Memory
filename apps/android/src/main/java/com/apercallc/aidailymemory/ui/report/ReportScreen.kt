@@ -45,7 +45,7 @@ fun ReportScreen(state: ReportLoadState, modifier: Modifier = Modifier) {
     when (state) {
         ReportLoadState.Loading -> LoadingState(stringResource(R.string.report_loading), modifier)
         ReportLoadState.NotGenerated -> EmptyState(
-            icon = R.drawable.ic_nav_memory,
+            icon = R.drawable.ic_empty_report,
             title = stringResource(R.string.report_not_generated_title),
             body = stringResource(R.string.report_not_generated_body),
             modifier = modifier,

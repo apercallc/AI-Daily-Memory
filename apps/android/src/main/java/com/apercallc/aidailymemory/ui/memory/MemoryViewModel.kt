@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui.memory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apercallc.aidailymemory.AppContainer
+import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
@@ -25,8 +26,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.format.FormatStyle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -163,6 +167,11 @@ class MemoryViewModel(
         reloadRequests.update { it + 1 }
     }
 
+    private val _messages = Channel<Int>(Channel.BUFFERED)
+
+    /** One-shot, user-facing failures for writes below (dismiss/correct/boundary edits). */
+    val messages: Flow<Int> = _messages.receiveAsFlow()
+
     /**
      * One day's generated report, for the report screen (TODO.md "Add an in-app report
      * screen and share reports as Markdown"). Null while no report has been generated yet for
@@ -173,8 +182,16 @@ class MemoryViewModel(
 
     /** Hides an item from the timeline without rewriting the extracted row (dismiss, ADR-0019). */
     fun dismiss(itemId: String) = viewModelScope.launch {
-        container.database.memoryItems().dismiss(itemId, now().toEpochMilli())
-        reloadRequests.update { it + 1 }
+        try {
+            container.database.memoryItems().dismiss(itemId, now().toEpochMilli())
+            reloadRequests.update { it + 1 }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A full or locked database must not crash the app over hiding one item.
+            logFailure(TAG, "memory_item_dismiss_failed", e)
+            _messages.send(R.string.memory_dismiss_failed)
+        }
     }
 
     /**
@@ -183,15 +200,22 @@ class MemoryViewModel(
      * never rewritten in place).
      */
     fun correct(itemId: String, correctedText: String) = viewModelScope.launch {
-        container.database.memoryCorrections().insert(
-            MemoryItemCorrectionEntity(
-                id = container.ids.next().toString(),
-                itemId = itemId,
-                correctedText = correctedText,
-                correctedAtEpochMs = now().toEpochMilli(),
-            ),
-        )
-        reloadRequests.update { it + 1 }
+        try {
+            container.database.memoryCorrections().insert(
+                MemoryItemCorrectionEntity(
+                    id = container.ids.next().toString(),
+                    itemId = itemId,
+                    correctedText = correctedText,
+                    correctedAtEpochMs = now().toEpochMilli(),
+                ),
+            )
+            reloadRequests.update { it + 1 }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "memory_item_correct_failed", e)
+            _messages.send(R.string.memory_correct_failed)
+        }
     }
 
     /**
@@ -201,21 +225,35 @@ class MemoryViewModel(
      * predecessor to correct against.
      */
     fun toggleEventBoundary(sessionId: String, currentlyJoined: Boolean) = viewModelScope.launch {
-        val kind = if (currentlyJoined) {
-            SessionEventOverrideKind.FORCE_SPLIT
-        } else {
-            SessionEventOverrideKind.FORCE_JOIN
+        try {
+            val kind = if (currentlyJoined) {
+                SessionEventOverrideKind.FORCE_SPLIT
+            } else {
+                SessionEventOverrideKind.FORCE_JOIN
+            }
+            container.database.sessionEventOverrides().upsert(
+                SessionEventOverrideEntity(sessionId, kind, now().toEpochMilli()),
+            )
+            reloadRequests.update { it + 1 }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "memory_event_boundary_toggle_failed", e)
+            _messages.send(R.string.memory_event_boundary_failed)
         }
-        container.database.sessionEventOverrides().upsert(
-            SessionEventOverrideEntity(sessionId, kind, now().toEpochMilli()),
-        )
-        reloadRequests.update { it + 1 }
     }
 
     /** Clears a session's boundary correction, returning it to the automatic grouping. */
     fun clearEventBoundaryOverride(sessionId: String) = viewModelScope.launch {
-        container.database.sessionEventOverrides().clear(sessionId)
-        reloadRequests.update { it + 1 }
+        try {
+            container.database.sessionEventOverrides().clear(sessionId)
+            reloadRequests.update { it + 1 }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "memory_event_boundary_clear_failed", e)
+            _messages.send(R.string.memory_event_boundary_failed)
+        }
     }
 
     private fun memoryToday(): LocalDate =

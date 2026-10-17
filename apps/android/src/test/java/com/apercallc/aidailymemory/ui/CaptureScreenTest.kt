@@ -66,7 +66,7 @@ class CaptureScreenTest {
         )
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
-              AiDailyMemoryTheme(dynamicColor = false) {
+              AiDailyMemoryTheme {
                 CaptureScreen(
                     model = CaptureStatusPresenter.present(state, health),
                     overview = overview,

@@ -61,6 +61,7 @@
     <string name="action_not_now">Not now</string>
     <string name="action_open_settings">Open settings</string>
     <string name="action_ok">OK</string>
+    <string name="action_undo">Undo</string>
 
     <string name="stat_captured">Saved audio</string>
     <string name="stat_pending">Only on this phone</string>
@@ -277,6 +278,8 @@
     <string name="account_connected">Connected to %1$s</string>
     <string name="account_upload_rules">Notes sync to this account. Audio is not included in sync.</string>
     <string name="account_disconnect">Disconnect</string>
+    <string name="account_disconnect_title">Disconnect this phone?</string>
+    <string name="account_disconnect_body">This phone stops syncing notes to the server. Notes already synced stay there until deleted from the account; recordings and notes on this phone are not affected.</string>
     <string name="account_revoke_manual">An old connection couldn\'t be revoked from this phone. Ask for its device token to be revoked on the server.</string>
     <string name="account_revoke_pending">Your previous connection will be revoked on the server as soon as this phone is online.</string>
 
@@ -371,7 +374,10 @@
     <string name="memory_transcript_deleted">Audio deleted after transcription</string>
     <string name="memory_evidence_quote">\"%1$s\"</string>
     <string name="memory_dismiss_item">Dismiss</string>
+    <string name="memory_dismiss_undo_message">Item dismissed</string>
+    <string name="memory_dismiss_failed">Couldn\'t dismiss this item. Try again.</string>
     <string name="memory_correct_item">Correct</string>
+    <string name="memory_correct_failed">Couldn\'t save the correction. Try again.</string>
     <string name="memory_corrected_label">Corrected</string>
     <string name="memory_correct_dialog_title">Correct this item</string>
     <string name="memory_correct_dialog_save">Save</string>
@@ -386,6 +392,7 @@
     <string name="memory_project_memory_show">Show people and commitments</string>
     <string name="memory_project_memory_hide">Hide people and commitments</string>
     <string name="memory_split_event">Split into separate event</string>
+    <string name="memory_event_boundary_failed">Couldn\'t update the grouping. Try again.</string>
     <string name="nav_memory">Memory</string>
 
     <!-- Daily report screen -->

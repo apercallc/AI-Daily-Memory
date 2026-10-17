@@ -449,10 +449,14 @@ fun CaptureScreen(
             }
 
             if (model.canStop) {
-                OutlinedButton(
+                // Fully-styled danger button: matches the watch's Stop control for the same
+                // destructive action, and the errorContainer/onErrorContainer danger tokens
+                // used elsewhere in this app (e.g. the error banner card below).
+                Button(
                     modifier = Modifier.fillMaxWidth().heightIn(min = spacing.minTouchTarget),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ),
                     onClick = onStop,
                 ) { Text(stringResource(R.string.action_end_session)) }

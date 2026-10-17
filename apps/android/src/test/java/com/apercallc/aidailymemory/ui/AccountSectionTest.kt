@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -243,7 +244,41 @@ class AccountSectionTest {
         compose.onNodeWithText("Test connection").performScrollTo().performClick()
         compose.onNodeWithText("Disconnect").performScrollTo().performClick()
         assertEquals(1, tested)
+        // Tapping the button only opens the confirmation; the link is not revoked yet.
+        assertTrue(!disconnected)
+        compose.onAllNodesWithText("Disconnect").onLast().performClick()
         assertTrue(disconnected)
+    }
+
+    @Test
+    fun `disconnect needs confirmation before it takes effect`() {
+        var disconnected = false
+        show(
+            AccountUi(host = hostOf("https://aidailymem.apercallc.com/v1")),
+            AccountCallbacks(onDisconnect = { disconnected = true }),
+        )
+
+        compose.onNodeWithText("Disconnect").performScrollTo().performClick()
+
+        compose.onNodeWithText("Disconnect this phone?").assertExists()
+        assertTrue(!disconnected)
+    }
+
+    @Test
+    fun `cancelling the disconnect confirmation leaves the connection untouched`() {
+        var disconnected = false
+        show(
+            AccountUi(host = hostOf("https://aidailymem.apercallc.com/v1")),
+            AccountCallbacks(onDisconnect = { disconnected = true }),
+        )
+
+        compose.onNodeWithText("Disconnect").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performClick()
+
+        assertTrue(!disconnected)
+        compose.onNodeWithText("Disconnect this phone?").assertDoesNotExist()
+        // The button is still there for a deliberate retry; nothing was revoked meanwhile.
+        compose.onNodeWithText("Disconnect").assertExists()
     }
 
     @Test
