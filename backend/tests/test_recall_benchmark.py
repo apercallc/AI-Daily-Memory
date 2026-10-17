@@ -10,17 +10,18 @@ question. What this file adds on top of that is an aggregate, quantified measure
 TODO.md's "Measure Recall@K, ranking, temporal accuracy, evidence-source accuracy, and
 insufficient-evidence abstention" actually asks for.
 
-Deliberately out of scope here (see docs/product/RECALL_BENCHMARK.md): calendar-week/month
-boundary cases ("last week", "last month") are not re-tested against a live clock, because
-their correctness would then depend on which day of the week this suite happens to run —
-`tests/test_recall.py` already covers that math with fixed dates. Also out of scope: a
-human-curated set of realistically-worded, ambiguous real-world questions and a judgment
-call on "good enough" ranking for those — this suite's questions are direct and unambiguous
-by construction, which is exactly what makes them gradable without a human in the loop.
+Deliberately out of scope here (see docs/product/RECALL_BENCHMARK.md): a human-curated set of
+realistically-worded, ambiguous real-world questions and a judgment call on "good enough"
+ranking for those — this suite's questions are direct and unambiguous by construction, which
+is exactly what makes them gradable without a human in the loop. Calendar-boundary cases
+("last week", "last month") compute their windows with the *same formulas*
+`app.recall.resolve_range` uses, applied to the real clock at test time — verified
+deterministic by brute-force checking every calendar day from 2024 through 2027 — so they are
+not hardcoded past dates and never depend on which day this suite happens to run.
 """
 
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -107,6 +108,31 @@ def test_known_day_recall_benchmark(client: TestClient, db: Engine) -> None:
     other_account = make_account(db)
     add_item(db, other_account.user_id, "Secret merger plan with a rival company", kind="decision")
 
+    # Same windows app.recall.resolve_range computes, applied to the real clock at test time —
+    # deterministic regardless of which day this suite runs on.
+    today = now.date()
+    monday = today - timedelta(days=today.weekday())
+    last_week_start = monday - timedelta(days=7)
+    last_week_mid = last_week_start + timedelta(days=3)
+    two_weeks_ago = last_week_start - timedelta(days=4)  # safely outside last week either way
+    first_of_month = today.replace(day=1)
+    last_month_end = first_of_month - timedelta(days=1)
+    last_month_mid = last_month_end.replace(day=1) + timedelta(days=10)
+    two_months_ago = (last_month_end.replace(day=1) - timedelta(days=20)).replace(day=5)
+
+    def at(d: date) -> datetime:
+        return datetime.combine(d, time(12, 0), tzinfo=UTC)
+
+    decision_last_week = add_item(
+        db, user, "Chose a venue for the offsite", kind="decision", day=at(last_week_mid)
+    )
+    add_item(db, user, "Chose a much older venue", kind="decision", day=at(two_weeks_ago))
+
+    decision_last_month = add_item(
+        db, user, "Chose the vendor for payroll", kind="decision", day=at(last_month_mid)
+    )
+    add_item(db, user, "Chose an even older vendor", kind="decision", day=at(two_months_ago))
+
     cases = [
         RecallCase("same_day_kind", "What did I decide today?", now.date(), (str(decision_today),)),
         RecallCase(
@@ -162,6 +188,18 @@ def test_known_day_recall_benchmark(client: TestClient, db: Engine) -> None:
             "merger plan with a rival company",
             now.date(),
             expected_abstain=True,
+        ),
+        RecallCase(
+            "last_week_window_kind",
+            "What did I decide last week?",
+            now.date(),
+            (str(decision_last_week),),
+        ),
+        RecallCase(
+            "last_month_window_kind",
+            "What did I decide last month?",
+            now.date(),
+            (str(decision_last_month),),
         ),
     ]
 

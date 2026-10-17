@@ -252,26 +252,29 @@ Name mentions remain text evidence; never infer speaker identity from a name app
   - Built this pass: `app/recall_evaluation.py` (pure, tested: Recall@K, precision@K,
     abstention accuracy) and `tests/test_recall_benchmark.py` — a known-day benchmark that
     seeds a real multi-day, multi-kind corpus with known-correct ids, asks the live `/v1/ask`
-    eleven questions, and asserts `mean_recall_at_k == 1.0` and `abstention_accuracy == 1.0`,
+    thirteen questions, and asserts `mean_recall_at_k == 1.0` and `abstention_accuracy == 1.0`,
     including a dedicated ranking check. Unlike Phase 2's gold dataset, this one's ground truth
-    is simply what the test itself seeded, not a subjective human judgment call, so it is
+    is simply what the test seeded, not a subjective human judgment call, so it is
     written as passing assertions rather than an unreviewed dataset — see
     `docs/product/RECALL_BENCHMARK.md`.
-  - Still open: calendar-week/month-boundary cases are deliberately left to the existing
-    fixed-date unit tests in `tests/test_recall.py` rather than a live-clock suite (see the doc
-    for why), and a human-curated set of realistically-worded, ambiguous real-world questions —
+  - Also closed this pass: calendar-boundary cases ("last week", "last month") now have
+    deterministic coverage too, computing their expected windows with the same formulas
+    `app.recall.resolve_range` uses against the real clock at test time (verified across every
+    calendar day 2024-2027, not just spot-checked) rather than a hardcoded date.
+  - Still open: a human-curated set of realistically-worded, ambiguous real-world questions —
     where judging "good enough" ranking is a preference call, not a deterministic check — still
     does not exist.
 
 ### Phase 4 exit gate
 
 - [ ] Known benchmark questions reliably retrieve the correct evidence without vector search.
-  - `tests/test_recall_benchmark.py` demonstrates exactly this for its eleven deterministic
-    cases (100% Recall@1, 100% abstention accuracy, correct top-1 ranking) — genuine evidence,
-    not stretched. Stays open because it does not yet cover calendar-boundary phrasing against
-    a live clock or realistic/ambiguous real-world question variety (both deliberately
-    deferred, see `docs/product/RECALL_BENCHMARK.md`), so "known benchmark questions" here means
-    "the ones this pass could build," not "representative of real usage" yet.
+  - `tests/test_recall_benchmark.py` demonstrates exactly this for its thirteen deterministic
+    cases (100% Recall@1, 100% abstention accuracy, correct top-1 ranking, including
+    deterministic "last week"/"last month" coverage) — genuine evidence, not stretched. Stays
+    open because it does not yet cover realistic/ambiguous real-world question variety
+    (deliberately deferred, see `docs/product/RECALL_BENCHMARK.md`), so "known benchmark
+    questions" here means "the ones this pass could build," not "representative of real usage"
+    yet.
 
 # Phase 5 — CLI
 

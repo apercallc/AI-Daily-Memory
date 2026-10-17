@@ -11,10 +11,15 @@ What exists today, what is deliberately still open, and why.
 - `tests/test_recall_benchmark.py` — a known-day benchmark: seeds a realistic multi-day,
   multi-kind memory corpus (decisions, actions, commitments, ideas, questions, a dismissed item,
   a corrected item, cross-account data) with ids known in advance, asks the real, live
-  `POST /v1/ask` endpoint eleven questions about it, and scores the aggregate with
+  `POST /v1/ask` endpoint thirteen questions about it, and scores the aggregate with
   `recall_evaluation`. It asserts `mean_recall_at_k == 1.0` and `abstention_accuracy == 1.0`
   today, plus a dedicated ranking check (the item sharing every query term must rank first, not
-  merely appear somewhere in the results).
+  merely appear somewhere in the results). Two of the thirteen cases ("last week", "last
+  month") compute their expected windows with the exact same formulas
+  `app.recall.resolve_range` uses, applied to the real clock at test time — verified
+  deterministic by brute-force checking every calendar day from 2024 through 2027 (weekday
+  rollover, every month length, year boundaries) — rather than hardcoding a past date that
+  would make the test's correctness depend on which day it happens to run.
 
 ## Why this one is different from the Android extraction gold dataset
 
@@ -27,14 +32,6 @@ a `reviewed = false` dataset waiting on a person, and it is why TODO.md's "Recal
 move further without a human reviewer than Phase 2's "AI evaluation" can.
 
 ## What's still genuinely open
-
-**Calendar-boundary cases are deliberately excluded from the live-clock suite.** "Last week" and
-"last month" depend on which day of the week or month the suite happens to run; re-testing them
-against `datetime.now()` would make the suite's pass/fail depend on the clock, which is its own
-kind of unreliable benchmark. `tests/test_recall.py` already covers that date math with fixed
-calendar dates (`resolve_range` is a pure function — no benchmark needed, just unit tests), and
-this suite deliberately leans on "today" / "yesterday" / "last N days" phrasing instead, which is
-robust regardless of what day it runs.
 
 **A human-curated set of realistically-worded, ambiguous real-world questions is still not
 built**, and arguably never fully "closable" by a mechanical pass/fail suite: real people ask
