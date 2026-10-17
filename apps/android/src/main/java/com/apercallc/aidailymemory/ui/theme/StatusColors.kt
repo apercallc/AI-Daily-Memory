@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.apercallc.aidailymemory.recording.design.BrandTokens
 import com.apercallc.aidailymemory.recording.presentation.StatusTone
 
 /**
@@ -25,7 +26,7 @@ data class StatusColors(
     val neutral: Color,
     val onNeutral: Color,
     /** The vivid dot beside "Recording": the same saturated red in light and dark. */
-    val recordingDot: Color = Color(0xFFFF3B30),
+    val recordingDot: Color = Color(BrandTokens.RECORDING_DOT),
 ) {
     fun container(tone: StatusTone): Color = when (tone) {
         StatusTone.RECORDING -> recording
@@ -47,9 +48,13 @@ data class StatusColors(
 internal val LightStatusColors = StatusColors(
     recording = Color(0xFFB3261E),
     onRecording = Color(0xFFFFFFFF),
-    paused = Color(0xFF7A5900),
+    // Paused and warning are each a named brand token, not an independently hand-picked hex
+    // value -- but deliberately two *different* tokens (same amber family, visibly distinct
+    // shade), not one: collapsing them would make a paused session indistinguishable from an
+    // actual warning (AGENTS.md: color semantics here are safety signals).
+    paused = Color(BrandTokens.Light.PAUSED),
     onPaused = Color(0xFFFFFFFF),
-    warning = Color(0xFF8C4A00),
+    warning = Color(BrandTokens.Light.WARN),
     onWarning = Color(0xFFFFFFFF),
     error = Color(0xFF8C1D18),
     onError = Color(0xFFFFFFFF),
@@ -60,9 +65,9 @@ internal val LightStatusColors = StatusColors(
 internal val DarkStatusColors = StatusColors(
     recording = Color(0xFFFFB4AB),
     onRecording = Color(0xFF690005),
-    paused = Color(0xFFF5BF48),
+    paused = Color(BrandTokens.Dark.PAUSED),
     onPaused = Color(0xFF402D00),
-    warning = Color(0xFFFFB77C),
+    warning = Color(BrandTokens.Dark.WARN),
     onWarning = Color(0xFF4C2700),
     error = Color(0xFFFFDAD6),
     onError = Color(0xFF410002),

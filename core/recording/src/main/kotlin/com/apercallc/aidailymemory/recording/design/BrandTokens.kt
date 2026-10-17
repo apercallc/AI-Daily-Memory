@@ -27,6 +27,11 @@ object BrandTokens {
         const val SLATE = 0xFF3D5A6CL
         const val OK = 0xFF2F6B3AL
         const val WARN = 0xFF8A5A00L
+        // Deliberately distinct from WARN: "paused" is a calm, user-initiated state, not an
+        // alert, and this app's color semantics are safety signals (AGENTS.md) -- collapsing
+        // the two to one hue would make a paused session indistinguishable from an actual
+        // warning at a glance. Same amber family, a visibly different shade.
+        const val PAUSED = 0xFF7A5900L
         const val FOCUS = 0xFF1C5FB8L
         const val WHITE = 0xFFFFFFFFL
 
@@ -61,6 +66,7 @@ object BrandTokens {
         const val SLATE = 0xFF8FB2C7L
         const val OK = 0xFF7BC589L
         const val WARN = 0xFFE0B04AL
+        const val PAUSED = 0xFFF5BF48L
         const val FOCUS = 0xFF7FB2FFL
 
         const val ON_RED = 0xFF3A0B03L
@@ -94,5 +100,20 @@ object BrandTokens {
         const val SMALL = 8
         const val MEDIUM = 12
         const val LARGE = 16
+    }
+
+    /**
+     * Spacing in dp shared by phone and watch. The phone's full 4dp-grid scale lives in its own
+     * richer `Spacing` (ui/theme/Tokens.kt, M3-specific); the watch's compact layout only ever
+     * needs these few sizes, so they are named and shared here instead of staying ad hoc dp
+     * literals scattered through Wear composables.
+     */
+    object Spacing {
+        /** The watch's tightest gap: vertical padding on a single-line notice. */
+        const val HAIRLINE = 2
+        const val XS = 4
+        const val SM = 8
+        /** Minimum touch target for any interactive element (Android accessibility). */
+        const val MIN_TOUCH_TARGET = 48
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -22,7 +23,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.unit.dp
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.TranscriptText
@@ -83,7 +83,7 @@ fun TranscriptScreen(
                         text = time,
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.widthIn(min = TIME_COLUMN),
+                        modifier = Modifier.widthIn(min = spacing.timeColumnWidth),
                     )
                     Column {
                         speaker?.let {
@@ -107,6 +107,7 @@ fun TranscriptScreen(
 
 @Composable
 private fun ProcessingStatusCard(state: ProcessingStateEntity) {
+    val spacing = AiDailyMemoryTheme.spacing
     val estimate = ProcessingProgressEstimator.estimate(
         completedSegments = state.completedSegments,
         totalSegments = state.totalSegments,
@@ -140,13 +141,16 @@ private fun ProcessingStatusCard(state: ProcessingStateEntity) {
         else -> return
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { liveRegion = LiveRegionMode.Polite }
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             Text(text = label, style = MaterialTheme.typography.bodyMedium)
             if (state.state == "TRANSCRIBING" && estimate != null) {
@@ -169,8 +173,6 @@ private fun remainingTimeLabel(remainingMs: Long): String {
         stringResource(R.string.processing_session_eta_minutes, minutes.toInt())
     }
 }
-
-private val TIME_COLUMN = 56.dp
 
 private fun zoneOf(id: String): ZoneId = try {
     ZoneId.of(id)

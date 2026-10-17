@@ -547,7 +547,7 @@ private fun CaptureStatusCard(model: CaptureStatusModel, overview: CaptureOvervi
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        border = accent?.let { BorderStroke(CARD_ACCENT_WIDTH, it.copy(alpha = CARD_ACCENT_ALPHA)) },
+        border = accent?.let { BorderStroke(spacing.accentBorder, it.copy(alpha = CARD_ACCENT_ALPHA)) },
     ) {
         Column(
             modifier = Modifier
@@ -833,7 +833,7 @@ private fun BatteryCard(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         ),
-        border = BorderStroke(CARD_ACCENT_WIDTH, status.warning.copy(alpha = CARD_ACCENT_ALPHA)),
+        border = BorderStroke(spacing.accentBorder, status.warning.copy(alpha = CARD_ACCENT_ALPHA)),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(spacing.xl),
@@ -872,5 +872,4 @@ private const val PULSE_MS = 1_400
 private const val PULSE_START_ALPHA = 0.55f
 private const val LARGE_FONT_SCALE = 1.3f
 private const val CARD_ACCENT_ALPHA = 0.6f
-private val CARD_ACCENT_WIDTH = 1.5.dp
 private val PRIMARY_BUTTON_HEIGHT = 60.dp

@@ -343,7 +343,10 @@ private fun Explainer(@StringRes text: Int) {
 
 @Composable
 private fun Notice(@StringRes text: Int) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+    Card(
+        shape = RoundedCornerShape(AiDailyMemoryTheme.spacing.cardCorner),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
         Text(
             text = stringResource(text),
             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -364,6 +367,7 @@ private fun NextChangeLine(next: NextChange) {
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(AiDailyMemoryTheme.spacing.cardCorner),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,

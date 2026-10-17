@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -248,6 +249,7 @@ private fun ProjectMemorySectionView(
     )
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
         Column(modifier = Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -363,6 +365,7 @@ private fun MemorySessionCard(
     val spacing = AiDailyMemoryTheme.spacing
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column(
@@ -633,6 +636,7 @@ private fun ExpandableTranscript(
 private fun MemoryChip(text: String) {
     val spacing = AiDailyMemoryTheme.spacing
     Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,

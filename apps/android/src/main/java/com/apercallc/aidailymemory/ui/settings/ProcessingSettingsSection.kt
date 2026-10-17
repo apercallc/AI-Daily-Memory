@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui.settings
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.ondevice.ModelFailure
 import com.apercallc.aidailymemory.ondevice.ModelState
@@ -767,6 +768,7 @@ fun SyncSettingsSection(
 private fun SettingsCard(content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(AiDailyMemoryTheme.spacing.cardCorner),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),

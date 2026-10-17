@@ -45,6 +45,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import com.apercallc.aidailymemory.recording.design.BrandTokens
 import com.apercallc.aidailymemory.recording.health.HealthLevel
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.WatchCommand
@@ -54,7 +55,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /** Same red as the phone's recording dot, so one glance means the same thing on both. */
-private val RecordingRed = Color(0xFFFF3B30)
+private val RecordingRed = Color(BrandTokens.RECORDING_DOT)
 
 private const val PULSE_MS = 900
 private const val PULSE_LOW_ALPHA = 0.3f
@@ -84,7 +85,7 @@ internal fun WearHome(
             TransformingLazyColumn(
                 state = listState,
                 contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(BrandTokens.Spacing.XS.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item { StatusHeader(state, spec) }
@@ -135,7 +136,7 @@ private fun TransformingLazyColumnItemScope.StatusHeader(state: WearControlState
         modifier = Modifier
             .fillMaxWidth()
             .transformedHeight(this, spec)
-            .padding(bottom = 4.dp),
+            .padding(bottom = BrandTokens.Spacing.XS.dp),
     ) {
         StatusDot(tone)
         Text(
@@ -143,7 +144,7 @@ private fun TransformingLazyColumnItemScope.StatusHeader(state: WearControlState
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier
-                .padding(top = 4.dp)
+                .padding(top = BrandTokens.Spacing.XS.dp)
                 .semantics {
                     heading()
                     liveRegion = LiveRegionMode.Polite
@@ -295,7 +296,7 @@ private fun TransformingLazyColumnItemScope.Notice(
         modifier = Modifier
             .fillMaxWidth()
             .transformedHeight(this, spec)
-            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .padding(horizontal = BrandTokens.Spacing.SM.dp, vertical = BrandTokens.Spacing.HAIRLINE.dp)
             .semantics { if (tone != NoticeTone.QUIET) liveRegion = LiveRegionMode.Polite },
     )
 }
@@ -315,7 +316,7 @@ private fun TransformingLazyColumnItemScope.WearButton(
         colors = emphasis.colors(),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = BrandTokens.Spacing.MIN_TOUCH_TARGET.dp)
             .transformedHeight(this, spec),
         transformation = SurfaceTransformation(spec),
         secondaryLabel = hint?.let { { Text(stringResource(it)) } },

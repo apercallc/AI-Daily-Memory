@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -216,9 +217,10 @@ private fun WhereChoice(connect: Boolean, onChange: (Boolean) -> Unit) {
 private fun Choice(selected: Boolean, @StringRes title: Int, @StringRes body: Int, onSelect: () -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     Card(
+        shape = RoundedCornerShape(spacing.cardCorner),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
+            width = if (selected) spacing.accentBorder else 1.dp,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
         ),
         modifier = Modifier

@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.wear.compose.material3.MaterialTheme
 import com.apercallc.aidailymemory.recording.design.BrandTokens
+import com.apercallc.aidailymemory.recording.design.TypeFamily
+import com.apercallc.aidailymemory.recording.design.TypeScale
 import com.apercallc.aidailymemory.recording.wear.CommandAcknowledgement
 import com.apercallc.aidailymemory.recording.wear.CommandOutcome
 import com.apercallc.aidailymemory.recording.wear.PhoneRecordingSnapshot
@@ -35,6 +37,11 @@ import com.google.android.gms.wearable.Wearable
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
+
+private fun TypeFamily.toFontFamily(): FontFamily = when (this) {
+    TypeFamily.SERIF -> FontFamily.Serif
+    TypeFamily.MONOSPACE -> FontFamily.Monospace
+}
 
 class WearMainActivity : ComponentActivity(),
     DataClient.OnDataChangedListener,
@@ -99,15 +106,15 @@ class WearMainActivity : ComponentActivity(),
                 onErrorContainer = Color(palette.ON_ERROR_CONTAINER),
             )
             val type = MaterialTheme.typography.copy(
-                displayLarge = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Serif),
-                displayMedium = MaterialTheme.typography.displayMedium.copy(fontFamily = FontFamily.Serif),
-                displaySmall = MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Serif),
-                titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif),
-                titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
-                titleSmall = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Serif),
-                labelLarge = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
-                labelMedium = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
-                labelSmall = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                displayLarge = MaterialTheme.typography.displayLarge.copy(fontFamily = TypeScale.display.toFontFamily()),
+                displayMedium = MaterialTheme.typography.displayMedium.copy(fontFamily = TypeScale.display.toFontFamily()),
+                displaySmall = MaterialTheme.typography.displaySmall.copy(fontFamily = TypeScale.display.toFontFamily()),
+                titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = TypeScale.title.toFontFamily()),
+                titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = TypeScale.title.toFontFamily()),
+                titleSmall = MaterialTheme.typography.titleSmall.copy(fontFamily = TypeScale.title.toFontFamily()),
+                labelLarge = MaterialTheme.typography.labelLarge.copy(fontFamily = TypeScale.label.toFontFamily()),
+                labelMedium = MaterialTheme.typography.labelMedium.copy(fontFamily = TypeScale.label.toFontFamily()),
+                labelSmall = MaterialTheme.typography.labelSmall.copy(fontFamily = TypeScale.label.toFontFamily()),
             )
             MaterialTheme(colorScheme = colorScheme, typography = type) {
                 WearHome(

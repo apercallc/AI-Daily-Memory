@@ -24,8 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -265,6 +267,12 @@ private fun TabletNavigationRail(selected: AppScreen, onSelect: (AppScreen) -> U
                     icon = { Icon(painterResource(tab.icon), contentDescription = null) },
                     label = { Text(stringResource(tab.label)) },
                     alwaysShowLabel = true,
+                    // Brand red, not M3's default slate secondaryContainer (website nav parity).
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
                 )
             }
     }
@@ -280,6 +288,12 @@ private fun BottomTabs(selected: AppScreen, onSelect: (AppScreen) -> Unit) {
                 onClick = { onSelect(screen) },
                 icon = { Icon(painterResource(tab.icon), contentDescription = null) },
                 label = { Text(label) },
+                // Brand red, not M3's default slate secondaryContainer (website nav parity).
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
             )
         }
     }
