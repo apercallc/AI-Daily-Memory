@@ -16,6 +16,7 @@ import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.RecordingStatus
 import com.apercallc.aidailymemory.recording.schedule.MemoryDays
 import com.apercallc.aidailymemory.schedule.RenameResult
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -101,6 +102,26 @@ class SessionsViewModel(
             }
             _messages.send(message)
         }
+    }
+
+    /**
+     * Decrypts and concatenates a session's still-retained local audio into one file on the
+     * share chooser's behalf (TODO.md Phase 8 "include retained raw audio only in an on-device
+     * export"). Never touches the network. Returns null — and reports it through [messages] —
+     * when there is nothing retained or the export fails; the caller is responsible for handing
+     * a non-null result to the Android share sheet.
+     */
+    suspend fun exportAudioFile(sessionId: String): File? {
+        val file = try {
+            withContext(Dispatchers.IO) { container.retainedAudioExporter.export(sessionId) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logFailure(TAG, "audio_export_failed", e)
+            null
+        }
+        if (file == null) _messages.send(R.string.session_export_audio_failed)
+        return file
     }
 
     /** A session's delivered transcript, oldest line first, opened off the main thread. */

@@ -109,6 +109,21 @@ class SessionsViewModelTest {
         assertEquals(false, withTimeout(5_000) { model().noSpeechDetected("talking").first() })
     }
 
+    @Test
+    fun `exporting a session with nothing retained reports failure instead of throwing`() = runBlocking {
+        val db = container.database
+        db.sessions().register(SessionInfoEntity("no-audio", "2026-10-15", "UTC", 1_000, null))
+        val vm = model()
+
+        val file = vm.exportAudioFile("no-audio")
+
+        assertEquals(null, file)
+        assertEquals(
+            com.apercallc.aidailymemory.R.string.session_export_audio_failed,
+            withTimeout(5_000) { vm.messages.first() },
+        )
+    }
+
     private fun line(session: String, id: String, start: Long) = LocalTranscriptLineEntity(
         lineId = id, sessionId = session, segmentId = "$session-0",
         startEpochMs = start, endEpochMs = start + 500, speaker = null, text = id,

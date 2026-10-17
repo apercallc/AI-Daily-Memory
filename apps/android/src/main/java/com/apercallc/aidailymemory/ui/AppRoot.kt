@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.core.content.FileProvider
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.processing.ReportBuilder
 import com.apercallc.aidailymemory.recording.processing.DailyReport
@@ -64,6 +66,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.platform.Permissions
 import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
@@ -82,6 +85,7 @@ import com.apercallc.aidailymemory.update.UpdateState
 import com.apercallc.aidailymemory.update.UpdateViewModel
 import java.time.Instant
 import java.time.ZoneId
+import java.io.File
 
 /** A bottom-bar destination; null for detail screens that are reached from a tab. */
 class Tab(@StringRes val label: Int, @DrawableRes val icon: Int)
@@ -293,6 +297,8 @@ private fun SessionsRoute(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshToday() }
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
@@ -304,6 +310,11 @@ private fun SessionsRoute(
             modifier = modifier,
             onOpen = onOpen,
             onDelete = viewModel::delete,
+            onExportAudio = { sessionId ->
+                scope.launch {
+                    viewModel.exportAudioFile(sessionId)?.let { shareAudioFile(context, it) }
+                }
+            },
             onStartRecording = onStartRecording,
         )
     }
@@ -369,6 +380,19 @@ private fun shareReport(context: Context, report: DailyReport) {
         putExtra(Intent.EXTRA_SUBJECT, report.headline)
     }
     context.startActivity(Intent.createChooser(intent, context.getString(R.string.report_share_chooser)))
+}
+
+/** Hands a session's exported retained audio to the Android share sheet (TODO.md Phase 8
+ *  "include retained raw audio only in an on-device export; audio never uploads to the
+ *  server") — this is purely a local file hand-off, never a network call. */
+private fun shareAudioFile(context: Context, file: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "audio/aac"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.session_export_audio_chooser)))
 }
 
 @Composable

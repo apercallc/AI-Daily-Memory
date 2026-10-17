@@ -23,6 +23,9 @@ data class SessionItem(
      * (ADR-0015); null until then, so a half-analyzed session never shows a misleading figure.
      */
     val speechMs: Long? = null,
+    /** Audio still retained on this phone (TODO.md Phase 8 "per-session retained-audio
+     *  awareness"); zero once retention or the person has deleted it. */
+    val retainedAudioMs: Long = 0,
 )
 
 data class DayGroup(val day: LocalDate, val sessions: List<SessionItem>) {
@@ -62,6 +65,7 @@ object SessionGroups {
                                     row.capturedMs > 0 &&
                                     row.analyzedMs >= row.capturedMs
                             },
+                            retainedAudioMs = row.retainedAudioMs,
                         )
                     },
                 )

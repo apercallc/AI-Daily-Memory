@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the app-update cache directory is shareable, and only with the installer. -->
+<!-- Shareable, app-private cache subdirectories only, each with the narrowest audience. -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- User-requested on-device export of their own retained audio (TODO.md Phase 8); shared
+         only through the chooser the person themselves picks, never uploaded by the app. -->
+    <cache-path name="audio_export" path="audio_export/" />
 </paths>

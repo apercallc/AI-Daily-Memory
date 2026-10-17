@@ -61,6 +61,10 @@ fun SessionsScreen(
     /** Opens a session's transcript, with the title as shown on its card. */
     onOpen: (sessionId: String, title: String) -> Unit = { _, _ -> },
     onDelete: (sessionId: String) -> Unit = {},
+    /** Exports a session's still-retained local audio to the Android share sheet. Only shown
+     *  when [SessionItem.retainedAudioMs] is positive (TODO.md Phase 8 "per-session
+     *  retained-audio awareness"). */
+    onExportAudio: (sessionId: String) -> Unit = {},
     /** Empty state's way forward: back to the Today tab. */
     onStartRecording: (() -> Unit)? = null,
 ) {
@@ -90,6 +94,7 @@ fun SessionsScreen(
                         onOpen = { title -> onOpen(session.sessionId, title) },
                         onRename = { renaming = session.sessionId },
                         onDelete = { deleting = session.sessionId },
+                        onExportAudio = { onExportAudio(session.sessionId) },
                     )
                 }
             }
@@ -156,6 +161,7 @@ private fun SessionCard(
     onOpen: (title: String) -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onExportAudio: () -> Unit,
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
@@ -224,6 +230,15 @@ private fun SessionCard(
                                 onRename()
                             },
                         )
+                        if (session.retainedAudioMs > 0) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.session_export_audio)) },
+                                onClick = {
+                                    menuOpen = false
+                                    onExportAudio()
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Text(

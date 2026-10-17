@@ -161,6 +161,9 @@ data class SessionRow(
     val analyzedMs: Long = 0,
     /** Detected speech in the analyzed audio. */
     val speechMs: Long = 0,
+    /** Audio still on this phone (not yet deleted by retention or the person) — TODO.md
+     *  Phase 8 "per-session retained-audio awareness". */
+    val retainedAudioMs: Long = 0,
 )
 
 /**

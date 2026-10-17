@@ -350,14 +350,19 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     `docs/security/THREAT_MODEL.md`. Consent/jurisdiction guidance already exists in
     `website/privacy.html` ("Recording other people") and `website/terms.html`, both explicitly
     marked draft pending a lawyer's review (`docs/product/LAUNCH_GAPS.md`).
-  - Still genuinely open, not done: including retained raw audio in an on-device export is not
-    implemented. Scoped this pass: the backend primitives already exist
-    (`SegmentStore.readAudio`/`deleteSessionAudio`, `SegmentDao.forSession`), but there is no UI
-    surface at all yet for per-session retained-audio awareness — even the existing
-    `deleteSessionAudio` primitive is only exercised by `SegmentStoreTest.kt`, never wired to a
-    screen. Building export UI would mean inventing new navigation, not hooking into an
-    existing surface; left open rather than rushed. A lawyer's review of the privacy/terms
-    drafts remains outside what an agent session can do.
+  - Resolved this pass: including retained raw audio in an on-device export is now implemented.
+    `RetainedAudioExporter` (apps/android, tested with real encrypted segments and a software
+    cipher standing in for the Keystore, matching `SegmentStoreTest`'s convention) decrypts and
+    concatenates a session's still-retained segments (already individually valid ADTS streams,
+    so concatenation alone produces one valid combined file — no re-muxing) into one `.aac` file
+    in an app-private cache directory, never touching the network. `SessionDao.observeSince`/
+    `observeSpeechSummary` now also report `retainedAudioMs` per session; the existing Sessions
+    screen's per-session menu (same menu `delete` already used) shows "Export audio" exactly
+    when that session still has retained audio, handing the result to the Android share sheet
+    through the app's existing `FileProvider` (same pattern as the daily report's Markdown
+    share) — so this hooks into an existing surface rather than inventing new navigation, unlike
+    what the previous pass anticipated. A lawyer's review of the privacy/terms drafts remains
+    outside what an agent session can do.
   - Resolved in this pass: `GET /v1/export` now delivers through a scoped, short-TTL signed
     URL (`AccountExport`, migration 0016) instead of streaming inline, and reuses the same
     generated object for repeat requests within the TTL instead of regenerating — both

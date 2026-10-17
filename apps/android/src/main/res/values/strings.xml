@@ -197,6 +197,9 @@
     <string name="session_delete_active">Stop this session before deleting it</string>
     <string name="session_delete_remote_copy">This session has a server copy. Delete it there first; local deletion was not performed.</string>
     <string name="session_delete_failed">Couldn\'t fully delete this session. Try again.</string>
+    <string name="session_export_audio">Export audio</string>
+    <string name="session_export_audio_chooser">Export session audio</string>
+    <string name="session_export_audio_failed">Couldn\'t export this session\'s audio. Try again.</string>
     <string name="stop_decision_title">Keep this session?</string>
     <string name="stop_decision_body">Keep the session and its on-phone evidence for review and processing, or delete the session and its local data now.</string>
     <string name="stop_decision_keep">Keep session</string>

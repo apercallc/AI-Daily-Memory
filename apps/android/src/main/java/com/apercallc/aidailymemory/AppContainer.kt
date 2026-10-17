@@ -36,6 +36,7 @@ import com.apercallc.aidailymemory.capture.EffectHandler
 import com.apercallc.aidailymemory.capture.MarkerRecorder
 import com.apercallc.aidailymemory.capture.RecordingController
 import com.apercallc.aidailymemory.capture.RecoveryScheduler
+import com.apercallc.aidailymemory.capture.RetainedAudioExporter
 import com.apercallc.aidailymemory.capture.RoomTransitionJournal
 import com.apercallc.aidailymemory.capture.SegmentCipher
 import com.apercallc.aidailymemory.capture.SegmentStore
@@ -464,6 +465,16 @@ class AppContainer(context: Context) {
             },
             // The database transaction already queued the purge, even while disconnected.
             onDeleted = { syncScheduler.schedule() },
+        )
+    }
+
+    /** User-requested on-device export of a session's still-retained audio (TODO.md Phase 8
+     *  privacy package); app-private cache, cleared with the app, never uploaded. */
+    val retainedAudioExporter: RetainedAudioExporter by lazy {
+        RetainedAudioExporter(
+            segmentDao = database.segments(),
+            segmentStore = segments,
+            exportDirectory = File(app.cacheDir, "audio_export"),
         )
     }
 

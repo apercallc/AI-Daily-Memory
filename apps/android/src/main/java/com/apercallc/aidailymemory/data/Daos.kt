@@ -201,7 +201,10 @@ interface SessionDao {
                 WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS analyzedMs,
             (SELECT COALESCE(SUM(a.speech_ms), 0) FROM segment_speech a
                 JOIN audio_segment s ON s.segment_id = a.segment_id
-                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs,
+            (SELECT COALESCE(SUM(s.duration_ms), 0) FROM audio_segment s
+                WHERE s.session_id = i.session_id
+                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED')) AS retainedAudioMs
         FROM session_info i
         WHERE i.memory_day >= :sinceDay
         ORDER BY i.started_at_epoch_ms DESC
@@ -224,7 +227,10 @@ interface SessionDao {
                 WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS analyzedMs,
             (SELECT COALESCE(SUM(a.speech_ms), 0) FROM segment_speech a
                 JOIN audio_segment s ON s.segment_id = a.segment_id
-                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs
+                WHERE s.session_id = i.session_id AND a.outcome = 'OK') AS speechMs,
+            (SELECT COALESCE(SUM(s.duration_ms), 0) FROM audio_segment s
+                WHERE s.session_id = i.session_id
+                AND s.state IN ('SEALED', 'UPLOADED', 'ACKNOWLEDGED')) AS retainedAudioMs
         FROM session_info i
         WHERE i.session_id = :sessionId
         """,
