@@ -68,13 +68,23 @@ const MESSAGES = {
 
 export function describe(error) {
   if (error instanceof ApiError) {
-    if (MESSAGES[error.code]) return MESSAGES[error.code];
-    if (error.status === 429) return MESSAGES.too_many_requests;
-    if (error.status >= 500) return "The service had a problem. Try again in a moment.";
-    if (error.status === 0) return "Couldn't reach the server. Check your connection and try again.";
-    return error.message || "Something went wrong.";
+    const base = MESSAGES[error.code]
+      ?? (error.status === 429 ? MESSAGES.too_many_requests
+        : error.status >= 500 ? "The service had a problem. Try again in a moment."
+          : error.status === 0 ? "Couldn't reach the server. Check your connection and try again."
+            : error.message || "Something went wrong.");
+    return error.retryAfter ? `${base} Try again in ${formatWait(error.retryAfter)}.` : base;
   }
   return "Something went wrong.";
+}
+
+// "90 seconds", "2 minutes", "3 hours" — a plain reading of a Retry-After header's seconds.
+function formatWait(seconds) {
+  if (seconds < 90) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
 let onSignedOut = () => {};

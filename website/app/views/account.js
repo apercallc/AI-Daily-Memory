@@ -29,10 +29,17 @@ export async function accountView({ me, signOut }) {
 function settingLink(id, label) {
   return h("a", { href: `#${id}`, onclick: (event) => {
     event.preventDefault();
-    document.getElementById(id)?.scrollIntoView({
+    const target = document.getElementById(id);
+    if (!target) return;
+    target.scrollIntoView({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block: "start",
     });
+    const heading = target.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
   } }, label);
 }
 
@@ -74,9 +81,12 @@ async function signInsCard() {
       const rows = (await api("/tokens")).filter((t) => t.kind === "device");
       body.replaceChildren(table(["Name", "Last used", ""], rows.map((t) => [
         `${t.name}${t.current ? " (this browser)" : ""}`, prettyTime(t.last_used_at),
-        t.current ? "" : h("button", { class: "small danger", onclick: async () => {
+        t.current ? "" : h("button", { class: "small danger", onclick: async (event) => {
+          const button = event.currentTarget;
           if (!(await confirmBox({ title: `Sign out “${t.name}”?`, body: "That device will need to sign in again.", action: "Sign out", danger: true }))) return;
-          try { await api(`/tokens/${t.id}`, { method: "DELETE" }); } catch (e) { body.prepend(notice("error", describe(e))); return; }
+          button.disabled = true;
+          button.textContent = "Signing out…";
+          try { await api(`/tokens/${t.id}`, { method: "DELETE" }); } catch (e) { button.disabled = false; button.textContent = "Sign out"; body.prepend(notice("error", describe(e))); return; }
           load();
         } }, "Sign out"),
       ])));
@@ -94,9 +104,12 @@ async function keysCard() {
     try {
       const keys = await api("/api-keys");
       body.replaceChildren(keys.length ? table(["Name", "Last used", ""], keys.map((k) => [k.name, prettyTime(k.last_used_at),
-        h("button", { class: "small danger", onclick: async () => {
+        h("button", { class: "small danger", onclick: async (event) => {
+          const button = event.currentTarget;
           if (!(await confirmBox({ title: `Revoke “${k.name}”?`, body: "Anything using it stops working.", action: "Revoke", danger: true }))) return;
-          try { await api(`/tokens/${k.id}`, { method: "DELETE" }); } catch (e) { body.prepend(notice("error", describe(e))); return; }
+          button.disabled = true;
+          button.textContent = "Revoking…";
+          try { await api(`/tokens/${k.id}`, { method: "DELETE" }); } catch (e) { button.disabled = false; button.textContent = "Revoke"; body.prepend(notice("error", describe(e))); return; }
           load();
         } }, "Revoke")]))
         : h("p", { class: "faint" }, "No keys yet."));
@@ -168,12 +181,19 @@ function deleteCard(signOut) {
     h("label", { for: "del-pw" }, "Confirm with your password"), password, status,
     h("div", { class: "row end mt16" },
       h("button", { onclick: () => dialog.close() }, "Keep my account"),
-      h("button", { class: "danger", onclick: async () => {
+      h("button", { class: "danger", onclick: async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Deleting…";
         try {
           await api("/me", { method: "DELETE", body: { password: password.value } });
           session.clear();
           await signOut();
-        } catch (e) { status.replaceChildren(notice("error", e.code === "password_required" ? "That password isn't right." : describe(e))); }
+        } catch (e) {
+          button.disabled = false;
+          button.textContent = "Delete everything";
+          status.replaceChildren(notice("error", e.code === "password_required" ? "That password isn't right." : describe(e)));
+        }
       } }, "Delete everything")));
   return section("Delete account",
     h("p", { class: "muted mt0" }, "Removes everything this service holds about you: your notes, highlights and transcripts. Your phone keeps its own copy."),

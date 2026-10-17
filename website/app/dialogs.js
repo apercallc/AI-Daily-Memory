@@ -40,14 +40,17 @@ export function promptName({ title, label, initial = "", action = "Save", submit
 }
 
 // A yes/no question. Resolves true only on the confirm button.
+// Initial focus goes to Cancel, never the confirm/danger button: a stray Enter or Space right
+// after the dialog opens (keyboard or switch-access input) must not fire the destructive action.
 export function confirmBox({ title, body, action, danger = false }) {
   return new Promise((resolve) => {
     let answer = false;
     const yes = h("button", { class: danger ? "danger" : "primary", onclick: () => { answer = true; dialog.close(); } }, action);
+    const no = h("button", { onclick: () => dialog.close() }, "Cancel");
     const dialog = h("dialog", { "aria-labelledby": "dlg-title" },
       h("h2", { id: "dlg-title", class: "mt0" }, title), h("p", null, body),
-      h("div", { class: "row end mt16" }, h("button", { onclick: () => dialog.close() }, "Cancel"), yes));
+      h("div", { class: "row end mt16" }, no, yes));
     dialog.addEventListener("close", () => resolve(answer));
-    open(dialog, yes);
+    open(dialog, no);
   });
 }

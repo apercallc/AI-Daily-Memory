@@ -50,9 +50,12 @@ export function itemCard(initial, { onChange, showDay = false, noteLink = false 
     queueMicrotask(() => area.focus());
     return h("div", { class: "stack mt10" }, area,
       h("div", { class: "row" },
-        h("button", { class: "primary small", onclick: async () => {
+        h("button", { class: "primary small", onclick: async (event) => {
           const text = area.value.trim();
           if (!text) return draw({ editing: true, message: "Write something, or restore the original." });
+          const button = event.currentTarget;
+          button.disabled = true;
+          button.textContent = "Saving…";
           try { item = await patch({ text }); onChange?.(item); draw(); } catch (e) { draw({ editing: true, message: describe(e) }); }
         } }, "Save"),
         item.corrected ? h("button", { class: "small", onclick: async () => {
@@ -62,7 +65,10 @@ export function itemCard(initial, { onChange, showDay = false, noteLink = false 
       h("p", { class: "field-hint" }, "Your wording is saved next to the original. The original and its evidence are never changed."));
   }
 
-  async function toggleDismiss() {
+  async function toggleDismiss(event) {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Saving…";
     try { item = await patch({ dismissed: !item.dismissed }); onChange?.(item); draw(); } catch (e) { draw({ message: describe(e) }); }
   }
 

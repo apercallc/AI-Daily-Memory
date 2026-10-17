@@ -93,16 +93,18 @@ export async function notesView() {
   }
 
   async function refreshFolders() {
+    let reloaded = false;
     try {
       const data = await api("/folders");
       folders = data.folders;
       totals = data.totals;
-      if (state.view.length === 36 && !folders.some((f) => f.id === state.view)) { state.view = "all"; remember(); load(true); }
+      if (state.view.length === 36 && !folders.some((f) => f.id === state.view)) { state.view = "all"; remember(); load(true); reloaded = true; }
     } catch (e) {
       sub.replaceChildren(describe(e));
     }
     drawSide();
     drawHeader();
+    return reloaded;
   }
 
   function setView(view) {
@@ -295,9 +297,11 @@ export async function notesView() {
   drawSide();
   drawHeader();
   remember();
-  // Folders first, so the cards can name the folder they are in.
-  await refreshFolders();
-  await load(true);
+  // Folders first, so the cards can name the folder they are in. If a stale folder id (a
+  // bookmark to a since-deleted folder) made refreshFolders() correct the view and reload
+  // already, don't fetch the list a second time right behind it.
+  const alreadyLoaded = await refreshFolders();
+  if (!alreadyLoaded) await load(true);
   return h("div", { class: "library" },
     side,
     h("section", { class: "notes-main", "aria-labelledby": "notes-title" },

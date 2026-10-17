@@ -47,7 +47,16 @@ let renderToken = 0;
 
 function currentRoute() {
   const path = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "notes").toLowerCase();
-  return ROUTES.find((r) => r.path === path) || ROUTES[0];
+  return ROUTES.find((r) => r.path === path) || null;
+}
+
+// A minimal "nothing here" page for an unknown or mistyped hash route, instead of a silent
+// fallback to the first tab that leaves a mistyped link looking like it worked.
+function notFoundView() {
+  return h("div", { class: "card empty" },
+    h("h3", null, "Page not found"),
+    h("p", null, "That address doesn't match anything here."),
+    h("p", null, h("a", { href: "#/notes" }, "Go to your notes")));
 }
 
 function signOutNow() {
@@ -109,22 +118,25 @@ async function render() {
     if (mine !== renderToken) return;
     clear(root);
   }
-  const route = currentRoute();
-  document.title = `${route.label} — AI Daily Memory`;
+  const matchedRoute = currentRoute();
+  const route = matchedRoute || ROUTES[0];
+  document.title = matchedRoute ? `${route.label} — AI Daily Memory` : "Page not found — AI Daily Memory";
   const main = h("main", { id: "main", tabindex: "-1" });
   root.append(
     h("header", { class: "bar" }, h("div", { class: "bar-in" },
       h("a", { class: "brand", href: "#/notes" }, h("span", { class: "dot", "aria-hidden": "true" }), "AI Daily Memory"),
-      h("nav", { class: "tabs", "aria-label": "Main navigation" }, ROUTES.map((r) => navLink(r, r === route))),
+      h("nav", { class: "tabs", "aria-label": "Main navigation" }, ROUTES.map((r) => navLink(r, r === matchedRoute))),
       h("span", { class: "faint" }, me.email || ""),
       h("button", { class: "small", onclick: signOut }, "Sign out"))),
-    h("nav", { class: "mobile-nav", "aria-label": "Main navigation" }, ROUTES.map((r) => navLink(r, r === route))),
+    h("nav", { class: "mobile-nav", "aria-label": "Main navigation" }, ROUTES.map((r) => navLink(r, r === matchedRoute))),
     main,
     h("footer", { class: "app" }, "Your memory belongs to you. ",
       h("a", { href: "/privacy.html" }, "Privacy"), " · ", h("a", { href: "/terms.html" }, "Terms"), " · ",
       h("a", { href: "https://github.com/apercallc/AI-Daily-Memory" }, "Open source")),
   );
-  const view = await route.view({ me, refreshMe: async () => { me = await api("/me"); return me; }, signOut });
+  const view = matchedRoute
+    ? await route.view({ me, refreshMe: async () => { me = await api("/me"); return me; }, signOut })
+    : notFoundView();
   if (mine !== renderToken) return;
   main.append(view);
   main.classList.add("page-enter");

@@ -7,7 +7,12 @@ const ORDER = ["decision", "commitment", "action", "idea", "question"];
 
 export async function todayView() {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
-  let day = /^\d{4}-\d{2}-\d{2}$/.test(params.get("day") || "") ? params.get("day") : localDay();
+  const dayParam = params.get("day");
+  const dayValid = !dayParam || /^\d{4}-\d{2}-\d{2}$/.test(dayParam);
+  let day = dayValid && dayParam ? dayParam : localDay();
+  const invalidDayNotice = dayParam && !dayValid
+    ? notice("warn", `“${dayParam}” isn't a date this app understands, so today is shown instead.`)
+    : null;
   const body = h("div");
   const heading = h("h1");
 
@@ -34,10 +39,11 @@ export async function todayView() {
       body.replaceChildren(notice("error", describe(e)), h("button", { onclick: load }, "Try again"));
       return;
     }
+    let dayNotesError = null;
     try {
       dayNotes = (await api(`/notes?day=${day}&limit=50&sort=oldest`)).notes;
-    } catch {
-      /* the day is still worth showing without its list of notes */
+    } catch (e) {
+      dayNotesError = e; // the day is still worth showing; the notes list just failed, distinctly from being empty
     }
     const nodes = [];
     if (dayNotes.length) {
@@ -46,6 +52,8 @@ export async function todayView() {
         h("ul", { class: "olist plain" }, dayNotes.map((n) => h("li", null,
           h("a", { href: `#/notes/${n.session_id}` }, n.title),
           n.started_at ? h("span", { class: "faint" }, ` · ${clockTime(Date.parse(n.started_at))}`) : null)))));
+    } else if (dayNotesError) {
+      nodes.push(notice("error", `Couldn't load this day's notes. ${describe(dayNotesError)}`));
     }
     if (report?.summary || report?.headline) {
       nodes.push(h("section", { class: "card" }, report.headline ? h("h2", { class: "mt0" }, report.headline) : null,
@@ -65,7 +73,7 @@ export async function todayView() {
     body.replaceChildren(...nodes.flat());
   }
   await load();
-  return h("div", null, nav, body);
+  return h("div", null, invalidDayNotice, nav, body);
 }
 
 function emptyState(day) {

@@ -28,3 +28,11 @@ test("errors read as plain sentences, never raw codes", () => {
   assert.match(describe(new ApiError(0, "unreachable", "")), /Couldn't reach/);
   assert.equal(describe(new Error("boom")), "Something went wrong.");
 });
+
+test("a known Retry-After tells a person the real wait, not just 'try later'", () => {
+  assert.doesNotMatch(describe(new ApiError(429, "too_many_requests", "")), /Try again in/);
+  assert.match(describe(new ApiError(429, "too_many_requests", "", 45)), /Try again in 45 seconds\.$/);
+  assert.match(describe(new ApiError(429, "too_many_requests", "", 125)), /Try again in 2 minutes\.$/);
+  assert.match(describe(new ApiError(503, "database_unavailable", "", 15)), /Try again in 15 seconds\.$/);
+  assert.match(describe(new ApiError(429, "quota_exceeded", "", 7260)), /Try again in 2 hours\.$/);
+});
