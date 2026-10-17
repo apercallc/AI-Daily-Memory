@@ -58,7 +58,12 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
 ## Operations gaps
 
 - **Database backups** are not yet configured and verified; backup monitoring and a restore drill are production gates.
-- **Uptime and alerting.** Sentry is wired; no uptime monitor or status page.
+- **Uptime and alerting.** ~~Sentry is wired; no uptime monitor or status page.~~ Fixed
+  2026-10-16: Sentry was wired in code but had never sent an event — `SENTRY_DSN` was unset on
+  the live `api` service, confirmed via the Sentry API (`firstEvent: null`). Set it; the
+  service redeployed healthy. Unhandled backend errors now reach Sentry. Still no uptime
+  monitor, status page, or alert *rules* on top of it (what should page someone is an operator
+  decision, not a code change).
 - ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
   Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
   state (migration 0015); see `python -m app.admin dead-account-purges`.

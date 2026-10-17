@@ -316,8 +316,13 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     `website/privacy.html` ("Recording other people") and `website/terms.html`, both explicitly
     marked draft pending a lawyer's review (`docs/product/LAUNCH_GAPS.md`).
   - Still genuinely open, not done: including retained raw audio in an on-device export is not
-    implemented. A lawyer's review of the privacy/terms drafts remains outside what an agent
-    session can do.
+    implemented. Scoped this pass: the backend primitives already exist
+    (`SegmentStore.readAudio`/`deleteSessionAudio`, `SegmentDao.forSession`), but there is no UI
+    surface at all yet for per-session retained-audio awareness — even the existing
+    `deleteSessionAudio` primitive is only exercised by `SegmentStoreTest.kt`, never wired to a
+    screen. Building export UI would mean inventing new navigation, not hooking into an
+    existing surface; left open rather than rushed. A lawyer's review of the privacy/terms
+    drafts remains outside what an agent session can do.
   - Resolved in this pass: `GET /v1/export` now delivers through a scoped, short-TTL signed
     URL (`AccountExport`, migration 0016) instead of streaming inline, and reuses the same
     generated object for repeat requests within the TTL instead of regenerating — both
@@ -396,9 +401,25 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     `last_error_code`/`dead_at` (migration 0015), mirroring `app/jobs.py`'s existing
     bounded-retry pattern; `python -m app.admin dead-account-purges`/`requeue-account-purge`
     give an operator the same visibility and recovery path `dead-jobs`/`requeue-job` already
-    give for processing jobs. Still open: SLIs/alerting, backup monitoring + a disaster-recovery
-    drill, and load/chaos tests — these need real monitoring and operations accounts/decisions,
-    not just code.
+    give for processing jobs.
+  - Fixed in this pass: `app/sentry.py`'s error-reporting integration was fully built
+    (FastAPI + logging integrations, PII-redacting `before_send`) but had never actually sent
+    a single event in production — confirmed live via the Sentry API (`firstEvent: null` on
+    the `ai-daily-memory-backend` project) and confirmed the root cause: `SENTRY_DSN` was never
+    set in the Railway `api` service's environment, so `initialize_sentry()` returned early on
+    every boot. Set `SENTRY_DSN` on the live `api` service and verified the resulting redeploy
+    came up healthy (`/v1/health` and `/v1/ready` both 200 afterward) — unhandled exceptions
+    going forward now actually reach Sentry instead of silently vanishing into Railway's log
+    tail. This is the "alert on provider/ingestion failures" mechanism switched on for the
+    first time; still open below is defining formal SLI thresholds and alert rules on top of
+    it, which needs a human decision about what counts as actionable, not just code.
+  - Still open, and still needs an outside account or operator decision, not just code: formal
+    SLI thresholds and alert *rules* (now that events actually reach Sentry, the next step is
+    deciding what triggers a page); backup monitoring and a disaster-recovery drill (Railway's
+    managed Postgres backup settings need an operator decision about retention/testing
+    cadence); load/chaos tests for worker retry behavior (the legacy upload-processing worker
+    is not deployed at all today — Gate B providers are disabled, ADR-0026 — so there is no
+    live worker to load-test; this becomes relevant again only if that gate reopens).
 
 # Phase 10 — Public launch: free user API and data portability
 
