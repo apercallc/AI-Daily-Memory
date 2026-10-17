@@ -12,11 +12,14 @@ stored JSON stays as written (the sync path needs `sessionId` on items to purge 
 and merge devices); only the response has a single schema.
 """
 
+import logging
 import textwrap
 from datetime import UTC, datetime
 from typing import Any
 
 from app.reports.daily import DailyReport
+
+logger = logging.getLogger("app.reports.synced")
 
 _SECTION_BY_KIND = {
     "action": "action_items",
@@ -25,6 +28,8 @@ _SECTION_BY_KIND = {
     "idea": "ideas",
     "question": "open_questions",
 }
+_VALID_KINDS = frozenset(_SECTION_BY_KIND)
+_VALID_DIRECTIONS = frozenset({"i_owe", "owed_to_me"})
 _MAX_PER_SECTION = 50
 _MAX_SUMMARY_PARTS = 6
 _SHORT_TEXT = 280
@@ -36,35 +41,62 @@ def is_phone_document(stored: dict[str, Any]) -> bool:
     return "schema_version" not in stored and "items" in stored
 
 
+def _build_entry(item: object, default_at: datetime) -> tuple[str, dict[str, Any]] | None:
+    """One phone-document item, read defensively. A row from a different contract version
+    (a renamed or missing key) is skipped rather than raised -- one malformed stored item
+    degrades gracefully instead of taking down the whole report (AGENTS.md: no silent
+    failure, so the caller logs how many items it dropped)."""
+    if not isinstance(item, dict):
+        return None
+    kind = item.get("kind")
+    text = item.get("text")
+    session_id = item.get("sessionId")
+    if kind not in _VALID_KINDS or not isinstance(text, str) or not isinstance(session_id, str):
+        return None
+    entry: dict[str, Any] = {
+        "text": text,
+        "confidence": item.get("confidence") or "possible",
+        "evidence": [
+            {
+                "session_id": session_id,
+                "at": _epoch_ms(item.get("evidenceEpochMs")) or default_at,
+                "quote": item.get("quote"),
+            },
+        ],
+    }
+    if kind == "action":
+        entry["owner"] = item.get("owner") or "me"
+        entry["due"] = item.get("due")
+    elif kind == "commitment":
+        direction = item.get("direction")
+        if direction not in _VALID_DIRECTIONS:
+            return None
+        entry["direction"] = direction
+        entry["counterpart"] = item.get("counterpart") or _UNKNOWN_COUNTERPART
+        entry["due"] = item.get("due")
+    return kind, entry
+
+
 def report_view(stored: dict[str, Any], generated_at: datetime) -> dict[str, Any]:
     """The v1-contract document for a stored report, whichever path wrote it."""
     if not is_phone_document(stored):
         return stored
     default_at = _epoch_ms(stored.get("generatedAtEpochMs")) or generated_at
     sections: dict[str, list[dict[str, Any]]] = {name: [] for name in _SECTION_BY_KIND.values()}
-    for item in stored["items"]:
-        section = sections[_SECTION_BY_KIND[item["kind"]]]
+    raw_items = stored.get("items")
+    skipped = 0
+    for item in raw_items if isinstance(raw_items, list) else []:
+        built = _build_entry(item, default_at)
+        if built is None:
+            skipped += 1
+            continue
+        kind, entry = built
+        section = sections[_SECTION_BY_KIND[kind]]
         if len(section) >= _MAX_PER_SECTION:
             continue
-        entry: dict[str, Any] = {
-            "text": item["text"],
-            "confidence": item["confidence"],
-            "evidence": [
-                {
-                    "session_id": item["sessionId"],
-                    "at": _epoch_ms(item.get("evidenceEpochMs")) or default_at,
-                    "quote": item.get("quote"),
-                },
-            ],
-        }
-        if item["kind"] == "action":
-            entry["owner"] = item.get("owner") or "me"
-            entry["due"] = item.get("due")
-        elif item["kind"] == "commitment":
-            entry["direction"] = item["direction"]
-            entry["counterpart"] = item.get("counterpart") or _UNKNOWN_COUNTERPART
-            entry["due"] = item.get("due")
         section.append(entry)
+    if skipped:
+        logger.warning("synced_report_item_malformed", extra={"skipped": skipped})
 
     coverage = stored["coverage"]
     summary = textwrap.wrap(stored["summary"], width=_SHORT_TEXT)[:_MAX_SUMMARY_PARTS]

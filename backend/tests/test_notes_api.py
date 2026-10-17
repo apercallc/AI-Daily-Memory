@@ -3,14 +3,17 @@
 import json
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.api.notes as notes_api
+import app.notes as notes_module
+from app.db.models import DailyReportRow, MemoryItem
 from app.main import create_app
 from app.notes import SessionContent, build_fields, clip
 from tests.conftest import Account, FakeObjectStore, make_account, settings_for
@@ -266,6 +269,74 @@ def test_people_who_synced_before_notes_existed_get_them_built_on_first_use(
     assert titles(page) == ["Hire a designer"]
     assert page["notes"][0]["line_count"] == 1
     assert notes(client, account)["total"] == 1  # a second visit does not duplicate
+
+
+def test_backfill_completes_correctly_across_more_than_one_batch(
+    client: TestClient, account: Account, db: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """app/notes.py `backfill_notes` reads and writes in bounded batches so a single query
+    never pulls an unbounded resultset into memory. A small patched batch size, with a
+    fixture several multiples of it, forces the read loops over both `memory_items` and
+    `daily_reports` (and the write loop) around more than once, proving the batching still
+    produces a complete, correct result -- not just a single-batch happy path."""
+    monkeypatch.setattr(notes_module, "BACKFILL_BATCH_SIZE", 4)
+    item_sessions = [uuid.uuid4() for _ in range(11)]  # ~3x the patched batch size
+    line_sessions = [uuid.uuid4() for _ in range(9)]  # ~2-3x the patched batch size
+
+    with db.begin() as c:
+        for sid in item_sessions:
+            c.execute(
+                text(
+                    "INSERT INTO memory_items (id, user_id, session_id, memory_day, kind, "
+                    "text, confidence, extraction_model, extraction_version) "
+                    "VALUES (:id, :u, :s, :d, 'decision', :t, 'likely', 'm', 1)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "u": account.user_id,
+                    "s": sid,
+                    "d": DAY1,
+                    "t": f"Decide {sid}",
+                },
+            )
+        for n, sid in enumerate(line_sessions):
+            day = DAY1 + timedelta(days=n + 1)
+            c.execute(
+                text(
+                    "INSERT INTO daily_reports (id, user_id, memory_day, status, report, "
+                    "extraction_version) VALUES (:id, :u, :d, 'complete', CAST(:r AS jsonb), 1)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "u": account.user_id,
+                    "d": day,
+                    "r": json.dumps(report(day, lines=[line(sid, T1, "Said something")])),
+                },
+            )
+
+    batch_calls = {"items": 0, "rows": 0}
+    original_scalars = AsyncSession.scalars
+
+    async def counting_scalars(self: AsyncSession, statement: Any, *a: Any, **kw: Any) -> Any:
+        descriptions = getattr(statement, "column_descriptions", None) or []
+        entity = descriptions[0].get("type") if descriptions else None
+        if entity is MemoryItem:
+            batch_calls["items"] += 1
+        elif entity is DailyReportRow:
+            batch_calls["rows"] += 1
+        return await original_scalars(self, statement, *a, **kw)
+
+    monkeypatch.setattr(AsyncSession, "scalars", counting_scalars)
+
+    page = notes(client, account)
+
+    total = len(item_sessions) + len(line_sessions)
+    assert page["total"] == total
+    # 11 items at batch size 4 needs 3 read batches (4, 4, 3); 9 report rows needs 3 (4, 4, 1).
+    assert batch_calls["items"] >= 3
+    assert batch_calls["rows"] >= 3
+    # A second visit does not duplicate, batched or not.
+    assert notes(client, account)["total"] == total
 
 
 # --- searching, filtering, sorting ----------------------------------------------------------------

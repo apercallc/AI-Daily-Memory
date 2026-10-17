@@ -118,6 +118,12 @@ async def list_keys(session: Session, manager: Manager) -> list[TokenOut]:
 async def create_key(
     body: NewApiKey, session: Session, manager: Manager
 ) -> CreatedApiKey | JSONResponse:
+    # Two concurrent POSTs for the same account would both pass a count-then-insert check
+    # before either commits; serialize them for the length of this transaction (the pattern
+    # app/api/sync.py already uses for its own first-write race).
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(f"api_keys:{manager.user_id}", 0)))
+    )
     count = await session.scalar(
         select(func.count())
         .select_from(AccessToken)

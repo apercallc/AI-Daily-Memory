@@ -161,8 +161,18 @@ async def forget_transcripts(session: AsyncSession, user_id: uuid.UUID, day: dat
     )
 
 
+BACKFILL_BATCH_SIZE = 300  # rows per read query and rows per write transaction
+
+
 async def backfill_notes(session: AsyncSession, user_id: uuid.UUID) -> int:
-    """Builds notes for a person who synced before notes existed. Safe to repeat."""
+    """Builds notes for a person who synced before notes existed. Safe to repeat.
+
+    A long-lived account's first touch can have an unbounded number of `MemoryItem` and
+    `DailyReportRow` rows. Both the reads and the writes proceed in bounded batches
+    (`BACKFILL_BATCH_SIZE` rows at a time, keyset-paginated by primary key) so a single
+    query can never pull an unbounded resultset into memory, and so the write side commits
+    incrementally instead of holding one giant transaction open for the whole account.
+    """
     sessions: dict[uuid.UUID, SessionContent] = {}
 
     def bucket(session_id: uuid.UUID, day: date) -> SessionContent:
@@ -171,44 +181,73 @@ async def backfill_notes(session: AsyncSession, user_id: uuid.UUID) -> int:
             found = sessions[session_id] = SessionContent(session_id, day)
         return found
 
-    for item in await session.scalars(select(MemoryItem).where(MemoryItem.user_id == user_id)):
-        bucket(item.session_id, item.memory_day).items.append((item.kind, item.text, None))
-    for row in await session.scalars(
-        select(DailyReportRow).where(DailyReportRow.user_id == user_id)
-    ):
-        if not is_phone_document(row.report):
-            continue
-        lines = row.report.get("transcriptLines")
-        for line in lines if isinstance(lines, list) else []:
-            if not isinstance(line, dict):
-                continue
-            try:
-                session_id = uuid.UUID(str(line.get("sessionId")))
-                start = int(line.get("startEpochMs") or 0)
-            except (ValueError, TypeError):
-                continue
-            text = line.get("text")
-            if isinstance(text, str):
-                bucket(session_id, row.memory_day).lines.append((start, text))
+    last_item_id: uuid.UUID | None = None
+    while True:
+        item_query = (
+            select(MemoryItem)
+            .where(MemoryItem.user_id == user_id)
+            .order_by(MemoryItem.id)
+            .limit(BACKFILL_BATCH_SIZE)
+        )
+        if last_item_id is not None:
+            item_query = item_query.where(MemoryItem.id > last_item_id)
+        item_batch = (await session.scalars(item_query)).all()
+        for item in item_batch:
+            bucket(item.session_id, item.memory_day).items.append((item.kind, item.text, None))
+        if len(item_batch) < BACKFILL_BATCH_SIZE:
+            break
+        last_item_id = item_batch[-1].id
+
+    last_row_id: uuid.UUID | None = None
+    while True:
+        row_query = (
+            select(DailyReportRow)
+            .where(DailyReportRow.user_id == user_id)
+            .order_by(DailyReportRow.id)
+            .limit(BACKFILL_BATCH_SIZE)
+        )
+        if last_row_id is not None:
+            row_query = row_query.where(DailyReportRow.id > last_row_id)
+        row_batch = (await session.scalars(row_query)).all()
+        for row in row_batch:
+            if is_phone_document(row.report):
+                lines = row.report.get("transcriptLines")
+                for line in lines if isinstance(lines, list) else []:
+                    if not isinstance(line, dict):
+                        continue
+                    try:
+                        session_id = uuid.UUID(str(line.get("sessionId")))
+                        start = int(line.get("startEpochMs") or 0)
+                    except (ValueError, TypeError):
+                        continue
+                    text = line.get("text")
+                    if isinstance(text, str):
+                        bucket(session_id, row.memory_day).lines.append((start, text))
+        if len(row_batch) < BACKFILL_BATCH_SIZE:
+            break
+        last_row_id = row_batch[-1].id
+
     if not sessions:
         return 0
-    for content in sessions.values():
-        fields = build_fields(content)
-        statement = pg_insert(Note).values(
-            user_id=user_id,
-            session_id=content.session_id,
-            memory_day=fields.memory_day,
-            started_at=fields.started_at,
-            auto_title=fields.auto_title,
-            title_from_transcript=fields.title_from_transcript,
-            item_preview=fields.item_preview,
-            lead=fields.lead,
-            transcript_text=fields.transcript_text,
-            line_count=fields.line_count,
-            word_count=fields.word_count,
-        )
-        await session.execute(
-            statement.on_conflict_do_nothing(index_elements=["user_id", "session_id"])
-        )
-    await session.commit()
-    return len(sessions)
+    contents = list(sessions.values())
+    for start in range(0, len(contents), BACKFILL_BATCH_SIZE):
+        for content in contents[start : start + BACKFILL_BATCH_SIZE]:
+            fields = build_fields(content)
+            statement = pg_insert(Note).values(
+                user_id=user_id,
+                session_id=content.session_id,
+                memory_day=fields.memory_day,
+                started_at=fields.started_at,
+                auto_title=fields.auto_title,
+                title_from_transcript=fields.title_from_transcript,
+                item_preview=fields.item_preview,
+                lead=fields.lead,
+                transcript_text=fields.transcript_text,
+                line_count=fields.line_count,
+                word_count=fields.word_count,
+            )
+            await session.execute(
+                statement.on_conflict_do_nothing(index_elements=["user_id", "session_id"])
+            )
+        await session.commit()
+    return len(contents)

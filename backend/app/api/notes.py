@@ -565,6 +565,13 @@ async def _name_taken(
 async def create_folder(
     body: FolderIn, session: Session, writer: Writer
 ) -> FolderOut | JSONResponse:
+    # Two concurrent POSTs for the same account would both pass a count-then-insert check
+    # before either commits; serialize them for the length of this transaction (the pattern
+    # app/api/sync.py already uses for its own first-write race). Name uniqueness is still
+    # guarded separately by the unique index + IntegrityError catch below.
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(f"folders:{writer.user_id}", 0)))
+    )
     count = await session.scalar(
         select(func.count()).select_from(NoteFolder).where(NoteFolder.user_id == writer.user_id)
     )
