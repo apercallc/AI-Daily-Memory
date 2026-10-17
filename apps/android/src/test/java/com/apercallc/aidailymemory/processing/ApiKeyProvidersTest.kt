@@ -59,6 +59,25 @@ class ApiKeyProvidersTest {
         assertTrue(prompt.contains("1: bye"))
     }
 
+    @Test
+    fun `prompt omits prior-items context when none is configured`() {
+        val prompt = extraction().buildPrompt(listOf(NumberedLine(0, "A", "hello")))
+        assertFalse(prompt.contains("Previously open items"))
+    }
+
+    @Test
+    fun `prompt includes prior-items context when configured`() {
+        val provider = ApiKeyExtractionProvider(
+            "https://llm.example/v1/chat",
+            "key",
+            "gpt-x",
+            priorItemsContext = "Previously open items, for context only:\n- [action] Draft scope doc",
+        )
+        val prompt = provider.buildPrompt(listOf(NumberedLine(0, "A", "hello")))
+        assertTrue(prompt.contains("Previously open items"))
+        assertTrue(prompt.contains("Draft scope doc"))
+    }
+
     private fun chat(content: String): String = buildJsonObject {
         put(
             "choices",

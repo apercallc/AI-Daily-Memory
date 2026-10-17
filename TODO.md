@@ -149,11 +149,31 @@ voiceprint.
 ## AI evaluation
 
 - [ ] Create human-reviewed gold dataset
+  - `ExtractionGoldDataset` (core/recording, pure/tested) defines the dataset shape and seeds it
+    with cases covering every `MemoryItem` kind plus deliberate negative cases (a transcript that
+    should extract nothing — TODO.md calls a false-positive task/commitment high-severity). Every
+    case is explicitly `reviewed = false`: an agent session drafted the starting shape, not the
+    ground truth. Stays open until a human reviews each case and flips that flag — see
+    `docs/product/AI_EVALUATION.md`.
 - [ ] Measure precision/recall for decisions, explicit tasks, commitments, and ideas; treat false
   positive tasks and commitments as high-severity failures
-- [ ] Evaluate prior open action items as extraction context; keep it only if it improves follow-up
-  accuracy without more false positives
+  - `ExtractionEvaluator` (core/recording, pure/tested) scores predicted vs. gold items by kind
+    (structural match: same kind + overlapping evidence, greedy one-to-one so duplicates can't
+    inflate recall), per-kind and aggregate precision/recall/F1. The scorer is ready; it has
+    nothing to measure yet — stays open until it is actually run against a real provider's output
+    on the reviewed dataset above (`docs/product/AI_EVALUATION.md` step 2).
+- [ ] Evaluate prior open action items as extraction context; keep it only if it improves
+  follow-up accuracy without more false positives
+  - `PriorItemsContext` (core/recording, pure/tested) formats a bounded summary of open
+    actions/commitments; wired into `ApiKeyExtractionProvider` as an optional parameter, `null`
+    by default, so today's prompt is unchanged. Stays open and unwired-by-default until the A/B
+    comparison in `docs/product/AI_EVALUATION.md` step 3 actually shows it helps.
 - [ ] Add regression tests for every confirmed extraction bug
+  - No confirmed extraction bug is on record as of this pass (past extraction fixes — timezone
+    handling, JSON escaping, chunking — each already carry their own regression test next to the
+    fix, the existing convention). `docs/product/AI_EVALUATION.md` documents adding a future
+    confirmed bug as a new `ExtractionGoldDataset.GoldCase` so it becomes permanent dataset
+    coverage instead of a one-off fix.
 
 ### Phase 2 exit gate
 
@@ -229,14 +249,29 @@ Name mentions remain text evidence; never infer speaker identity from a name app
 - [ ] Build a known-day recall benchmark and add regression tests for confirmed failures
   - Measure Recall@K, ranking, temporal accuracy, evidence-source accuracy, and
     insufficient-evidence abstention.
-  - Blocked on a human-reviewed benchmark (same constraint as AI evaluation's gold dataset
-    above): an agent session should not author the "known-good" answers it would then grade
-    itself against.
+  - Built this pass: `app/recall_evaluation.py` (pure, tested: Recall@K, precision@K,
+    abstention accuracy) and `tests/test_recall_benchmark.py` — a known-day benchmark that
+    seeds a real multi-day, multi-kind corpus with known-correct ids, asks the live `/v1/ask`
+    eleven questions, and asserts `mean_recall_at_k == 1.0` and `abstention_accuracy == 1.0`,
+    including a dedicated ranking check. Unlike Phase 2's gold dataset, this one's ground truth
+    is simply what the test itself seeded, not a subjective human judgment call, so it is
+    written as passing assertions rather than an unreviewed dataset — see
+    `docs/product/RECALL_BENCHMARK.md`.
+  - Still open: calendar-week/month-boundary cases are deliberately left to the existing
+    fixed-date unit tests in `tests/test_recall.py` rather than a live-clock suite (see the doc
+    for why), and a human-curated set of realistically-worded, ambiguous real-world questions —
+    where judging "good enough" ranking is a preference call, not a deterministic check — still
+    does not exist.
 
 ### Phase 4 exit gate
 
 - [ ] Known benchmark questions reliably retrieve the correct evidence without vector search.
-  - Blocked on the same benchmark as "Recall evaluation" above.
+  - `tests/test_recall_benchmark.py` demonstrates exactly this for its eleven deterministic
+    cases (100% Recall@1, 100% abstention accuracy, correct top-1 ranking) — genuine evidence,
+    not stretched. Stays open because it does not yet cover calendar-boundary phrasing against
+    a live clock or realistic/ambiguous real-world question variety (both deliberately
+    deferred, see `docs/product/RECALL_BENCHMARK.md`), so "known benchmark questions" here means
+    "the ones this pass could build," not "representative of real usage" yet.
 
 # Phase 5 — CLI
 

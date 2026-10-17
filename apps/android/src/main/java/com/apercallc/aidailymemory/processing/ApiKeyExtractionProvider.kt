@@ -38,6 +38,11 @@ class ApiKeyExtractionProvider(
     private val apiUrl: String,
     private val apiKey: String,
     override val model: String,
+    /** Optional bounded summary of currently-open actions/commitments (TODO.md "evaluate prior
+     *  open action items as extraction context"), e.g. from [PriorItemsContext.describe]. Null
+     *  by default — the prompt is unchanged from before this existed until a measurement shows
+     *  it helps without adding false positives (docs/product/AI_EVALUATION.md). */
+    private val priorItemsContext: String? = null,
 ) : ExtractionProvider {
 
     override val name: String = "user-key"
@@ -69,6 +74,7 @@ class ApiKeyExtractionProvider(
             val sp = speaker?.let { "[$it] " } ?: ""
             "$i: $sp$text"
         }
+        val contextBlock = priorItemsContext?.let { "\n\n$it\n" } ?: "\n"
         return """
             You are a memory extraction assistant. Extract decisions, action items, commitments,
             ideas, and open questions from the following transcript lines. Return a JSON array
@@ -80,7 +86,7 @@ class ApiKeyExtractionProvider(
             due (optional, ISO date for action/commitment),
             direction (optional, for commitments only: "i_owe" or "owed_to_me"),
             counterpart (optional, for commitments only, the other party).
-
+            $contextBlock
             Transcript:
             $numbered
 
