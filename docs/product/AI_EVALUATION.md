@@ -21,6 +21,14 @@ network dependency, so it runs the same in CI as everywhere else):
   context (TODO.md "evaluate prior open action items as extraction context"). Wired into
   `ApiKeyExtractionProvider` as an optional constructor parameter, `null` by default: passing it
   changes nothing about today's prompt.
+- `GoldDatasetMeasurementRunner` (`apps/android/src/test/.../processing/`) — a real, runnable
+  measurement, not just the machinery to build one by hand. A JUnit test, but deliberately
+  excluded from `qualityCheck`/CI: it skips itself (`Assume`) unless `GOLD_DATASET_API_URL`,
+  `GOLD_DATASET_API_KEY`, and `GOLD_DATASET_MODEL` are set, because running it calls a real,
+  user-configured LLM and spends real money — that must stay an explicit, human-triggered
+  action, never a side effect of the ordinary test suite. When those env vars are set, it scores
+  every `reviewed = true` case (a partial review already produces a partial, honest number — it
+  does not wait for every case) and prints per-kind precision/recall/F1.
 
 ## What's still genuinely open, and why an agent session can't close it alone
 
@@ -33,16 +41,24 @@ would expect extracted (including confirming or rewriting the negative cases), a
 `reviewed` to `true`, no precision/recall number from this dataset means anything.
 
 **The measurement itself needs a real provider run.** `ExtractionEvaluator` can score any
-`(predicted, gold)` pair; it has no opinion about where `predicted` comes from. Running it against
-real output means calling a real extraction provider (the user's own configured API key, per
-ADR-0020 — never an operator-funded model) against the gold transcripts, which is a deliberate,
-costed action a person should trigger, not something that should happen silently in CI.
+`(predicted, gold)` pair; it has no opinion about where `predicted` comes from. Running it
+against real output means calling a real extraction provider (the user's own configured API
+key, per ADR-0020 — never an operator-funded model) against the gold transcripts, which is a
+deliberate, costed action a person should trigger, not something that should happen silently in
+CI. `GoldDatasetMeasurementRunner` is the one-command way to do that once a human has reviewed
+at least one case — it is built; actually running it against real money is the remaining human
+step.
 
-**"Evaluate prior open action items as extraction context" needs the same real run, twice.**
-TODO.md's own instruction is to "keep it only if it improves follow-up accuracy without more
-false positives" — that's an A/B comparison against the measurement above, not a unilateral
-decision. `PriorItemsContext` exists and is tested in isolation; it stays unwired from the default
-path until that comparison has real numbers behind it.
+**"Evaluate prior open action items as extraction context" needs the same real run, twice, and
+a fixture dimension the dataset does not have yet.** TODO.md's own instruction is to "keep it
+only if it improves follow-up accuracy without more false positives" — that's an A/B comparison
+against the measurement above, not a unilateral decision. `PriorItemsContext` exists and is
+tested in isolation; it stays unwired from the default path until that comparison has real
+numbers behind it. Note this needs more than re-running the existing dataset: every current
+`GoldCase` has no "prior open items" of its own (the dataset was designed for plain extraction,
+not this A/B), so a genuine comparison needs new cases that pair a transcript with a realistic
+prior-open-items list and an expectation of what should or shouldn't change — another thing a
+human reviewer, not an agent session, should author.
 
 ## How to actually close this
 
@@ -50,12 +66,13 @@ path until that comparison has real numbers behind it.
    confirm or correct `expected` to match what they would genuinely expect extracted. Flip
    `reviewed = true` and note who/when in `notes`. Add more cases — especially negative ones —
    as real sessions surface edge cases.
-2. Run a configured `ApiKeyExtractionProvider` against each reviewed case's transcript, collect
-   its `ExtractedItem`s, and call `ExtractionEvaluator.score(predicted, case.expected)` per case,
-   then `ExtractionEvaluator.aggregate(...)` across the reviewed subset. Record the resulting
-   precision/recall/F1 per kind somewhere durable (this file, or a dated report next to it).
-3. Only once that baseline exists: re-run the same cases with `priorItemsContext` populated from
-   each case's own prior open items, score again, and compare. Wire `PriorItemsContext` into
+2. Export `GOLD_DATASET_API_URL`, `GOLD_DATASET_API_KEY`, `GOLD_DATASET_MODEL` for your own
+   configured provider and run
+   `./gradlew :apps:android:testDebugUnitTest --tests "*GoldDatasetMeasurementRunner*"`. It
+   scores every reviewed case and prints precision/recall/F1 per kind straight to the console —
+   record the result somewhere durable (this file, or a dated report next to it).
+3. Only once that baseline exists: add prior-open-items fixtures to a few gold cases, re-run
+   with `priorItemsContext` populated, score again, and compare. Wire `PriorItemsContext` into
    `ProcessingPipeline`/`AppContainer` by default only if the comparison shows a real improvement
    with no new false positives.
 4. Tick the four Phase 2 "AI evaluation" checkboxes in `TODO.md` only once steps 1–3 have

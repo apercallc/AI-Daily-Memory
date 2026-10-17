@@ -159,15 +159,21 @@ voiceprint.
   positive tasks and commitments as high-severity failures
   - `ExtractionEvaluator` (core/recording, pure/tested) scores predicted vs. gold items by kind
     (structural match: same kind + overlapping evidence, greedy one-to-one so duplicates can't
-    inflate recall), per-kind and aggregate precision/recall/F1. The scorer is ready; it has
-    nothing to measure yet — stays open until it is actually run against a real provider's output
-    on the reviewed dataset above (`docs/product/AI_EVALUATION.md` step 2).
+    inflate recall), per-kind and aggregate precision/recall/F1. `GoldDatasetMeasurementRunner`
+    (`apps/android`, a manually-triggered JUnit test guarded by env vars so it never runs in
+    CI/qualityCheck) now actually calls a configured provider against every reviewed gold case
+    and prints the score — the scorer is no longer just ready, the one-command measurement
+    itself is built. Stays open because no case is reviewed yet and no one has actually run it
+    against real money (`docs/product/AI_EVALUATION.md` step 2).
 - [ ] Evaluate prior open action items as extraction context; keep it only if it improves
   follow-up accuracy without more false positives
   - `PriorItemsContext` (core/recording, pure/tested) formats a bounded summary of open
     actions/commitments; wired into `ApiKeyExtractionProvider` as an optional parameter, `null`
     by default, so today's prompt is unchanged. Stays open and unwired-by-default until the A/B
-    comparison in `docs/product/AI_EVALUATION.md` step 3 actually shows it helps.
+    comparison in `docs/product/AI_EVALUATION.md` step 3 actually shows it helps — that
+    comparison needs more than the above runner: no `GoldCase` today carries its own
+    prior-open-items fixture (the dataset was built for plain extraction), so a human reviewer
+    needs to author that dimension before this one can move either.
 - [ ] Add regression tests for every confirmed extraction bug
   - No confirmed extraction bug is on record as of this pass (past extraction fixes — timezone
     handling, JSON escaping, chunking — each already carry their own regression test next to the
