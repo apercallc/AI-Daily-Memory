@@ -87,9 +87,18 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
   `ai-daily-memory-backend`): (1) "An issue is first seen" → notify immediately (catches a new
   class of error on a new deploy); (2) "An issue is seen more than 10 times in 1 hour" → notify
   (catches a spike/outage without paging on a single one-off); (3) no uptime/synthetic monitor
-  exists yet at all (Sentry Crons or an external pinger like Better Uptime/UptimeRobot against
-  `/v1/health` would close that separately). These are defaults, not a final policy — revise
-  them once real traffic gives a sense of normal volume.
+  existed at all until this pass. Closed that part: `ai-daily-memory-health-watchdog` is a
+  Hermes cron job (every 10 minutes, script-only, no LLM call) that pings `/v1/health` and
+  `/v1/ready` and stays completely silent when both return 200 — only a real failure (wrong
+  status code) sends a Telegram message, and recovery sends one "healthy again" message so the
+  all-clear is visible too. Verified both branches for real (a manual run against the live,
+  healthy backend produced no output; a simulated 404 against a real non-existent path produced
+  the expected alert text) before scheduling it. This covers uptime; it is not a substitute for
+  Sentry's own alert rules above, which still need the manual UI step. Lives outside this repo,
+  as a Hermes-session-local resource, not a deployable artifact: the script is
+  `~/.hermes/scripts/aidm-health-watchdog.sh` on the operator's machine and the schedule is
+  registered in that Hermes instance's own cron store — it is not committed here and would need
+  recreating (`cronjob_manage`) on a different Hermes instance or operator machine.
 - ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
   Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
   state (migration 0015); see `python -m app.admin dead-account-purges`.

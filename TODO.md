@@ -479,6 +479,11 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     policy) are recorded in `docs/product/LAUNCH_GAPS.md` for a human to enter in ~2 minutes.
     Checked Railway's Postgres backup settings: no CLI or public-API surface exists for them on
     this plan either — dashboard-only, genuinely outside what this session can verify or set.
+    Closed the "no uptime monitor" half: scheduled `ai-daily-memory-health-watchdog`, a Hermes
+    cron job polling `/v1/health`+`/v1/ready` every 10 minutes, silent on success, alerting (and
+    later all-clearing) only on a real failure — verified both branches against the live backend
+    before scheduling it. Lives outside this repo (operator's own Hermes instance), see
+    `docs/product/LAUNCH_GAPS.md` for exactly where.
   - Closed this pass, for the part that is actually agent-doable: "load/chaos tests for worker
     retry behavior" already had extensive fault-injection coverage in `app/jobs.py`/
     `app/retention.py` (dead-lettering, lease-expiry races, fenced stale owners, bounded retry,
