@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -46,12 +48,13 @@ fun TranscriptScreen(
     processingState: ProcessingStateEntity? = null,
     /** True once analysis is complete and found no speech: a terminal outcome, not a wait. */
     noSpeechDetected: Boolean = false,
+    onRetryFailed: () -> Unit = {},
 ) {
     val spacing = AiDailyMemoryTheme.spacing
     val times = TimeText.rememberFormatter()
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
         processingState?.takeIf { it.state != "COMPLETED" && !noSpeechDetected }?.let { state ->
-            item(key = "processing_status") { ProcessingStatusCard(state) }
+            item(key = "processing_status") { ProcessingStatusCard(state, onRetryFailed) }
         }
         when {
             noSpeechDetected || (lines.isNullOrEmpty() && processingState?.state == "COMPLETED") -> item {
@@ -106,7 +109,7 @@ fun TranscriptScreen(
 }
 
 @Composable
-private fun ProcessingStatusCard(state: ProcessingStateEntity) {
+private fun ProcessingStatusCard(state: ProcessingStateEntity, onRetryFailed: () -> Unit) {
     val spacing = AiDailyMemoryTheme.spacing
     val estimate = ProcessingProgressEstimator.estimate(
         completedSegments = state.completedSegments,
@@ -158,6 +161,14 @@ private fun ProcessingStatusCard(state: ProcessingStateEntity) {
                     progress = { estimate.percentComplete / 100f },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            // The only other place to retry this is Settings -> Processing; offer it here too
+            // so a user who lands on this failure doesn't have to go find it.
+            if (state.state == "FAILED") {
+                OutlinedButton(
+                    onClick = onRetryFailed,
+                    modifier = Modifier.heightIn(min = spacing.minTouchTarget),
+                ) { Text(stringResource(R.string.processing_retry_failed)) }
             }
         }
     }

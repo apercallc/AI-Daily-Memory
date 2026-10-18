@@ -124,6 +124,25 @@ class SessionsViewModelTest {
         )
     }
 
+    @Test
+    fun `retrying a failed session's transcript resets it for reprocessing, same as Settings' bulk retry`() = runBlocking {
+        val db = container.database
+        db.sessions().register(SessionInfoEntity("stuck", "2026-10-15", "UTC", 1_000, null))
+        db.processingState().upsert(
+            com.apercallc.aidailymemory.data.ProcessingStateEntity("stuck", "FAILED", false, "io_error", 0L),
+        )
+        val vm = model()
+
+        vm.retryFailed()
+
+        assertEquals(
+            com.apercallc.aidailymemory.R.string.processing_retrying,
+            withTimeout(5_000) { vm.messages.first() },
+        )
+        assertEquals("PENDING", db.processingState().forSession("stuck")?.state)
+        assertEquals(null, db.processingState().forSession("stuck")?.lastError)
+    }
+
     private fun line(session: String, id: String, start: Long) = LocalTranscriptLineEntity(
         lineId = id, sessionId = session, segmentId = "$session-0",
         startEpochMs = start, endEpochMs = start + 500, speaker = null, text = id,

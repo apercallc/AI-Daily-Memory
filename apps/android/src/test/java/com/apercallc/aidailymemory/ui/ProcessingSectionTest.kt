@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -113,14 +114,30 @@ class ProcessingSectionTest {
     }
 
     @Test
-    fun `an installed model can be removed`() {
+    fun `an installed model can be removed after confirming`() {
         var removed = 0
         show(ProcessingUi(modelState = ModelState.Installed), ProcessingActions(onRemoveModel = { removed++ }))
 
         compose.onNodeWithText("Speech model ready", substring = true).assertExists()
         compose.onNodeWithText("Remove speech model").performScrollTo().performClick()
+        // Tapping the row button only opens the confirmation; the model is not removed yet.
+        assertEquals(0, removed)
+        compose.onNodeWithText("Remove the speech model?").assertExists()
+        compose.onAllNodesWithText("Remove speech model").onLast().performClick()
 
         assertEquals(1, removed)
+    }
+
+    @Test
+    fun `cancelling the model-remove confirmation leaves it installed`() {
+        var removed = 0
+        show(ProcessingUi(modelState = ModelState.Installed), ProcessingActions(onRemoveModel = { removed++ }))
+
+        compose.onNodeWithText("Remove speech model").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performClick()
+
+        assertEquals(0, removed)
+        compose.onNodeWithText("Remove the speech model?").assertDoesNotExist()
     }
 
     @Test

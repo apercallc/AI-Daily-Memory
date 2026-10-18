@@ -173,7 +173,7 @@
     <string name="processing_session_eta_minutes">%1$d min</string>
     <string name="processing_session_eta_hours">%1$d hr %2$d min</string>
     <string name="processing_session_finishing">Transcript ready. Finishing session notes.</string>
-    <string name="processing_session_failed">Processing stopped. Open Settings to check the problem and retry.</string>
+    <string name="processing_session_failed">Processing stopped. Check Settings for details, or retry below.</string>
     <!-- A speaker label from transcription, e.g. "Speaker A". -->
     <string name="transcript_speaker">Speaker %1$s</string>
     <string name="part_early_morning">Early morning</string>
@@ -402,6 +402,8 @@
     <string name="report_not_generated_title">No report yet</string>
     <string name="report_not_generated_body">This day has no generated report. Reports are produced after an AI-summarized session finishes processing.</string>
     <string name="report_loading">Loading report…</string>
+    <string name="report_load_error">Couldn\'t load this report. Try again.</string>
+    <string name="report_retry">Retry</string>
     <string name="report_partial_notice">Still processing — not all of today\'s audio has been analyzed yet.</string>
     <string name="report_coverage">Recorded %1$d min across %2$d %3$s.</string>
     <string name="report_coverage_session">session</string>
@@ -527,6 +529,8 @@
     <string name="processing_model_downloading">Downloading… %1$d%%</string>
     <string name="processing_model_ready">Speech model ready. Transcribing happens while the phone charges.</string>
     <string name="processing_model_remove">Remove speech model</string>
+    <string name="processing_model_remove_title">Remove the speech model?</string>
+    <string name="processing_model_remove_body">You\'ll need to download it again (about %1$d MB) before transcription can resume on this phone.</string>
     <string name="processing_model_failed_offline">Couldn\'t download. Check your connection and try again.</string>
     <string name="processing_model_failed_server">The download server didn\'t answer. Try again later.</string>
     <string name="processing_model_failed_corrupt">The download didn\'t match the expected file, so it was thrown away. Try again.</string>

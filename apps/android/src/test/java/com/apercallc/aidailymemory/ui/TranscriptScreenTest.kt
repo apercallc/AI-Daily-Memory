@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.ui
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.apercallc.aidailymemory.data.ProcessingStateEntity
 import com.apercallc.aidailymemory.data.TranscriptText
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
@@ -13,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "en-rUS")
@@ -129,5 +131,37 @@ class TranscriptScreenTest {
         compose.onNodeWithText(
             "Transcribing on this phone. 25% complete, about 1 min left.",
         ).assertExists()
+    }
+
+    @Test
+    fun `a failed session offers a retry here too, not only in Settings`() {
+        var retried = 0
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(
+                    lines = emptyList(),
+                    processingState = ProcessingStateEntity("session", "FAILED", false, "io_error", 0L),
+                    onRetryFailed = { retried++ },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Try again").performClick()
+
+        assertEquals(1, retried)
+    }
+
+    @Test
+    fun `retry is only offered once a session has actually failed`() {
+        compose.setContent {
+            AiDailyMemoryTheme {
+                TranscriptScreen(
+                    lines = emptyList(),
+                    processingState = ProcessingStateEntity("session", "TRANSCRIBING", false, null, 0L),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Try again").assertDoesNotExist()
     }
 }

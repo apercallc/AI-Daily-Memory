@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,8 @@ sealed interface ReportLoadState {
     data object Loading : ReportLoadState
     data object NotGenerated : ReportLoadState
     data class Content(val report: DailyReport) : ReportLoadState
+    /** A DB-read exception on this path. Not the same as [NotGenerated]: the report may exist. */
+    data object Failed : ReportLoadState
 }
 
 /**
@@ -41,7 +44,7 @@ sealed interface ReportLoadState {
  * uses, so the screen and the shared Markdown never disagree.
  */
 @Composable
-fun ReportScreen(state: ReportLoadState, modifier: Modifier = Modifier) {
+fun ReportScreen(state: ReportLoadState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val spacing = AiDailyMemoryTheme.spacing
     when (state) {
         ReportLoadState.Loading -> LoadingState(stringResource(R.string.report_loading), modifier)
@@ -51,6 +54,19 @@ fun ReportScreen(state: ReportLoadState, modifier: Modifier = Modifier) {
             body = stringResource(R.string.report_not_generated_body),
             modifier = modifier,
         )
+        ReportLoadState.Failed -> Column(
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.report_load_error),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Button(onClick = onRetry) {
+                Text(stringResource(R.string.report_retry))
+            }
+        }
         is ReportLoadState.Content -> LazyColumn(
             modifier = modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(spacing.md),

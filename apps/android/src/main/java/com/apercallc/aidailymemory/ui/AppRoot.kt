@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.core.content.FileProvider
 import com.apercallc.aidailymemory.platform.logFailure
+import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.processing.ReportBuilder
 import com.apercallc.aidailymemory.recording.processing.DailyReport
 import com.apercallc.aidailymemory.recording.processing.renderMarkdown
@@ -68,6 +69,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import com.apercallc.aidailymemory.R
 import com.apercallc.aidailymemory.platform.Permissions
@@ -356,15 +359,35 @@ private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Uni
 @Composable
 private fun ReportRoute(viewModel: MemoryViewModel, memoryDay: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    val entity by remember(memoryDay) { viewModel.report(memoryDay) }
-        .collectAsStateWithLifecycle(initialValue = null)
+    // Bumped by the Failed state's retry button to force the flow below to re-collect.
+    var retryCount by rememberSaveable(memoryDay) { mutableIntStateOf(0) }
+    val entityResult by remember(memoryDay, retryCount) {
+        viewModel.report(memoryDay)
+            .map<DailyReportEntity?, Result<DailyReportEntity?>> { Result.success(it) }
+            .catch { e ->
+                logFailure("ReportRoute", "report_load_failed", e)
+                emit(Result.failure(e))
+            }
+    }.collectAsStateWithLifecycle(initialValue = Result.success(null))
+    val entity = entityResult.getOrNull()
     // null while loading; stays null forever when the day never produced a report.
     var everLoaded by rememberSaveable(memoryDay) { mutableStateOf(false) }
     LaunchedEffect(entity) { if (entity != null) everLoaded = true }
+    // A stored report's JSON predating a schema change is also a "failed", not a crash.
+    var deserializeFailed by remember(memoryDay, retryCount) { mutableStateOf(false) }
     val report = remember(entity) {
-        entity?.let { ReportBuilder.deserialize(it.reportJson) }
+        entity?.let {
+            try {
+                ReportBuilder.deserialize(it.reportJson)
+            } catch (e: Exception) {
+                logFailure("ReportRoute", "report_deserialize_failed", e)
+                deserializeFailed = true
+                null
+            }
+        }
     }
     val reportState = when {
+        entityResult.isFailure || deserializeFailed -> ReportLoadState.Failed
         report != null -> ReportLoadState.Content(report)
         everLoaded -> ReportLoadState.NotGenerated
         else -> ReportLoadState.Loading
@@ -381,7 +404,7 @@ private fun ReportRoute(viewModel: MemoryViewModel, memoryDay: String, onBack: (
             }
         },
     ) { modifier ->
-        ReportScreen(state = reportState, modifier = modifier)
+        ReportScreen(state = reportState, onRetry = { retryCount++ }, modifier = modifier)
     }
 }
 
@@ -422,6 +445,7 @@ private fun TranscriptRoute(viewModel: SessionsViewModel, sessionId: String, tit
             lines = lines,
             processingState = processing,
             noSpeechDetected = noSpeechDetected,
+            onRetryFailed = viewModel::retryFailed,
             modifier = modifier,
         )
     }

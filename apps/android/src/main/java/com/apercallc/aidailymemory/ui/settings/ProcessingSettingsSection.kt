@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
@@ -476,6 +478,9 @@ private fun ProviderFields(
 @Composable
 private fun SpeechModelRow(processing: ProcessingUi, actions: ProcessingActions) {
     val spacing = AiDailyMemoryTheme.spacing
+    // A mis-tap must never instantly throw away an already-downloaded model, so removal is
+    // confirmed first, the same way disconnecting the server account is (AccountSection.kt).
+    var confirmingRemove by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         Text(
             text = stringResource(R.string.processing_model_free, processing.modelSizeMb),
@@ -490,9 +495,27 @@ private fun SpeechModelRow(processing: ProcessingUi, actions: ProcessingActions)
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 TextButton(
-                    onClick = actions.onRemoveModel,
+                    onClick = { confirmingRemove = true },
                     modifier = Modifier.heightIn(min = spacing.minTouchTarget),
                 ) { Text(stringResource(R.string.processing_model_remove)) }
+                if (confirmingRemove) {
+                    AlertDialog(
+                        onDismissRequest = { confirmingRemove = false },
+                        title = { Text(stringResource(R.string.processing_model_remove_title)) },
+                        text = { Text(stringResource(R.string.processing_model_remove_body, processing.modelSizeMb)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmingRemove = false
+                                actions.onRemoveModel()
+                            }) { Text(stringResource(R.string.processing_model_remove)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmingRemove = false }) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        },
+                    )
+                }
             }
             is ModelState.Downloading -> Text(
                 text = stringResource(R.string.processing_model_downloading, state.percent),

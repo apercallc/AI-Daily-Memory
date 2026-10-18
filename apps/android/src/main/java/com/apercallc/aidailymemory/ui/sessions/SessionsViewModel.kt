@@ -165,6 +165,22 @@ class SessionsViewModel(
             row != null && row.capturedMs > 0 && row.analyzedMs >= row.capturedMs && row.speechMs == 0L
         }
 
+    /**
+     * Retries every failed processing job, not just this session's -- the same bulk mechanism
+     * Settings -> Processing's "Retry failed" button already uses (there is no per-session retry
+     * primitive; this is that one, reused, so a failed session's transcript screen isn't the only
+     * place a user is forced to leave to recover from this).
+     */
+    fun retryFailed() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                container.database.processingState().retryFailed(System.currentTimeMillis())
+            }
+            container.processingScheduler.schedule()
+            _messages.send(R.string.processing_retrying)
+        }
+    }
+
     private fun memoryToday(): LocalDate =
         MemoryDays.dayOf(now(), zone(), container.settings.rhythm.value)
 
