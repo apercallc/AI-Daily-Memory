@@ -23,6 +23,17 @@ the web app and released phone builds can use the same origin without an app upd
 The separate `api-aidailymem.apercallc.com` custom domain still has no DNS record. It is optional:
 the shipped phone and web app use the working same-origin `/v1/` proxy.
 
+Checked 2026-10-18 whether this is closeable from here: no. `apercallc.com`'s real nameservers
+are a registrar's `dns-parking.com` (confirmed via `dig NS apercallc.com`), not Cloudflare — the
+Cloudflare account connected to this Hermes profile manages three unrelated domains
+(`decidetonight.com`, `myhoanglab.com`, `shinyms.com`) but not `apercallc.com`, confirmed by
+listing its zones directly, not just guessing from the nameserver lookup. This needs the
+operator's own registrar login for `apercallc.com`. Railway already has the custom domain
+configured and names the exact two records it's waiting on (`railway domain status
+api-aidailymem.apercallc.com`):
+- `CNAME api-aidailymem` → `rw44etje.up.railway.app`
+- `TXT _railway-verify.api-aidailymem` → `railway-verify=1db30e78481a753aebdef72a7e93373cfe4704a6fa46f2c6aaf2a73bbbd2f5fe`
+
 ## Built in this pass
 
 | Gap | Now |
@@ -62,6 +73,21 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
   or public API surface an agent session can read or configure. An operator needs to open the
   Postgres service's dashboard, confirm what backup retention is actually enabled, and run a
   real restore drill; this cannot be verified or closed from here.
+  ~~Closed a different way 2026-10-18~~: rather than Railway's dashboard toggle, a real
+  `pg_dump -Fc` now runs daily at 04:15 through Railway's own `railway connect --tunnel-only`
+  SSH tunnel (no managed-backup feature needed), via a Docker `postgres:18-alpine` image
+  matching the server's major version (the host's own `pg_dump` is only 16, which refuses to
+  talk to a newer server). Verified end to end: a real production dump (58KB, all 22 tables,
+  restorable — checked with `pg_restore --list`) landed in
+  `/run/media/th/PORT DRIVE/hermes-backup/ai-daily-memory-db`, falling back to
+  `/tmp/aidm-db-backup-fallback` when that drive isn't mounted (confirmed live: it was not
+  mounted during this test and the script degraded correctly, with a warning). Keeps the
+  newest 7 dated snapshots. Script: `~/.hermes/scripts/aidm-db-backup.sh`; cron job
+  `ai-daily-memory-db-backup` in that Hermes instance's own cron store — same caveat as the
+  uptime watchdog below: this lives on the operator's machine, not in this repo, and needs
+  recreating on a different Hermes instance. A **restore drill is still not done** — running
+  the backup is not the same as proving `pg_restore` onto a fresh database actually recovers a
+  working app; that is the one piece of this gap still open.
 - **Uptime and alerting.** ~~Sentry is wired; no uptime monitor or status page.~~ Fixed
   2026-10-16: Sentry was wired in code but had never sent an event — `SENTRY_DSN` was unset on
   the live `api` service, confirmed via the Sentry API (`firstEvent: null`). Set it; the
@@ -98,6 +124,17 @@ the shipped phone and web app use the working same-origin `/v1/` proxy.
   `~/.hermes/scripts/aidm-health-watchdog.sh` on the operator's machine and the schedule is
   registered in that Hermes instance's own cron store — it is not committed here and would need
   recreating (`cronjob_manage`) on a different Hermes instance or operator machine.
+  ~~Alert rules still need a human — raw REST API returns 404.~~ Closed 2026-10-18: the raw
+  REST endpoints above are genuinely gone/relocated on this Sentry plan, but Sentry's own MCP
+  connector (`sentry_mcp`, already connected in this Hermes profile) exposes the same
+  functionality through a different API shape (`create_alert_rule`) that does work. Created
+  both recommended rules on `ai-daily-memory-backend` for real: "New issue first seen" (id
+  6187360) and "Issue seen more than 10 times in 1 hour" (id 6187361), both enabled, both
+  emailing the account owner. Verified live via `find_alert_rules` after creation, not just the
+  creation response. The Android and web Sentry projects (`ai-daily-memory-android`,
+  `ai-daily-memory-web`) do not have these rules — `firstEvent` wasn't checked for either this
+  pass, so it's unconfirmed whether they're even receiving events yet; add the same two rules
+  there once they are.
 - ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
   Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
   state (migration 0015); see `python -m app.admin dead-account-purges`.
