@@ -53,14 +53,16 @@ suite alongside this one — it should supplement, not replace, the deterministi
   demonstrates the properties TODO.md asks for across a real spread of questions — not when the
   tooling that makes that measurement possible merely exists.
 
-## An unrelated bug found while building this
+## An unrelated bug found while building this (fixed)
 
 `tests/test_web_api.py::test_export_is_idempotent_within_the_ttl_and_regenerates_after_it` and
 `tests/test_notes_api.py::test_a_session_listed_without_words_still_gets_a_note_with_its_start_time`
-fail when the host's local timezone is not UTC (reproduced on this machine, which runs
-America/Chicago) — some response field is built from a naive/local `datetime` instead of a UTC
-one, so the ISO string carries a `-05:00`/`-06:00` offset instead of `Z`. CI runners default to
-UTC, which is almost certainly why this hasn't been caught before. Not fixed here — it's
-unrelated to recall evaluation and deserves its own, focused fix — but worth a ticket: a
-production host ever misconfigured with a non-UTC system timezone would export silently wrong
-API response timestamps.
+used to fail when the Postgres *server's* configured `TimeZone` GUC was not UTC: a `timestamptz`
+read back serializes using the server's own zone, while a Python-computed `datetime.now(UTC)`
+value always serializes as `Z`/`+00:00` — two representations of the same instant that fail a
+naive string-equality check. Fixed in `100226d` (`app/db/__init__.py` pins every connection via
+`connect_args={"options": "-c TimeZone=UTC"}`, libpq startup option, ADR-0009), with a dedicated
+regression suite (`tests/test_db.py`) that deliberately points a disposable Postgres at
+America/Chicago and asserts `SHOW TimeZone` still reports UTC over the app's own connections.
+Re-verified 2026-10-18: both tests pass with the backend's own host already running
+America/Chicago (not just CI's UTC default).

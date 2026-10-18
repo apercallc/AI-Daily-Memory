@@ -4,6 +4,35 @@ A working review of the whole product (phone, watch, web, API, database, operati
 2026-10-13. Items marked **built** were closed in the same pass; the rest need a decision or
 an outside account that code alone can't supply.
 
+## Security findings closed 2026-10-18 (full-repo quality/security audit pass)
+
+- **CodeQL `py/polynomial-redos`, `backend/app/credentials.py:79` (open since this alert first
+  appeared, never dismissed).** The email-shape check was a single
+  `^[^@\s]+@[^@\s]+\.[^@\s]+$` regex; `.` sits inside the excluded-character class, so a greedy
+  `[^@\s]+` immediately before a required literal `.` forces quadratic backtracking on a
+  non-matching string. `_validate` already bounded input to 320 chars first (so this was never
+  exploitable at production scale), but fixed properly rather than left as an accepted risk:
+  replaced the regex with `_is_plausible_email` (`str.partition("@")` plus two bounded
+  `[^@\s]+` fullmatches, no backtracking shape at all). Same accept/reject behavior, pinned by
+  a new parametrized test plus a dedicated ReDoS-shaped-string timing regression
+  (`backend/tests/test_credentials.py`). Full backend suite (683 tests) still green, 97%+
+  coverage, ruff/mypy still clean.
+- **GitHub Dependabot security updates were `disabled`** on the repo (secret scanning and push
+  protection were already on). Enabled via the repo API; 0 open Dependabot alerts at time of
+  writing.
+- **`docs/quality/QUALITY_GATES.md`'s CodeQL gap was stale.** It said "repository owners must
+  switch code scanning to advanced setup and confirm its first run uploads results" as if that
+  were still pending. It is not: `code-scanning/analyses` shows the manual `codeql.yml`
+  workflow uploading real SARIF results on every push today (default setup is correctly
+  `not-configured`, which is expected when using a workflow-based advanced setup instead).
+  Corrected the doc instead of leaving a closed item flagged open.
+- **`docs/product/RECALL_BENCHMARK.md`'s "unrelated bug" note was stale.** The Postgres-session-
+  timezone bug it described was already fixed in `100226d` (`connect_args={"options": "-c
+  TimeZone=UTC"}`, with its own regression suite `tests/test_db.py`) — the note just never got
+  updated after the fix landed. Corrected.
+- **Disaster-recovery restore drill actually run** (see "Database backups" below): not a code
+  change, but closes the one gap `docs/product/LAUNCH_GAPS.md` itself flagged as still open.
+
 ## Resolved in production: the phone's default server serves the API
 
 `aidailymem.apercallc.com` is the `web` service (static nginx). The API is the `api` service, whose
@@ -85,9 +114,20 @@ api-aidailymem.apercallc.com`):
   newest 7 dated snapshots. Script: `~/.hermes/scripts/aidm-db-backup.sh`; cron job
   `ai-daily-memory-db-backup` in that Hermes instance's own cron store — same caveat as the
   uptime watchdog below: this lives on the operator's machine, not in this repo, and needs
-  recreating on a different Hermes instance. A **restore drill is still not done** — running
-  the backup is not the same as proving `pg_restore` onto a fresh database actually recovers a
-  working app; that is the one piece of this gap still open.
+  recreating on a different Hermes instance.
+  **Restore drill done 2026-10-18**: took that day's real fallback dump
+  (`aidm-db-20261018_024821.dump`, 58271 bytes), restored it into a disposable
+  `postgres:18-alpine` container (`pg_restore --no-owner --no-privileges`, matching the
+  server's major version — a v16 `pg_restore` cannot read this dump format, same constraint as
+  the backup script itself), and verified the result is a genuinely working copy, not just a
+  dump that parses: all 22 tables present, `alembic_version` reads `0017` (the repo's actual
+  latest migration — `backend/migrations/versions/0017_account_export_format.py`, so the
+  backup is current, not stale), and real row data came back (2 `users`, 2 `credentials`, 3
+  `access_tokens`). One operational gotcha worth recording: this host's Docker is a snap
+  package, and snap confinement makes `-v /tmp/...:/path` bind mounts silently mount an *empty*
+  directory instead of erroring (because the daemon can't see paths outside its allowed
+  prefixes) — `docker cp` from `$HOME` worked. Future drills or restores from this machine
+  should stage the dump under `$HOME`, not `/tmp`, before touching Docker.
 - **Uptime and alerting.** ~~Sentry is wired; no uptime monitor or status page.~~ Fixed
   2026-10-16: Sentry was wired in code but had never sent an event — `SENTRY_DSN` was unset on
   the live `api` service, confirmed via the Sentry API (`firstEvent: null`). Set it; the
@@ -135,6 +175,19 @@ api-aidailymem.apercallc.com`):
   `ai-daily-memory-web`) do not have these rules — `firstEvent` wasn't checked for either this
   pass, so it's unconfirmed whether they're even receiving events yet; add the same two rules
   there once they are.
+  Re-checked 2026-10-18 (later pass): `firstEvent` via the raw Sentry API is
+  `2026-10-12T22:11:39Z` for `ai-daily-memory-web` (it is receiving real events right now, with
+  zero alert rules on it) and still `null` for `ai-daily-memory-android` (never fired once —
+  plausibly because no released build has crashed yet, not necessarily a wiring problem; worth
+  a manual check that Sentry init actually runs in a release APK the next time one ships).
+  **Still open, still manual**: this session's `sentry_mcp` connector only exposes
+  `search_issues`/`search_events`/`find_projects`/`find_organizations`/`get_sentry_resource`/
+  `analyze_issue_with_seer` — no `create_alert_rule` tool is reachable from here even though an
+  earlier session recorded using one by that name, and the raw REST endpoints are still 404 on
+  this plan. Add the backend's same two rules to `ai-daily-memory-web` (do this one first — it
+  has live events and zero alerting today) and `ai-daily-memory-android` by hand: Sentry →
+  that project → Settings → Alerts → Create Alert Rule → "An issue is first seen" (notify
+  immediately) and "An issue is seen more than 10 times in 1 hour" (notify).
 - ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
   Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
   state (migration 0015); see `python -m app.admin dead-account-purges`.

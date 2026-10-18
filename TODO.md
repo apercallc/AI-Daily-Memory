@@ -241,14 +241,19 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     watchdog cron job polls `/v1/health`+`/v1/ready` every 10 minutes and alerts only on real
     failure (lives outside this repo — see `docs/product/LAUNCH_GAPS.md`); real concurrent-worker
     fault-injection coverage added (`tests/test_jobs.py`,
-    `test_concurrent_workers_never_double_claim_or_lose_a_job`).
-  - Still open, each needs an operator/outside-account decision, not code: formal SLI thresholds
-    and alert *rules* (this Sentry plan restricts alert-rule CRUD to its web UI — draft defaults
-    are recorded in `docs/product/LAUNCH_GAPS.md` for a human to enter); backup monitoring and a
-    disaster-recovery drill (Railway's managed Postgres backup settings are dashboard-only, no
-    CLI/API surface exists on this plan); load/chaos tests for worker retry behavior (the legacy
-    upload-processing worker isn't deployed at all today — Gate B providers disabled, ADR-0026 —
-    so there is no live worker to test; revisit only if that gate reopens).
+    `test_concurrent_workers_never_double_claim_or_lose_a_job`); a real disaster-recovery
+    restore drill ran 2026-10-18 — a production backup dump restored into a disposable
+    `postgres:18-alpine` container with all 22 tables, `alembic_version` at the repo's actual
+    head (0017), and real row data intact (see `docs/product/LAUNCH_GAPS.md`); backend alert
+    rules ("issue first seen", "issue seen >10x/hour") are live on `ai-daily-memory-backend`.
+  - Still open, each needs an operator/outside-account decision, not code: formal SLI thresholds;
+    the same two alert rules on the `ai-daily-memory-android` and `ai-daily-memory-web` Sentry
+    projects (this Sentry plan restricts alert-rule CRUD to its web UI; web already has real
+    events and zero alerting today — do it first); a *recurring* backup-monitoring cadence (the
+    2026-10-18 restore drill is a one-time proof, not ongoing monitoring); load/chaos tests for
+    worker retry behavior (the legacy upload-processing worker isn't deployed at all today — Gate
+    B providers disabled, ADR-0026 — so there is no live worker to test; revisit only if that gate
+    reopens).
 
 # Phase 10 — Public launch: free user API and data portability
 

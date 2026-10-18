@@ -126,8 +126,13 @@ Recorded so a green `qualityCheck` is not read as release readiness. Device and 
 - Critical phone and Wear OS flows still need instrumentation and physical-device verification, including same-key pairing, TalkBack order, 200% font scaling, low-storage behavior, watch battery, and workday endurance.
 - Macrobenchmark results, Baseline Profiles, and measured performance budgets are not available yet.
 - Public API launch work remains open: generated OpenAPI validation in CI, API contract/versioning, abuse monitoring, third-party-client terms, and verification that no paid entitlements or operator-funded model calls remain.
-- Production operations still need verified backend-only database access, least-privilege roles, production secrets and key-rotation procedures, backup encryption/restore drills/monitoring, incident response procedures, late-upload cleanup verification, and configured/verified error reporting with IP-address storage disabled.
+- Production operations still need verified backend-only database access, least-privilege roles, production secrets and key-rotation procedures, backup encryption/monitoring, incident response procedures, late-upload cleanup verification, and configured/verified error reporting with IP-address storage disabled. A real restore drill ran 2026-10-18 (see `docs/product/LAUNCH_GAPS.md`); treat that as a one-time proof, not a recurring drill cadence — repeat it after any backup-script or Postgres-major-version change.
 - Recording-consent legal review and production object-storage lifecycle/cost review remain required before enabling cloud audio for non-developer users. Define a minor-user policy and review covert-recording abuse scenarios before broad release. Any future owner-voice feature also needs a separate biometric-consent and privacy review before implementation.
-- GitHub CodeQL currently uses default setup, which attempts an Android release build without the private signing key. `.github/workflows/codeql.yml` defines a manual debug-variant build; repository owners must switch code scanning to advanced setup and confirm its first run uploads results before release.
+- GitHub CodeQL runs via `.github/workflows/codeql.yml`'s workflow-based (advanced) setup —
+  confirmed 2026-10-18 via `code-scanning/analyses`, which shows real SARIF results uploaded on
+  every push (default setup correctly reports `not-configured`, as expected when a workflow
+  supplies advanced setup instead). Dependabot security updates are enabled and 0 alerts are
+  open. One open CodeQL finding (`py/polynomial-redos` in `credentials.py`) was fixed
+  2026-10-18; re-run analyses to confirm it stops recurring.
 
 Implemented account foundations include password reset and email verification flows, device-token listing/expiry/revocation, API-key create/list/revoke, and a self-service export endpoint. These do not close the separate public-launch gates above.

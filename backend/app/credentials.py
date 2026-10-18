@@ -43,7 +43,14 @@ from app.db.models import Credential, LoginFailure, User
 
 # Deliberately permissive (RFC 5322 is not worth re-implementing here): reject the obviously
 # malformed, let the real check be "does a confirmation/login round trip work".
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+#
+# Not a single `^[^@\s]+@[^@\s]+\.[^@\s]+$` regex: `.` is inside the excluded-character class,
+# so a greedy `[^@\s]+` immediately followed by a required literal `.` forces the engine to
+# backtrack through every split point on a non-matching string (CodeQL py/polynomial-redos).
+# `_validate` already bounds input to `_MAX_EMAIL_LENGTH` before any match, but splitting on
+# literal `@`/`.` below removes the quadratic-backtracking shape outright instead of relying on
+# that bound to make it cheap.
+_EMAIL_PART = re.compile(r"^[^@\s]+$")
 _MAX_EMAIL_LENGTH = 320
 _MIN_PASSWORD_LENGTH = 12
 _MAX_PASSWORD_LENGTH = 256  # argon2 hashes the whole input; cap it against abuse, not strength.
@@ -74,9 +81,21 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def _is_plausible_email(value: str) -> bool:
+    """`local@domain.tld` shape: non-empty local and domain, neither containing `@` or
+    whitespace, and a domain with a dot that isn't its first or last character. Equivalent to
+    the old single-regex check, just without its backtracking shape (see `_EMAIL_PART`)."""
+    local, sep, domain = value.partition("@")
+    if not sep or not local or "@" in domain:
+        return False
+    if "." not in domain or domain.startswith(".") or domain.endswith("."):
+        return False
+    return bool(_EMAIL_PART.fullmatch(local)) and bool(_EMAIL_PART.fullmatch(domain))
+
+
 def _validate(email: str, password: str) -> str:
     normalized = normalize_email(email)
-    if not normalized or len(normalized) > _MAX_EMAIL_LENGTH or not _EMAIL.fullmatch(normalized):
+    if not normalized or len(normalized) > _MAX_EMAIL_LENGTH or not _is_plausible_email(normalized):
         raise SignupError("invalid_email")
     if not (_MIN_PASSWORD_LENGTH <= len(password) <= _MAX_PASSWORD_LENGTH):
         raise SignupError("weak_password")

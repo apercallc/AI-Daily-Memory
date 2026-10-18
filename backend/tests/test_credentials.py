@@ -7,7 +7,15 @@ from sqlalchemy import Engine, text
 
 from app.credentials import _BACKSTOP_FAILURES as BACKSTOP_FAILURES
 from app.credentials import _MAX_FAILED_ATTEMPTS as MAX_FAILED_ATTEMPTS
-from app.credentials import LoggedIn, LoginError, SignedUp, SignupError, log_in, sign_up
+from app.credentials import (
+    LoggedIn,
+    LoginError,
+    SignedUp,
+    SignupError,
+    _is_plausible_email,
+    log_in,
+    sign_up,
+)
 from app.db import Database
 
 pytestmark = pytest.mark.anyio
@@ -77,6 +85,9 @@ async def test_email_is_normalized_and_case_insensitively_unique(database: Datab
     [
         ("not-an-email", "x" * 12, "invalid_email"),
         ("", "x" * 12, "invalid_email"),
+        ("a@b", "x" * 12, "invalid_email"),  # no dot in domain
+        ("a@.b", "x" * 12, "invalid_email"),  # dot is the domain's first character
+        ("a@b.", "x" * 12, "invalid_email"),  # dot is the domain's last character
         ("a@b.com", "short", "weak_password"),
         ("a@b.com", "x" * 300, "weak_password"),
     ],
@@ -87,6 +98,40 @@ async def test_invalid_input_is_rejected_before_anything_is_created(
     with pytest.raises(SignupError) as caught:
         await _sign_up(database, email=email, password=password, device_name="a")
     assert caught.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("email", "expected"),
+    [
+        ("a@b.com", True),
+        ("a@b..c", True),  # consecutive dots mid-domain: still "has a dot", permissive by design
+        ("a@b", False),  # no dot
+        ("a@.b", False),  # dot is the first domain character
+        ("a@b.", False),  # dot is the last domain character
+        ("@b.com", False),  # empty local part
+        ("a@", False),  # empty domain
+        ("a@b@c.com", False),  # a second '@' belongs to neither local nor domain
+        ("a b@c.com", False),  # whitespace in local part
+    ],
+)
+def test_is_plausible_email_matches_the_old_single_regex_semantics(
+    email: str, expected: bool
+) -> None:
+    """Regression test for the CodeQL py/polynomial-redos fix: `_is_plausible_email` replaced a
+    single `^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$` regex whose greedy `[^@\\s]+` could backtrack through
+    every split point before a literal `.`. These cases pin the same accept/reject behavior."""
+    assert _is_plausible_email(email) is expected
+
+
+def test_is_plausible_email_stays_fast_on_a_classic_redos_shaped_string() -> None:
+    """A string built to maximize backtracking in the old regex (many non-dot characters, no
+    trailing dot to let the match succeed) must still resolve in well under a second."""
+    import time
+
+    hostile = "a@" + "b" * 10_000
+    start = time.perf_counter()
+    assert _is_plausible_email(hostile) is False
+    assert time.perf_counter() - start < 0.1
 
 
 async def test_logging_in_issues_a_new_token_each_time(database: Database) -> None:
