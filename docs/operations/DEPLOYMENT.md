@@ -81,6 +81,21 @@ curl -s https://HOST/v1/health          # config state incl. storage/DB/provider
 Watch for in logs (event names, no payloads): `upload_completed`, `job_dead_letter`
 (operator attention), `retention_sweep`, `worker_no_stages_enabled`.
 
+## Audit trail
+
+Authentication and account events are stored in `audit_events` (ADR-0029) and kept
+indefinitely; platform logs are not a substitute because they rotate. To follow one account,
+compute its reference with the deployed `LOGIN_SOURCE_KEY` (`app.audit.actor_ref`) and filter on it:
+
+```sql
+SELECT occurred_at, event, outcome, request_id, detail
+FROM audit_events WHERE actor_ref = :ref ORDER BY occurred_at;
+```
+
+Failed logins carry `detail.code` (including `account_locked`, which the API response hides) and
+a keyed source hash, not an address. `request_id` joins a row to its structured log line. Back
+this table up with the rest of the database; rows cannot be edited or removed through SQL.
+
 ## Remaining production gates
 
 DB roles, backup-and-restore drills, production worker deployment and late-upload cleanup verification, a shared auth limiter before horizontal scaling, Sentry IP-address prevention plus a production DSN and event-ingestion check, and phone/watch accessibility and endurance runs still require operator or physical-device verification. Do not treat a private-test deployment as hardened.

@@ -12,8 +12,11 @@ lock holder.
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 
@@ -37,6 +40,12 @@ async def database(db: Engine, database_url: str) -> AsyncIterator[Database]:
     await database.dispose()
 
 
+def _request() -> Request:
+    settings = SimpleNamespace(login_source_key=None, database_url=None)
+    app = SimpleNamespace(state=SimpleNamespace(settings=settings))
+    return cast(Request, SimpleNamespace(app=app))
+
+
 def _principal(user_id: uuid.UUID) -> Principal:
     return Principal(user_id=user_id, token_id=uuid.uuid4(), scopes=frozenset())
 
@@ -51,7 +60,7 @@ async def test_concurrent_api_key_creation_never_exceeds_the_cap(
 
     async def attempt(n: int) -> bool:
         async with database.sessions() as session:
-            result = await create_key(NewApiKey(name=f"key-{n}"), session, manager)
+            result = await create_key(NewApiKey(name=f"key-{n}"), _request(), session, manager)
             return isinstance(result, CreatedApiKey)
 
     results = await asyncio.gather(*(attempt(n) for n in range(attempts)))
@@ -78,7 +87,7 @@ async def test_a_losing_api_key_attempt_reports_the_quota_error(
 
     async def attempt(n: int) -> CreatedApiKey | JSONResponse:
         async with database.sessions() as session:
-            return await create_key(NewApiKey(name=f"key-{n}"), session, manager)
+            return await create_key(NewApiKey(name=f"key-{n}"), _request(), session, manager)
 
     first, second = await asyncio.gather(attempt(0), attempt(1))
     losers = [r for r in (first, second) if isinstance(r, JSONResponse)]

@@ -13,12 +13,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
 from app.auth import Principal, issue_token, require, revoke_token
 from app.db import get_session
 from app.db.models import AccessToken
@@ -94,10 +95,13 @@ async def list_tokens(session: Session, manager: Manager) -> list[TokenOut]:
 
 @router.delete("/tokens/{token_id}", status_code=204, response_model=None, responses=_ERRORS)
 async def revoke(
-    token_id: uuid.UUID, session: Session, manager: Manager
+    token_id: uuid.UUID, request: Request, session: Session, manager: Manager
 ) -> Response | JSONResponse:
     if not await revoke_token(session, manager.user_id, token_id):
         return error_response(404, "No such active sign-in.", code="token_not_found")
+    await audit.record(
+        session, request, audit.Event.SESSION_REVOKE, "success", user_id=manager.user_id
+    )
     await session.commit()
     return Response(status_code=204)
 
@@ -116,7 +120,7 @@ async def list_keys(session: Session, manager: Manager) -> list[TokenOut]:
 
 @router.post("/api-keys", response_model=CreatedApiKey, status_code=201, responses=_ERRORS)
 async def create_key(
-    body: NewApiKey, session: Session, manager: Manager
+    body: NewApiKey, request: Request, session: Session, manager: Manager
 ) -> CreatedApiKey | JSONResponse:
     # Two concurrent POSTs for the same account would both pass a count-then-insert check
     # before either commits; serialize them for the length of this transaction (the pattern
@@ -134,5 +138,8 @@ async def create_key(
             409, "Revoke an unused key before creating another.", code="too_many_keys"
         )
     issued = await issue_token(session, manager.user_id, kind="api", name=body.name.strip())
+    await audit.record(
+        session, request, audit.Event.API_KEY_CREATE, "success", user_id=manager.user_id
+    )
     await session.commit()
     return CreatedApiKey(id=issued.token_id, name=body.name.strip(), token=issued.token)

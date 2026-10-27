@@ -11,6 +11,7 @@ Report security issues privately to the repository owner/organization maintainer
 ## Security requirements
 
 - Never commit credentials, API keys, private certificates, signing keys, recordings, or transcripts.
+- Authentication and account-lifecycle decisions are recorded in an append-only, content-free audit table that outlives the account (ADR-0029).
 - Never put raw audio or full transcript content in ordinary logs, crash reports, analytics, or traces.
 - All network communication must use TLS in production.
 - Mobile storage containing audio must be encrypted.

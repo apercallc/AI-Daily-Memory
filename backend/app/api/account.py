@@ -18,6 +18,7 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
 from app.auth import Principal, require, revoke_other_browser_sessions, revoke_token
 from app.auth_rate_limit import auth_rate_limit
 from app.config import MAX_UPLOAD_URL_TTL_SECONDS
@@ -117,7 +118,9 @@ def _is_browser(principal: Principal) -> bool:
     responses=_ERRORS,
     dependencies=[Depends(auth_rate_limit("password", limit=5, window_seconds=300))],
 )
-async def change_my_password(body: PasswordChange, session: Session, device: Device) -> Response:
+async def change_my_password(
+    body: PasswordChange, request: Request, session: Session, device: Device
+) -> Response:
     """Changes the password and signs every other browser out. Phones keep their tokens: losing
     the recorder's connection silently is worse than the risk it removes, and a lost phone is
     revoked from the device list instead."""
@@ -125,13 +128,22 @@ async def change_my_password(body: PasswordChange, session: Session, device: Dev
         await change_password(
             session, device.user_id, current=body.current_password, new=body.new_password
         )
-    except SignupError as e:
+    except (SignupError, LoginError) as e:
         await session.rollback()
-        return error_response(400, code=e.code)
-    except LoginError as e:
-        await session.rollback()
-        return error_response(401, code=e.code)
+        await audit.record(
+            session,
+            request,
+            audit.Event.CREDENTIAL_CHANGE,
+            "failure",
+            user_id=device.user_id,
+            code=e.code,
+        )
+        await session.commit()
+        return error_response(400 if isinstance(e, SignupError) else 401, code=e.code)
     await revoke_other_browser_sessions(session, device.user_id, keep=device.token_id)
+    await audit.record(
+        session, request, audit.Event.CREDENTIAL_CHANGE, "success", user_id=device.user_id
+    )
     await session.commit()
     return Response(status_code=204)
 
@@ -198,12 +210,18 @@ async def delete_me(
         )
 
     await session.execute(delete(User).where(User.id == device.user_id))
+    await audit.record(
+        session, request, audit.Event.ACCOUNT_DELETE, "success", user_id=device.user_id
+    )
     await session.commit()
     return Response(status_code=204)
 
 
 @router.delete("/tokens/current", status_code=204, response_model=None, responses=_ERRORS)
-async def revoke_current(session: Session, device: Device) -> Response:
+async def revoke_current(request: Request, session: Session, device: Device) -> Response:
     await revoke_token(session, device.user_id, device.token_id)
+    await audit.record(
+        session, request, audit.Event.SESSION_REVOKE, "success", user_id=device.user_id
+    )
     await session.commit()
     return Response(status_code=204)

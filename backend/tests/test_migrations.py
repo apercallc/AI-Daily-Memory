@@ -66,6 +66,11 @@ def test_every_user_owned_table_cascades_from_users(migrated: Engine) -> None:
         if table.name in {"users", "pending_account_object_deletions"}:
             # This outbox must outlive the user row so delayed storage cleanup can finish.
             continue
+        if table.name == "audit_events":
+            # The audit trail outlives accounts by design (ADR-0029) and so has no user FK.
+            assert "user_id" not in table.columns
+            assert inspector.get_foreign_keys(table.name) == []
+            continue
         assert "user_id" in table.columns, table.name
         user_fks = [
             fk for fk in inspector.get_foreign_keys(table.name) if fk["referred_table"] == "users"

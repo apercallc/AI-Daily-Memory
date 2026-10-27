@@ -44,6 +44,7 @@ STORAGE_MODES: tuple[str, ...] = get_args(StorageMode)
 UPLOAD_STATES: tuple[str, ...] = get_args(UploadState)
 JOB_STATES = ("queued", "running", "succeeded", "dead")
 TOKEN_KINDS = ("device", "api")
+AUDIT_OUTCOMES = ("success", "failure", "denied")
 
 # Phase 2 structured extraction (TODO.md, ADR-0019): kept in sync with app/reports/daily.py's
 # Confidence and Commitment.direction literals, which are the contract these rows are read into.
@@ -537,3 +538,24 @@ class AccountExport(Base):
     format: Mapped[str] = mapped_column(String(5), server_default="json")
     generated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     expires_at: Mapped[datetime]
+
+
+class AuditEvent(Base):
+    """Append-only security audit trail (app.audit, ADR-0029). Deliberately has no foreign key
+    to `users`: rows outlive the account they describe, and hold only a keyed hash of it. A
+    database trigger (migration 0018) rejects UPDATE and DELETE."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint(_in("outcome", AUDIT_OUTCOMES), name="outcome"),
+        Index("ix_audit_events_occurred_at", "occurred_at"),
+        Index("ix_audit_events_actor_ref_occurred_at", "actor_ref", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    occurred_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    event: Mapped[str] = mapped_column(String(48))
+    outcome: Mapped[str] = mapped_column(String(8))
+    actor_ref: Mapped[str | None] = mapped_column(String(64))
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[dict[str, object]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))

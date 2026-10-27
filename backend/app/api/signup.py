@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
 from app.api.email_flows import send_link
 from app.auth_rate_limit import auth_rate_limit, client_address
 from app.config import Settings
@@ -84,8 +85,18 @@ async def signup(
         )
     except SignupError as e:
         await session.rollback()
+        await audit.record(session, request, audit.Event.SIGNUP, "failure", code=e.code)
+        await session.commit()
         status = _SIGNUP_STATUS.get(e.code, 400)
         return error_response(status, code=e.code)
+    await audit.record(
+        session,
+        request,
+        audit.Event.SIGNUP,
+        "success",
+        user_id=signed_up.user_id,
+        client=body.client,
+    )
     mailer = getattr(request.app.state, "mailer", None)
     verify_token = None
     if mailer is not None:
@@ -116,6 +127,7 @@ async def login(
     settings: Settings = request.app.state.settings
     key_secret = settings.login_source_key or settings.database_url
     key = key_secret.get_secret_value().encode() if key_secret is not None else b""
+    source = hash_source(client_address(request), key)
     try:
         logged_in = await log_in(
             session,
@@ -123,14 +135,27 @@ async def login(
             password=body.password,
             device_name=body.device_name,
             client=body.client,
-            source=hash_source(client_address(request), key),
+            source=source,
         )
     except LoginError as e:
         # Commit even on failure: a wrong-password attempt still bumps the per-source failure row
-        # (and may set a lock), and that must survive past this request to matter.
+        # (and may set a lock), and that must survive past this request to matter. The audit row
+        # keeps the real reason (a lock included) that the response deliberately hides.
+        await audit.record(
+            session, request, audit.Event.LOGIN, "failure", code=e.code, source=source
+        )
         await session.commit()
         error_code = "invalid_credentials" if e.code == "account_locked" else e.code
         status = _LOGIN_STATUS.get(error_code, 401)
         return error_response(status, code=error_code)
+    await audit.record(
+        session,
+        request,
+        audit.Event.LOGIN,
+        "success",
+        user_id=logged_in.user_id,
+        client=body.client,
+        source=source,
+    )
     await session.commit()
     return IssuedDeviceToken(token=logged_in.token.token)

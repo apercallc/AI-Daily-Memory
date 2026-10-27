@@ -1,0 +1,10 @@
+# Every change needs review from the owner. Security-sensitive paths are listed so they
+# stay explicit if more owners are added.
+*                                  @tommyqhoang
+/backend/app/auth*.py              @tommyqhoang
+/backend/app/credentials.py        @tommyqhoang
+/backend/app/audit.py              @tommyqhoang
+/backend/migrations/               @tommyqhoang
+/.github/                          @tommyqhoang
+/SECURITY.md                       @tommyqhoang
+/docs/adr/                         @tommyqhoang

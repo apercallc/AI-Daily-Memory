@@ -24,6 +24,7 @@ from app.config import Settings
 from app.storage import ObjectMissingError, PresignedPut, StoredObject
 
 _TABLES = (
+    "audit_events",
     "pending_account_object_deletions",
     "transcript_segments",
     "transcripts",

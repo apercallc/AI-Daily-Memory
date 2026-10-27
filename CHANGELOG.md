@@ -5,6 +5,19 @@ All notable changes to AI Daily Memory. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Durable, append-only security audit trail (ADR-0029). Sign-up, login (including failures and
+  lockouts), password change, session and API-key revocation, API-key creation, and account
+  deletion each write a content-free `audit_events` row in the same transaction. Rows hold a
+  keyed hash of the user, not the user, and survive account deletion without identifying anyone.
+  A database trigger rejects updates and deletes.
+
+### Security
+
+- Raised the locked `certifi`, `filelock`, and `msgpack` versions to clear the advisories
+  `pip-audit` reported, and merged the pending Dependabot updates.
+
 ### Removed
 
 - Removed the dormant Stripe billing implementation (checkout, portal, webhook, plan
