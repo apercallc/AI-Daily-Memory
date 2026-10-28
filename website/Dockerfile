@@ -4,7 +4,7 @@
 # platform-injected PORT (Railway injects its own; 8080 is the local default) and proxies /v1/ to
 # the API service (see nginx-default.conf.template).
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 ENV PORT=8080
 # Railway private networking by default; override all four together for another setup.
 ENV API_UPSTREAM=http://api.railway.internal:8080
