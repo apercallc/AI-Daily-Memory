@@ -28,7 +28,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from app.main import create_app
-from app.recall_evaluation import RecallCase, abstention_accuracy, mean_recall_at_k, score_case
+from app.recall_evaluation import (
+    DEFAULT_KS,
+    RecallCase,
+    abstention_accuracy,
+    score_case,
+)
 from tests.conftest import make_account, settings_for
 from tests.test_web_api import add_item, user_of, web_session
 
@@ -123,15 +128,28 @@ def test_known_day_recall_benchmark(client: TestClient, db: Engine) -> None:
     def at(d: date) -> datetime:
         return datetime.combine(d, time(12, 0), tzinfo=UTC)
 
-    decision_last_week = add_item(
-        db, user, "Chose a venue for the offsite", kind="decision", day=at(last_week_mid)
-    )
-    add_item(db, user, "Chose a much older venue", kind="decision", day=at(two_weeks_ago))
+    # Calendar windows overlap early in a month (last week can straddle last month), so the
+    # expected answer for each window is every seeded decision whose day falls inside it, not a
+    # single hand-picked id. Without this the benchmark fails on the first days of any month.
+    last_week_end = monday - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    decisions_by_day: dict[str, date] = {}
 
-    decision_last_month = add_item(
-        db, user, "Chose the vendor for payroll", kind="decision", day=at(last_month_mid)
-    )
-    add_item(db, user, "Chose an even older vendor", kind="decision", day=at(two_months_ago))
+    def add_decision(text: str, d: date) -> str:
+        item_id = str(add_item(db, user, text, kind="decision", day=at(d)))
+        decisions_by_day[item_id] = d
+        return item_id
+
+    add_decision("Chose a venue for the offsite", last_week_mid)
+    add_decision("Chose a much older venue", two_weeks_ago)
+    add_decision("Chose the vendor for payroll", last_month_mid)
+    add_decision("Chose an even older vendor", two_months_ago)
+
+    def decisions_between(start: date, end: date) -> tuple[str, ...]:
+        return tuple(i for i, d in decisions_by_day.items() if start <= d <= end)
+
+    expected_last_week = decisions_between(last_week_start, last_week_end)
+    expected_last_month = decisions_between(last_month_start, last_month_end)
 
     cases = [
         RecallCase("same_day_kind", "What did I decide today?", now.date(), (str(decision_today),)),
@@ -193,26 +211,36 @@ def test_known_day_recall_benchmark(client: TestClient, db: Engine) -> None:
             "last_week_window_kind",
             "What did I decide last week?",
             now.date(),
-            (str(decision_last_week),),
+            expected_last_week,
         ),
         RecallCase(
             "last_month_window_kind",
             "What did I decide last month?",
             now.date(),
-            (str(decision_last_month),),
+            expected_last_month,
         ),
     ]
 
-    results = [score_case(case, _ask(client, headers, case.question)) for case in cases]
+    # Judge each case at k = how many items it expects (at least 1): a window that legitimately
+    # holds several decisions cannot reach recall@1 == 1.0, but all of them must lead the list.
+    def cutoff(case: RecallCase) -> int:
+        return max(1, len(case.expected_item_ids))
+
+    results = [
+        score_case(case, _ask(client, headers, case.question), ks=(*DEFAULT_KS, cutoff(case)))
+        for case in cases
+    ]
+    cutoffs = {case.id: cutoff(case) for case in cases}
 
     failures = {
         r.case_id: r
         for r in results
-        if r.recall_at_k[1] < 1.0 or r.precision_at_k[1] < 1.0 or not r.abstain_correct
+        if r.recall_at_k[cutoffs[r.case_id]] < 1.0
+        or r.precision_at_k[cutoffs[r.case_id]] < 1.0
+        or not r.abstain_correct
     }
     assert not failures, failures
 
-    assert mean_recall_at_k(results, k=1) == 1.0
     assert abstention_accuracy(results) == 1.0
 
     # The ranking case specifically: both "report" items match, but the one sharing every

@@ -12,7 +12,7 @@ work done without stating exactly which gates ran and which were skipped.
 ## What to run
 
 ```bash
-# Android modules (committed wrapper, Gradle 9.7.1)
+# Android modules (committed wrapper, Gradle 9.8.2)
 ./gradlew qualityCheck
 
 # Backend (only when backend/ changed)

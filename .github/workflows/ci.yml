@@ -47,10 +47,11 @@ jobs:
       matrix:
         python-version: ["3.13", "3.14"]
 
-    # Tests run against real PostgreSQL (SKIP LOCKED, partial indexes, arrays).
+    # Tests run against real PostgreSQL (SKIP LOCKED, partial indexes, arrays), on the same
+    # major version production runs (see docs/product/LAUNCH_GAPS.md restore drill).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: aidm
           POSTGRES_PASSWORD: aidm-ci-only
@@ -128,6 +129,10 @@ jobs:
         if: matrix.python-version == '3.13'
         run: uv run pip-audit --format cyclonedx-json --output sbom.cdx.json
 
+      - name: Image builds
+        if: matrix.python-version == '3.13'
+        run: docker build -t adm-api .
+
       - name: Upload SBOM artifact
         if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -148,7 +153,7 @@ jobs:
           node-version: "22"
 
       - name: Web app unit tests
-        run: node --test website/app/test/helpers.test.mjs
+        run: node --test website/app/test/*.test.mjs
 
       - name: CLI tests
         run: cd interfaces/cli && python3 -m unittest test_adm

@@ -50,7 +50,8 @@ class Settings(BaseSettings):
     # repeat request reuses the same generated object instead of rerunning the export query.
     export_url_ttl_seconds: int = Field(default=900, ge=60, le=MAX_UPLOAD_URL_TTL_SECONDS)
 
-    # Upload limits; plan-based entitlements replace the daily quota in Phase 10.
+    # Upload limits: abuse/availability controls for legacy upload clients, not plan metering
+    # (ADR-0028).
     max_upload_bytes: int = Field(default=20 * 1_048_576, gt=0)
     max_upload_duration_ms: int = Field(default=30 * 60_000, gt=0)
     daily_upload_bytes_quota: int = Field(default=512 * 1_048_576, gt=0)

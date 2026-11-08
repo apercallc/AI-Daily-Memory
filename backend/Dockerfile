@@ -25,6 +25,9 @@ WORKDIR /app
 COPY --from=build --chown=app:app /app /app
 USER app
 EXPOSE 8000
+# Liveness only (/v1/health); readiness (/v1/ready) checks the database and is left to the platform.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import os,urllib.request as u; u.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\",\"8000\")}/v1/health', timeout=4)"]
 # Managed platforms inject PORT; 8000 is the local default. Migrations fail the
 # container rather than serving a schema older than the code expects.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

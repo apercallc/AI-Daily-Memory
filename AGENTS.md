@@ -77,7 +77,7 @@ account deletion remain part of the product. These rules follow:
 
 ## Build and verify
 
-Gradle wrapper is bootstrapped (Gradle 9.7.1) — use `./gradlew` for all builds.
+Gradle wrapper is bootstrapped (Gradle 9.8.2) — use `./gradlew` for all builds.
 
 ```bash
 # Full pre-merge gate (unit tests, coverage, Android lint for all modules)
