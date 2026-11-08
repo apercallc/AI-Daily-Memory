@@ -27,6 +27,11 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    ignore:
+      # The runtime image must match the uv build stage and pyproject's requires-python (<3.15).
+      # Move the interpreter deliberately, in one change, not through a lone runtime-image bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: docker
     directory: /website

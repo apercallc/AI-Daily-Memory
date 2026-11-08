@@ -33,7 +33,7 @@ jobs:
         run: sdkmanager "platforms;android-37.0"
 
       # Uses the committed wrapper (validated by setup-gradle) so CI runs the same Gradle as local.
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Full Android quality gate (tests, coverage, lint; incl. Wear OS)
         run: ./gradlew qualityCheck
@@ -47,10 +47,11 @@ jobs:
       matrix:
         python-version: ["3.13", "3.14"]
 
-    # Tests run against real PostgreSQL (SKIP LOCKED, partial indexes, arrays).
+    # Tests run against real PostgreSQL (SKIP LOCKED, partial indexes, arrays), on the same
+    # major version production runs (see docs/product/LAUNCH_GAPS.md restore drill).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: aidm
           POSTGRES_PASSWORD: aidm-ci-only
@@ -75,7 +76,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -128,6 +129,10 @@ jobs:
         if: matrix.python-version == '3.13'
         run: uv run pip-audit --format cyclonedx-json --output sbom.cdx.json
 
+      - name: Image builds
+        if: matrix.python-version == '3.13'
+        run: docker build -t adm-api .
+
       - name: Upload SBOM artifact
         if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -148,7 +153,7 @@ jobs:
           node-version: "22"
 
       - name: Web app unit tests
-        run: node --test website/app/test/helpers.test.mjs
+        run: node --test website/app/test/*.test.mjs
 
       - name: CLI tests
         run: cd interfaces/cli && python3 -m unittest test_adm

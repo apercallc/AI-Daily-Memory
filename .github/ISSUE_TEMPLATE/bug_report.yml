@@ -1,0 +1,32 @@
+name: Bug report
+description: Something behaves wrongly in the phone app, watch app, web app, API, or CLI.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste recordings, transcripts, API keys, or tokens. Describe the problem instead.
+        Suspected vulnerabilities go through the private advisory link on the issue chooser.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options: [Phone app, Wear OS app, Web app, API, CLI, Docs]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App or API version, and device or browser
