@@ -246,14 +246,15 @@ phase does not block launch and no embedding or vector-index infrastructure is n
     `postgres:18-alpine` container with all 22 tables, `alembic_version` at the repo's actual
     head (0017), and real row data intact (see `docs/product/LAUNCH_GAPS.md`); backend alert
     rules ("issue first seen", "issue seen >10x/hour") are live on `ai-daily-memory-backend`.
+  - Done 2026-11-08: the same two alert rules ("new issue first seen", "issue seen more than 10
+    times in 1 hour") now exist on `ai-daily-memory-web` (rules 6309742, 6309743) and
+    `ai-daily-memory-android` (6309744, 6309745), created through the Sentry connector and
+    emailing the account owner.
   - Still open, each needs an operator/outside-account decision, not code: formal SLI thresholds;
-    the same two alert rules on the `ai-daily-memory-android` and `ai-daily-memory-web` Sentry
-    projects (this Sentry plan restricts alert-rule CRUD to its web UI; web already has real
-    events and zero alerting today — do it first); a *recurring* backup-monitoring cadence (the
-    2026-10-18 restore drill is a one-time proof, not ongoing monitoring); load/chaos tests for
-    worker retry behavior (the legacy upload-processing worker isn't deployed at all today — Gate
-    B providers disabled, ADR-0026 — so there is no live worker to test; revisit only if that gate
-    reopens).
+    a *recurring* backup-monitoring cadence (the 2026-10-18 restore drill is a one-time proof, not
+    ongoing monitoring); load/chaos tests for worker retry behavior (the legacy upload-processing
+    worker isn't deployed at all today — Gate B providers disabled, ADR-0026 — so there is no live
+    worker to test; revisit only if that gate reopens).
 
 # Phase 10 — Public launch: free user API and data portability
 

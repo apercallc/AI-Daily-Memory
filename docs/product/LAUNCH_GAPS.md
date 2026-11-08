@@ -180,14 +180,10 @@ api-aidailymem.apercallc.com`):
   zero alert rules on it) and still `null` for `ai-daily-memory-android` (never fired once —
   plausibly because no released build has crashed yet, not necessarily a wiring problem; worth
   a manual check that Sentry init actually runs in a release APK the next time one ships).
-  **Still open, still manual**: this session's `sentry_mcp` connector only exposes
-  `search_issues`/`search_events`/`find_projects`/`find_organizations`/`get_sentry_resource`/
-  `analyze_issue_with_seer` — no `create_alert_rule` tool is reachable from here even though an
-  earlier session recorded using one by that name, and the raw REST endpoints are still 404 on
-  this plan. Add the backend's same two rules to `ai-daily-memory-web` (do this one first — it
-  has live events and zero alerting today) and `ai-daily-memory-android` by hand: Sentry →
-  that project → Settings → Alerts → Create Alert Rule → "An issue is first seen" (notify
-  immediately) and "An issue is seen more than 10 times in 1 hour" (notify).
+  **Closed 2026-11-08**: the same two rules now exist on `ai-daily-memory-web` (6309742,
+  6309743) and `ai-daily-memory-android` (6309744, 6309745), created via the Sentry connector's
+  `create_alert_rule` and emailing the account owner. `ai-daily-memory-android` still has never
+  received an event; confirm Sentry init runs in a release APK the next time one ships.
 - ~~**Deleted-account purge** retries forever on a permanent error (bounding it needs a migration).~~
   Fixed 2026-10-16: bounded at `MAX_ACCOUNT_PURGE_ATTEMPTS` with an operator-visible dead-letter
   state (migration 0015); see `python -m app.admin dead-account-purges`.
