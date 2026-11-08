@@ -395,6 +395,22 @@
     <string name="memory_event_boundary_failed">Couldn\'t update the grouping. Try again.</string>
     <string name="nav_memory">Memory</string>
 
+    <!-- Voice lists (ADR-0030) -->
+    <string name="nav_lists">Lists</string>
+    <string name="ask_label">Ask your memory</string>
+    <string name="ask_button">Ask</string>
+    <string name="ask_working">Looking…</string>
+    <string name="ask_clear">Clear answer</string>
+    <string name="lists_title">Lists</string>
+    <string name="lists_empty_title">No lists yet</string>
+    <string name="lists_empty_body">While recording, say \"add milk to the shopping list\". It shows up here with the words you said.</string>
+    <string name="lists_heard">You said: %1$s</string>
+    <string name="lists_remove">Remove</string>
+    <plurals name="lists_clear_done">
+        <item quantity="one">Clear %1$d done</item>
+        <item quantity="other">Clear %1$d done</item>
+    </plurals>
+
     <!-- Daily report screen -->
     <string name="report_title">Daily report</string>
     <string name="report_share">Share</string>

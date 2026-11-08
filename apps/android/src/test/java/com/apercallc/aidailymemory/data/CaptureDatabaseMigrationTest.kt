@@ -161,11 +161,38 @@ class CaptureDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun `a v12 database gains an empty list_item table`() {
+        helper.createDatabase(TEST_DB_V12, 12).apply {
+            execSQL(
+                "INSERT INTO session_info (session_id, memory_day, zone_id, started_at_epoch_ms, custom_title) " +
+                    "VALUES ('session-v12', '2026-10-15', 'UTC', 0, NULL)",
+            )
+            close()
+        }
+
+        val db = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            CaptureDatabase::class.java,
+            TEST_DB_V12,
+        ).addMigrations(*CaptureDatabase.migrations()).allowMainThreadQueries().build()
+        db.openHelper.readableDatabase.query("SELECT session_id FROM session_info WHERE session_id = 'session-v12'").use {
+            it.moveToFirst()
+            assertEquals("session-v12", it.getString(0))
+        }
+        db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM list_item").use {
+            it.moveToFirst()
+            assertEquals(0, it.getInt(0))
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V8 = "migration-v8-to-v9-test.db"
         const val TEST_DB_V9 = "migration-v9-to-v10-test.db"
         const val TEST_DB_V10 = "migration-v10-to-v11-test.db"
         const val TEST_DB_V11 = "migration-v11-to-v12-test.db"
+        const val TEST_DB_V12 = "migration-v12-to-v13-test.db"
     }
 }

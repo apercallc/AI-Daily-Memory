@@ -17,6 +17,8 @@ import com.apercallc.aidailymemory.service.RecordingService
 import com.apercallc.aidailymemory.ui.AppRoot
 import com.apercallc.aidailymemory.ui.CaptureViewModel
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
+import com.apercallc.aidailymemory.ui.ask.AskViewModel
+import com.apercallc.aidailymemory.ui.lists.ListsViewModel
 import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
 import com.apercallc.aidailymemory.ui.settings.SettingsViewModel
 import com.apercallc.aidailymemory.ui.theme.AiDailyMemoryTheme
@@ -39,6 +41,14 @@ class MainActivity : ComponentActivity() {
 
     private val memoryViewModel: MemoryViewModel by viewModels {
         MemoryViewModelFactory(container)
+    }
+
+    private val askViewModel: AskViewModel by viewModels {
+        AskViewModel.Factory(container)
+    }
+
+    private val listsViewModel: ListsViewModel by viewModels {
+        ListsViewModel.Factory(container)
     }
 
     private val settingsViewModel: SettingsViewModel by viewModels {
@@ -70,6 +80,8 @@ class MainActivity : ComponentActivity() {
                     capture = viewModel,
                     sessions = { sessionsViewModel },
                     memory = { memoryViewModel },
+                    lists = { listsViewModel },
+                    ask = { askViewModel },
                     settings = { settingsViewModel },
                     updates = { updateViewModel },
                     permissions = container.permissions,

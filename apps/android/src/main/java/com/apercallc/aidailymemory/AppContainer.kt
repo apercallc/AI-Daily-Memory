@@ -242,6 +242,7 @@ class AppContainer(context: Context) {
             memoryItemDao = database.memoryItems(),
             memoryCorrectionDao = database.memoryCorrections(),
             dailyReportDao = database.dailyReports(),
+            listItemDao = database.listItems(),
         )
     }
 
@@ -574,6 +575,7 @@ class AppContainer(context: Context) {
                 settings = processingSettings,
                 configGaps = processingSettings::configGaps,
                 ids = ids,
+                listItemDao = database.listItems(),
             )
         }
 

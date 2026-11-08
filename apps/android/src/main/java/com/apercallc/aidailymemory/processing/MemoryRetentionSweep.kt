@@ -3,6 +3,7 @@ package com.apercallc.aidailymemory.processing
 import androidx.room.withTransaction
 import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportDao
+import com.apercallc.aidailymemory.data.ListItemDao
 import com.apercallc.aidailymemory.data.MemoryCorrectionDao
 import com.apercallc.aidailymemory.data.MemoryItemDao
 import com.apercallc.aidailymemory.recording.storage.MemoryRetention
@@ -21,6 +22,7 @@ class MemoryRetentionSweep(
     private val memoryItemDao: MemoryItemDao,
     private val memoryCorrectionDao: MemoryCorrectionDao,
     private val dailyReportDao: DailyReportDao,
+    private val listItemDao: ListItemDao? = null,
     private val now: () -> Instant = Instant::now,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
@@ -37,6 +39,7 @@ class MemoryRetentionSweep(
             memoryCorrectionDao.deleteForDaysOlderThan(cutoffDay)
             val deletedItems = memoryItemDao.deleteOlderThan(cutoffDay)
             dailyReportDao.deleteOlderThan(cutoffDay)
+            listItemDao?.deleteOlderThan(cutoffDay)
             deletedItems
         }
     }

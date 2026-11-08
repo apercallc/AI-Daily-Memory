@@ -760,7 +760,51 @@ class ProcessingPipelineTest {
         )
     }
 
-    private suspend fun addTranscribedSession(segmentState: String = "DELETED") {
+    @Test
+    fun `a spoken list command becomes one list item that cites its sentence and is not repeated`() = runTest {
+        addTranscribedSession(lineText = "Okay. Add milk and eggs to the shopping list. Then we left.")
+        val dao = database.listItems()
+
+        pipeline(extractionProvider = null, listItemDao = dao).processPending()
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L))
+        pipeline(extractionProvider = null, listItemDao = dao).processPending()
+
+        val items = dao.observeOpen().first()
+        assertEquals(listOf("milk", "eggs"), items.map { it.text }.sorted().reversed())
+        assertEquals(setOf("shopping"), items.map { it.listName }.toSet())
+        assertEquals("Add milk and eggs to the shopping list.", items.first().sentence)
+        assertEquals("2026-10-15", items.first().memoryDay)
+        assertEquals("line-1", items.first().lineId)
+    }
+
+    @Test
+    fun `a removed list item is not brought back by reprocessing`() = runTest {
+        addTranscribedSession(lineText = "Add milk to the shopping list.")
+        val dao = database.listItems()
+        pipeline(extractionProvider = null, listItemDao = dao).processPending()
+        dao.dismiss(dao.observeOpen().first().single().itemId, 5L)
+
+        database.processingState().upsert(ProcessingStateEntity(SESSION_ID, "PENDING", true, null, 0L))
+        pipeline(extractionProvider = null, listItemDao = dao).processPending()
+
+        assertTrue(dao.observeOpen().first().isEmpty())
+    }
+
+    @Test
+    fun `casual speech creates no list items`() = runTest {
+        addTranscribedSession(lineText = "We need milk and I need to get this report done.")
+        val dao = database.listItems()
+
+        pipeline(extractionProvider = null, listItemDao = dao).processPending()
+
+        assertTrue(dao.observeOpen().first().isEmpty())
+    }
+
+    private suspend fun addTranscribedSession(
+        segmentState: String = "DELETED",
+        lineText: String = "A saved transcript line",
+    ) {
+        database.sessions().register(SessionInfoEntity(SESSION_ID, "2026-10-15", "UTC", 1_000, null))
         database.segments().insert(
             SegmentEntity(
                 segmentId = SEGMENT_ID,
@@ -789,7 +833,7 @@ class ProcessingPipelineTest {
                     startEpochMs = 1_000L,
                     endEpochMs = 2_000L,
                     speaker = "Speaker 1",
-                    text = "A saved transcript line",
+                    text = lineText,
                     confidence = 0.9,
                     provider = "test",
                     model = "test-model",
@@ -821,6 +865,7 @@ class ProcessingPipelineTest {
         configGaps: () -> List<com.apercallc.aidailymemory.recording.processing.ConfigGap> = { emptyList() },
         segmentStore: SegmentStore? = null,
         extractionChunkMaxChars: Int = TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK,
+        listItemDao: com.apercallc.aidailymemory.data.ListItemDao? = null,
     ) = ProcessingPipeline(
         segments = segmentStore ?: SegmentStore(
             directory = ApplicationProvider.getApplicationContext<Context>().cacheDir,
@@ -848,6 +893,7 @@ class ProcessingPipelineTest {
         now = { 42L },
         configGaps = configGaps,
         extractionChunkMaxChars = extractionChunkMaxChars,
+        listItemDao = listItemDao,
     )
 
     private fun encryptedSegmentStore(): Pair<SegmentStore, File> {
