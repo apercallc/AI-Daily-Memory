@@ -9,6 +9,8 @@ import com.apercallc.aidailymemory.data.CaptureDatabase
 import com.apercallc.aidailymemory.data.DailyReportDao
 import com.apercallc.aidailymemory.data.DailyReportEntity
 import com.apercallc.aidailymemory.data.LocalTranscriptDao
+import com.apercallc.aidailymemory.data.ListItemDao
+import com.apercallc.aidailymemory.data.ListItemEntity
 import com.apercallc.aidailymemory.data.LocalTranscriptLineEntity
 import com.apercallc.aidailymemory.data.MemoryItemDao
 import com.apercallc.aidailymemory.data.MemoryItemEntity
@@ -21,6 +23,7 @@ import com.apercallc.aidailymemory.data.SegmentDao
 import com.apercallc.aidailymemory.data.SessionDao
 import com.apercallc.aidailymemory.platform.logFailure
 import com.apercallc.aidailymemory.recording.id.UuidV7Generator
+import com.apercallc.aidailymemory.recording.lists.ListCommandParser
 import com.apercallc.aidailymemory.recording.processing.ConfigGap
 import com.apercallc.aidailymemory.recording.processing.ExtractionResult
 import com.apercallc.aidailymemory.recording.processing.IdentifiedMemoryItem
@@ -81,6 +84,8 @@ class ProcessingPipeline(
     /** Bounds one extraction call's transcript (TODO.md "bound processing context"); override
      *  only in tests — production always uses [TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK]. */
     private val extractionChunkMaxChars: Int = TranscriptChunker.DEFAULT_MAX_CHARS_PER_CHUNK,
+    /** Null = voice lists off (tests that do not exercise them). ADR-0030. */
+    private val listItemDao: ListItemDao? = null,
 ) {
     /**
      * Processes up to [limit] sessions, oldest first. Cancellation stops between sessions.
@@ -144,6 +149,36 @@ class ProcessingPipeline(
         val remaining = processingStateDao.pending(BATCH).size
         Log.i(TAG, "processing_batch processed=$processed failed=$failed remaining=$remaining")
         return ProcessingRun(processed, failed, remaining)
+    }
+
+    /**
+     * Voice lists (ADR-0030): explicit "add X to the Y list" commands become list items that cite
+     * their transcript line. Idempotent, so re-processing a session adds nothing.
+     */
+    private suspend fun deriveListItems(sessionId: String, lines: List<LocalTranscriptLineEntity>) {
+        val dao = listItemDao ?: return
+        val memoryDay = sessionDao.memoryDayForSession(sessionId) ?: return
+        val createdAt = now()
+        val items = lines.flatMap { line ->
+            ListCommandParser.parse(line.text).flatMap { command ->
+                command.items.map { item ->
+                    ListItemEntity(
+                        itemId = ids.next().toString(),
+                        sessionId = sessionId,
+                        lineId = line.lineId,
+                        memoryDay = memoryDay,
+                        listName = command.listName,
+                        itemKey = ListCommandParser.key(item),
+                        text = item,
+                        sentence = command.sentence,
+                        createdAtEpochMs = createdAt,
+                        checkedAtEpochMs = null,
+                        dismissedAtEpochMs = null,
+                    )
+                }
+            }
+        }
+        if (items.isNotEmpty()) dao.insertAll(items)
     }
 
     private suspend fun processSession(sessionId: String) {
@@ -282,6 +317,8 @@ class ProcessingPipeline(
             audioDeleted = true
             updateState(sessionId, "TRANSCRIBED", null, audioDeleted = true)
         }
+
+        deriveListItems(sessionId, allLines)
 
         // Build numbered lines for extraction
         val numberedLines = allLines.mapIndexed { index, line ->

@@ -78,6 +78,8 @@ import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryScreen
+import com.apercallc.aidailymemory.ui.lists.ListsScreen
+import com.apercallc.aidailymemory.ui.lists.ListsViewModel
 import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
 import com.apercallc.aidailymemory.ui.report.ReportLoadState
 import com.apercallc.aidailymemory.ui.report.ReportScreen
@@ -98,6 +100,7 @@ enum class AppScreen(val tab: Tab?) {
     CAPTURE(Tab(R.string.nav_today, R.drawable.ic_nav_today)),
     SESSIONS(Tab(R.string.nav_sessions, R.drawable.ic_nav_sessions)),
     MEMORY(Tab(R.string.nav_memory, R.drawable.ic_nav_memory)),
+    LISTS(Tab(R.string.nav_lists, R.drawable.ic_nav_lists)),
     SETTINGS(Tab(R.string.nav_settings, R.drawable.ic_nav_settings)),
     TRANSCRIPT(null),
     REPORT(null),
@@ -116,6 +119,7 @@ fun AppRoot(
     capture: CaptureViewModel,
     sessions: () -> SessionsViewModel,
     memory: () -> MemoryViewModel,
+    lists: () -> ListsViewModel,
     settings: () -> SettingsViewModel,
     updates: () -> UpdateViewModel,
     permissions: Permissions,
@@ -223,6 +227,7 @@ fun AppRoot(
                                         screen = AppScreen.REPORT
                                     },
                                 )
+                                AppScreen.LISTS -> ListsRoute(lists())
                                 AppScreen.SETTINGS -> SettingsRoute(
                                     settings(),
                                     updates(),
@@ -332,6 +337,20 @@ private fun SessionsRoute(
                 }
             },
             onStartRecording = onStartRecording,
+        )
+    }
+}
+
+@Composable
+private fun ListsRoute(viewModel: ListsViewModel) {
+    val lists by viewModel.lists.collectAsStateWithLifecycle()
+    SecondaryScreen(stringResource(R.string.lists_title), null, snackbar = null) { modifier ->
+        ListsScreen(
+            lists = lists,
+            onSetChecked = viewModel::setChecked,
+            onRemove = viewModel::remove,
+            onClearDone = viewModel::clearDone,
+            modifier = modifier,
         )
     }
 }

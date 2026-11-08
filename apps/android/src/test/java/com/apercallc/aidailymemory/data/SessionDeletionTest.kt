@@ -59,6 +59,7 @@ class SessionDeletionTest {
                 ),
             )
             db.memoryItems().insertAll(listOf(memoryItem(target), memoryItem(other)))
+            db.listItems().insertAll(listOf(listItem(target), listItem(other)))
             db.processingState().upsert(
                 ProcessingStateEntity(target, "COMPLETED", true, null, 2_000),
             )
@@ -86,10 +87,17 @@ class SessionDeletionTest {
             assertEquals(emptyList(), db.localTranscripts().forSession(target))
             assertEquals(emptyList(), db.memoryItems().forSession(target))
             assertEquals(1, db.memoryItems().forSession(other).size)
+            assertEquals(listOf(other), db.listItems().observeOpen().first().map { it.sessionId })
             assertEquals(null, db.processingState().forSession(target))
             assertEquals(null, db.dailyReports().forDay("2026-10-11"))
             assertEquals(1, db.sessions().observeSince("2026-10-01").first().size)
         }
+
+    private fun listItem(sessionId: String) = ListItemEntity(
+        itemId = "item-$sessionId", sessionId = sessionId, lineId = "line-$sessionId", memoryDay = "2026-10-11",
+        listName = "shopping", itemKey = "milk", text = "milk", sentence = "Add milk to the list.",
+        createdAtEpochMs = 1L, checkedAtEpochMs = null, dismissedAtEpochMs = null,
+    )
 
     @Test
     fun `local deletion durably queues remote purge without a link or sync setting`() = runTest {

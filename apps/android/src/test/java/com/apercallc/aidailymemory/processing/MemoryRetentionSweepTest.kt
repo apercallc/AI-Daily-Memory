@@ -9,6 +9,7 @@ import com.apercallc.aidailymemory.data.MemoryItemCorrectionEntity
 import com.apercallc.aidailymemory.data.MemoryItemEntity
 import com.apercallc.aidailymemory.recording.storage.MemoryRetention
 import java.time.Instant
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -38,6 +39,7 @@ class MemoryRetentionSweepTest {
         database.memoryItems(),
         database.memoryCorrections(),
         database.dailyReports(),
+        database.listItems(),
         now = { Instant.parse("2026-10-16T12:00:00Z") },
         zone = { java.time.ZoneId.of("UTC") },
     )
@@ -48,6 +50,21 @@ class MemoryRetentionSweepTest {
         counterpart = null, extractionModel = "m", extractionVersion = 1,
         evidenceEpochMs = null, dismissedAtEpochMs = null, extractedAtEpochMs = 1L,
     )
+
+    @Test
+    fun `list items past the cutoff are deleted with the rest of the derived memory`() = runTest {
+        fun listItem(id: String, day: String) = com.apercallc.aidailymemory.data.ListItemEntity(
+            itemId = id, sessionId = "s1", lineId = "l-$id", memoryDay = day, listName = "shopping",
+            itemKey = id, text = id, sentence = "Add $id to the list.", createdAtEpochMs = 1L,
+            checkedAtEpochMs = null, dismissedAtEpochMs = null,
+        )
+        database.listItems().insertAll(listOf(listItem("old", "2020-01-01"), listItem("new", "2026-10-15")))
+
+        sweep().apply(MemoryRetention.KEEP_90_DAYS)
+
+        val left = database.listItems().observeOpen().first()
+        assertEquals(listOf("new"), left.map { it.itemId })
+    }
 
     @Test
     fun `keep until deleted deletes nothing`() = runTest {

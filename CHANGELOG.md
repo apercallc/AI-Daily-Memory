@@ -7,6 +7,11 @@ All notable changes to AI Daily Memory. Format follows
 
 ### Added
 
+- Voice lists on the phone (ADR-0030). Say "add milk and eggs to the shopping list" while
+  recording and the items appear on a new Lists tab with the sentence you said beside each one.
+  Only explicit "add/put ... to/on the ... list" phrasing counts, so casual speech such as
+  "we need milk" creates nothing. Items can be ticked off, removed, and cleared when done. They
+  are deleted with their session and by the memory-retention setting, and are not synced.
 - Durable, append-only security audit trail (ADR-0029). Sign-up, login (including failures and
   lockouts), password change, session and API-key revocation, API-key creation, and account
   deletion each write a content-free `audit_events` row in the same transaction. Rows hold a

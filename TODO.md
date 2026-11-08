@@ -286,3 +286,16 @@ and complete data rights. The product remains free under ADR-0028.
 
 - [ ] A user can create an API client, export all their data, and delete their account through
   self-service flows, with authorization and abuse controls enforced throughout.
+
+# Phase 11 — Voice lists and one-shot Ask (ADR-0030)
+
+Goal: capture what a person asks for out loud, and answer one question at a time, on the phone,
+with no model, no operator cost, and no conversation state.
+
+- [x] Voice lists: explicit "add X to the Y list" commands become list items that cite their
+  sentence; Lists tab with check-off, remove, clear done; deleted with the session and by
+  memory retention
+  - Phone only by design (ADR-0030 #4). Syncing or exporting lists needs a server schema, an
+    export reconciliation against the data inventory, and its own decision.
+- [ ] One-shot Ask on the phone: one question, one cited answer built only from the person's own
+  undismissed memory items, abstaining when nothing matches (mirrors ADR-0024 Ask)

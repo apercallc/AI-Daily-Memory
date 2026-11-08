@@ -34,8 +34,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProviderUsageEntity::class,
         MemoryItemCorrectionEntity::class,
         SessionEventOverrideEntity::class,
+        ListItemEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class CaptureDatabase : RoomDatabase() {
@@ -54,6 +55,7 @@ abstract class CaptureDatabase : RoomDatabase() {
     abstract fun syncDeletions(): SyncDeletionDao
     abstract fun providerUsage(): ProviderUsageDao
     abstract fun sessionEventOverrides(): SessionEventOverrideDao
+    abstract fun listItems(): ListItemDao
 
     companion object {
         const val NAME = "capture.db"
@@ -63,6 +65,7 @@ abstract class CaptureDatabase : RoomDatabase() {
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12,
+            MIGRATION_12_13,
         )
 
         fun open(context: Context): CaptureDatabase =
@@ -307,6 +310,24 @@ abstract class CaptureDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `session_event_override` (" +
                         "`session_id` TEXT NOT NULL, `override` TEXT NOT NULL, " +
                         "`updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`session_id`))",
+                )
+            }
+        }
+
+        /** Voice lists (ADR-0030): new table only. SQL copied from schemas/13.json. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `list_item` (`item_id` TEXT NOT NULL, " +
+                        "`session_id` TEXT NOT NULL, `line_id` TEXT NOT NULL, `memory_day` TEXT NOT NULL, " +
+                        "`list_name` TEXT NOT NULL, `item_key` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`sentence` TEXT NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, " +
+                        "`checked_at_epoch_ms` INTEGER, `dismissed_at_epoch_ms` INTEGER, PRIMARY KEY(`item_id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_list_item_session_id` ON `list_item` (`session_id`)")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_list_item_line_id_list_name_item_key` " +
+                        "ON `list_item` (`line_id`, `list_name`, `item_key`)",
                 )
             }
         }
