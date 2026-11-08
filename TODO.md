@@ -297,5 +297,10 @@ with no model, no operator cost, and no conversation state.
   memory retention
   - Phone only by design (ADR-0030 #4). Syncing or exporting lists needs a server schema, an
     export reconciliation against the data inventory, and its own decision.
-- [ ] One-shot Ask on the phone: one question, one cited answer built only from the person's own
+- [x] One-shot Ask on the phone: one question, one cited answer built only from the person's own
   undismissed memory items, abstaining when nothing matches (mirrors ADR-0024 Ask)
+  - `LocalRecall` (core/recording, pure/tested) ports the server's `app/recall.py` rules; keep
+    the two in step. It uses a simple suffix stemmer, not PostgreSQL's, so wording-edge cases
+    can differ from the web Ask.
+- [ ] A one-tap capture button or ring (ADR-0030 #6): needs its own ADR, consent affordance and
+  hardware; not started

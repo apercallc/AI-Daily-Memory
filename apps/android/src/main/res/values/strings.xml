@@ -397,6 +397,10 @@
 
     <!-- Voice lists (ADR-0030) -->
     <string name="nav_lists">Lists</string>
+    <string name="ask_label">Ask your memory</string>
+    <string name="ask_button">Ask</string>
+    <string name="ask_working">Looking…</string>
+    <string name="ask_clear">Clear answer</string>
     <string name="lists_title">Lists</string>
     <string name="lists_empty_title">No lists yet</string>
     <string name="lists_empty_body">While recording, say \"add milk to the shopping list\". It shows up here with the words you said.</string>

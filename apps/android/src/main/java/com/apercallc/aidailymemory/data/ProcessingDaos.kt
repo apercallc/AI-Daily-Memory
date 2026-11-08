@@ -42,6 +42,10 @@ interface MemoryItemDao {
     @Query("SELECT * FROM memory_item WHERE session_id = :sessionId AND dismissed_at_epoch_ms IS NULL ORDER BY kind, extracted_at_epoch_ms")
     suspend fun forSession(sessionId: String): List<MemoryItemEntity>
 
+    /** Every item the person has not dismissed, for one-shot Ask (ADR-0030). */
+    @Query("SELECT * FROM memory_item WHERE dismissed_at_epoch_ms IS NULL")
+    suspend fun allOpen(): List<MemoryItemEntity>
+
     @Query("SELECT * FROM memory_item WHERE memory_day = :memoryDay AND dismissed_at_epoch_ms IS NULL ORDER BY kind, extracted_at_epoch_ms")
     suspend fun forDay(memoryDay: String): List<MemoryItemEntity>
 

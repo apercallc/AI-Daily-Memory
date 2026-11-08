@@ -78,6 +78,8 @@ import com.apercallc.aidailymemory.ui.sessions.SessionsScreen
 import com.apercallc.aidailymemory.ui.sessions.SessionsViewModel
 import com.apercallc.aidailymemory.ui.sessions.TranscriptScreen
 import com.apercallc.aidailymemory.ui.memory.MemoryScreen
+import com.apercallc.aidailymemory.ui.ask.AskCard
+import com.apercallc.aidailymemory.ui.ask.AskViewModel
 import com.apercallc.aidailymemory.ui.lists.ListsScreen
 import com.apercallc.aidailymemory.ui.lists.ListsViewModel
 import com.apercallc.aidailymemory.ui.memory.MemoryViewModel
@@ -120,6 +122,7 @@ fun AppRoot(
     sessions: () -> SessionsViewModel,
     memory: () -> MemoryViewModel,
     lists: () -> ListsViewModel,
+    ask: () -> AskViewModel,
     settings: () -> SettingsViewModel,
     updates: () -> UpdateViewModel,
     permissions: Permissions,
@@ -221,6 +224,7 @@ fun AppRoot(
                                 }
                                 AppScreen.MEMORY -> MemoryRoute(
                                     memory(),
+                                    ask(),
                                     onSetUpProcessing = openProcessingSettings,
                                     onOpenReport = { day ->
                                         openReportDay = day
@@ -356,22 +360,26 @@ private fun ListsRoute(viewModel: ListsViewModel) {
 }
 
 @Composable
-private fun MemoryRoute(viewModel: MemoryViewModel, onSetUpProcessing: () -> Unit, onOpenReport: (String) -> Unit) {
+private fun MemoryRoute(viewModel: MemoryViewModel, askViewModel: AskViewModel, onSetUpProcessing: () -> Unit, onOpenReport: (String) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val projectMemory by viewModel.projectMemory.collectAsStateWithLifecycle()
+    val askState by askViewModel.state.collectAsStateWithLifecycle()
     SecondaryScreen(stringResource(R.string.memory_title), null, snackbar = null) { modifier ->
-        MemoryScreen(
-            state = state,
-            onRetry = viewModel::retry,
-            modifier = modifier,
-            onSetUpProcessing = onSetUpProcessing,
-            onDismiss = viewModel::dismiss,
-            onCorrect = viewModel::correct,
-            onOpenReport = onOpenReport,
-            onToggleEventBoundary = viewModel::toggleEventBoundary,
-            projectMemory = projectMemory,
-            errorMessages = viewModel.messages,
-        )
+        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(AiDailyMemoryTheme.spacing.lg)) {
+            AskCard(askState, onAsk = askViewModel::ask, onClear = askViewModel::clear)
+            MemoryScreen(
+                state = state,
+                onRetry = viewModel::retry,
+                modifier = Modifier.weight(1f),
+                onSetUpProcessing = onSetUpProcessing,
+                onDismiss = viewModel::dismiss,
+                onCorrect = viewModel::correct,
+                onOpenReport = onOpenReport,
+                onToggleEventBoundary = viewModel::toggleEventBoundary,
+                projectMemory = projectMemory,
+                errorMessages = viewModel.messages,
+            )
+        }
     }
 }
 
